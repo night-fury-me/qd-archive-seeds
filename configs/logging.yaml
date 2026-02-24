@@ -1,0 +1,8 @@
+logging:
+  level: "INFO"
+  console:
+    enabled: true
+    rich: true
+  file:
+    enabled: true
+    path: "./logs/qdarchive.log"

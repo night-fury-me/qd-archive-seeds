@@ -1,0 +1,56 @@
+pipeline:
+  id: "zenodo_seed_v1"
+  run_mode: "incremental"
+  max_items: 500
+
+source:
+  name: "zenodo"
+  type: "rest_api"
+  base_url: "https://zenodo.org/api"
+  endpoints:
+    search: "/records"
+  params:
+    q: "qdp OR qdpx"
+    size: 50
+  pagination:
+    type: "page"
+    page_param: "page"
+    size_param: "size"
+
+auth:
+  type: "none"
+  env:
+    api_key: "ZENODO_TOKEN"
+
+extractor:
+  name: "zenodo_extractor"
+  options:
+    include_files: true
+
+transforms:
+  - name: "validate_required_fields"
+    options:
+      required_fields: ["asset_url", "source_url"]
+  - name: "normalize_fields"
+  - name: "infer_filetypes"
+  - name: "deduplicate_assets"
+  - name: "slugify_dataset"
+
+storage:
+  downloads_root: "./downloads"
+  layout: "{source_name}/{dataset_slug}/"
+  checksum: "sha256"
+
+sink:
+  type: "sqlite"
+  options:
+    path: "./metadata/qdarchive.sqlite"
+
+logging:
+  level: "INFO"
+  console:
+    enabled: true
+    rich: true
+  file:
+    enabled: true
+    path: "./logs/qdarchive.log"

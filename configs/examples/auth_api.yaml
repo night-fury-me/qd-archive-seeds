@@ -1,0 +1,54 @@
+pipeline:
+  id: "auth_api_seed_v1"
+  run_mode: "incremental"
+  max_items: 100
+
+source:
+  name: "example_api"
+  type: "rest_api"
+  base_url: "https://api.example.com"
+  endpoints:
+    search: "/datasets"
+  params:
+    q: "qdpx"
+    size: 25
+  pagination:
+    type: "page"
+    page_param: "page"
+    size_param: "size"
+
+auth:
+  type: "api_key"
+  env:
+    api_key: "EXAMPLE_API_KEY"
+  placement: "header"
+  header_name: "X-API-Key"
+
+extractor:
+  name: "generic_rest"
+  options:
+    records_path: "items"
+
+transforms:
+  - name: "validate_required_fields"
+    options:
+      required_fields: ["asset_url", "source_url"]
+
+storage:
+  downloads_root: "./downloads"
+  layout: "{source_name}/{dataset_slug}/"
+  checksum: "sha256"
+
+sink:
+  type: "sqlite"
+  options:
+    path: "./metadata/qdarchive.sqlite"
+
+logging:
+  level: "INFO"
+  console:
+    enabled: true
+    rich: true
+  file:
+    enabled: false
+    path: "./logs/qdarchive.log"
