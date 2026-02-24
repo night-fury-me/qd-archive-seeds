@@ -1,0 +1,63 @@
+[project]
+name = "qdarchive-seeding"
+version = "0.1.0"
+description = "Config-driven ETL framework to seed QDArchive."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "QDArchive Seeding" }]
+keywords = ["etl", "qdarchive", "tui", "data-pipeline"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+  "pydantic>=2.6",
+  "pydantic-settings>=2.2",
+  "pyyaml>=6.0.1",
+  "rich>=13.7",
+  "httpx>=0.27",
+  "tenacity>=8.2",
+  "anyio>=4.3",
+  "orjson>=3.9",
+  "textual>=0.63",
+  "beautifulsoup4>=4.12",
+  "pandas>=2.2",
+  "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.1",
+  "pytest-cov>=5.0",
+  "ruff>=0.5",
+  "mypy>=1.10",
+  "types-PyYAML>=6.0.12",
+  "types-requests>=2.32.0",
+]
+
+[project.scripts]
+qdarchive = "qdarchive_seeding.cli.main:app"
+
+[tool.uv]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "C4", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
