@@ -17,7 +17,6 @@ from qdarchive_seeding.tui.widgets.forms.storage_form import StorageForm
 from qdarchive_seeding.tui.widgets.forms.transforms_form import TransformsForm
 from qdarchive_seeding.tui.widgets.preview_yaml import PreviewYaml
 
-
 STEPS = ["Source", "Auth", "Extractor", "Transforms", "Storage", "Sink", "Logging", "Preview"]
 
 

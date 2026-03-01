@@ -5,8 +5,7 @@ import os
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.screen import Screen
-from textual.widgets import Footer, Header, Input, Static, Switch
-
+from textual.widgets import Footer, Header, Input, Static
 
 ENV_VARS_TO_CHECK = ["ZENODO_TOKEN", "MYSQL_PASSWORD", "MONGODB_URI"]
 

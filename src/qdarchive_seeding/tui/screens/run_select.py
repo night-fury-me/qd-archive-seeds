@@ -5,7 +5,7 @@ from pathlib import Path
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, OptionList, Select, Static
+from textual.widgets import Button, Footer, Header, Select, Static
 
 from qdarchive_seeding.tui.services.config_service import ConfigService
 

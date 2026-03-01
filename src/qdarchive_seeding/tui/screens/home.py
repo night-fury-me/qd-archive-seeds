@@ -11,16 +11,15 @@ class HomeScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Center():
-            with Vertical(id="home-menu"):
-                yield Static("[bold]QDArchive Seeding[/bold]", id="title")
-                yield Button("Run Pipeline", id="btn-run", variant="primary")
-                yield Button("Config Wizard", id="btn-wizard")
-                yield Button("Config Editor", id="btn-editor")
-                yield Button("Validate Config", id="btn-validate")
-                yield Button("Run History", id="btn-history")
-                yield Button("Browse Downloads", id="btn-browse")
-                yield Button("Settings", id="btn-settings")
+        with Center(), Vertical(id="home-menu"):
+            yield Static("[bold]QDArchive Seeding[/bold]", id="title")
+            yield Button("Run Pipeline", id="btn-run", variant="primary")
+            yield Button("Config Wizard", id="btn-wizard")
+            yield Button("Config Editor", id="btn-editor")
+            yield Button("Validate Config", id="btn-validate")
+            yield Button("Run History", id="btn-history")
+            yield Button("Browse Downloads", id="btn-browse")
+            yield Button("Settings", id="btn-settings")
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

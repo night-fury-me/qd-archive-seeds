@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from textual.app import ComposeResult
 from textual.reactive import reactive
 from textual.widgets import Static
 
