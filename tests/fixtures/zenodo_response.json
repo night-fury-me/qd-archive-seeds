@@ -1,0 +1,58 @@
+{
+  "hits": {
+    "hits": [
+      {
+        "id": 12345,
+        "links": {
+          "self": "https://zenodo.org/api/records/12345"
+        },
+        "metadata": {
+          "title": "Test QDP Dataset",
+          "description": "A qualitative data package for testing",
+          "doi": "10.5281/zenodo.12345",
+          "license": "CC-BY-4.0",
+          "publication_date": "2024-01-15",
+          "creators": [
+            {"name": "Jane Doe"}
+          ]
+        },
+        "files": [
+          {
+            "key": "dataset.qdpx",
+            "links": {"self": "https://zenodo.org/api/files/abc/dataset.qdpx"},
+            "size": 1024
+          },
+          {
+            "key": "readme.pdf",
+            "links": {"self": "https://zenodo.org/api/files/abc/readme.pdf"},
+            "size": 2048
+          }
+        ]
+      },
+      {
+        "id": 67890,
+        "links": {
+          "self": "https://zenodo.org/api/records/67890"
+        },
+        "metadata": {
+          "title": "Another QDP Study",
+          "description": "Second test dataset",
+          "doi": "10.5281/zenodo.67890",
+          "license": "MIT",
+          "publication_date": "2023-06-20",
+          "creators": [
+            {"name": "John Smith"}
+          ]
+        },
+        "files": [
+          {
+            "key": "data.zip",
+            "links": {"self": "https://zenodo.org/api/files/def/data.zip"},
+            "size": 4096
+          }
+        ]
+      }
+    ],
+    "total": 2
+  }
+}
