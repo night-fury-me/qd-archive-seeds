@@ -16,3 +16,6 @@ venv/
 # Build artifacts
 build/
 dist/
+
+# Temporarily excluded module
+src/qdarchive_seeding/tui/
