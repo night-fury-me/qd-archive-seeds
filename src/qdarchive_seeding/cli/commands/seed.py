@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -29,8 +29,10 @@ def run_pipeline(
     config: Annotated[Path, typer.Option("--config", help="Path to YAML config file")],
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Run without downloading")] = False,
     force: Annotated[bool, typer.Option("--force", help="Force re-download all")] = False,
-    max_items: Annotated[Optional[int], typer.Option("--max-items", help="Override max items")] = None,
-    retry_failed: Annotated[bool, typer.Option("--retry-failed", help="Retry failed downloads")] = False,
+    max_items: Annotated[int | None, typer.Option("--max-items", help="Override max items")] = None,
+    retry_failed: Annotated[
+        bool, typer.Option("--retry-failed", help="Retry failed downloads")
+    ] = False,
 ) -> None:
     """Run a seeding pipeline from a YAML config."""
     try:

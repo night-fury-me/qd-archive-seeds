@@ -10,7 +10,6 @@ import yaml
 from qdarchive_seeding.app.config_models import PipelineConfig
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
 
-
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 

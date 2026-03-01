@@ -56,9 +56,13 @@ class Downloader:
             asset.download_status = DOWNLOAD_STATUS_SUCCESS
             asset.checksum_sha256 = checksum
             asset.size_bytes = final_path.stat().st_size
-            return DownloadResult(asset=asset, bytes_downloaded=asset.size_bytes or 0, checksum=checksum)
+            return DownloadResult(
+                asset=asset, bytes_downloaded=asset.size_bytes or 0, checksum=checksum
+            )
         except Exception:
-            asset.download_status = DOWNLOAD_STATUS_RESUMABLE if temp_path.exists() else DOWNLOAD_STATUS_FAILED
+            asset.download_status = (
+                DOWNLOAD_STATUS_RESUMABLE if temp_path.exists() else DOWNLOAD_STATUS_FAILED
+            )
             raise
 
     def _stream_to_file(self, response: httpx.Response, fh: BinaryIO) -> str:

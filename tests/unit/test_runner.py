@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import threading
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterable
 
+from qdarchive_seeding.app.config_models import PipelineConfig
 from qdarchive_seeding.app.container import build_container
 from qdarchive_seeding.app.progress import Completed, CountersUpdated, ProgressEvent, StageChanged
 from qdarchive_seeding.app.runner import ETLRunner
-from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord, RunInfo
-from qdarchive_seeding.app.config_models import PipelineConfig
 
 
 def _build_test_container(tmp_path: Path, config: PipelineConfig) -> Any:
@@ -19,9 +16,7 @@ def _build_test_container(tmp_path: Path, config: PipelineConfig) -> Any:
     )
 
 
-def test_dry_run_no_downloads(
-    tmp_path: Path, minimal_config: PipelineConfig
-) -> None:
+def test_dry_run_no_downloads(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     # Override sink path to use tmp
     minimal_config.sink.options["path"] = str(tmp_path / "test.sqlite")
     container = _build_test_container(tmp_path, minimal_config)
@@ -37,9 +32,7 @@ def test_dry_run_no_downloads(
     assert any(isinstance(e, StageChanged) and e.stage == "done" for e in events)
 
 
-def test_run_with_static_records(
-    tmp_path: Path, minimal_config: PipelineConfig
-) -> None:
+def test_run_with_static_records(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     minimal_config.sink.options["path"] = str(tmp_path / "test.sqlite")
     minimal_config.extractor.options = {
         "records": [
@@ -64,9 +57,7 @@ def test_run_with_static_records(
     assert len(counter_events) > 0
 
 
-def test_completed_event_is_last(
-    tmp_path: Path, minimal_config: PipelineConfig
-) -> None:
+def test_completed_event_is_last(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     minimal_config.sink.options["path"] = str(tmp_path / "test.sqlite")
     container = _build_test_container(tmp_path, minimal_config)
 

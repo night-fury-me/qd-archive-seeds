@@ -5,10 +5,9 @@ import platform
 import sys
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 from qdarchive_seeding.app.config_models import PipelineConfig
 from qdarchive_seeding.app.container import Container
@@ -54,7 +53,7 @@ class ETLRunner:
             config=c.config,
         )
 
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         extracted = 0
         transformed = 0
         downloaded = 0
@@ -69,7 +68,9 @@ class ETLRunner:
             records = list(c.extractor.extract(ctx))
         except Exception as exc:
             log.error("Extraction failed: %s", exc)
-            bus.publish(ErrorEvent(component="extractor", error_type=type(exc).__name__, message=str(exc)))
+            bus.publish(
+                ErrorEvent(component="extractor", error_type=type(exc).__name__, message=str(exc))
+            )
             records = []
         extracted = len(records)
         bus.publish(CountersUpdated(extracted=extracted))
@@ -98,9 +99,7 @@ class ETLRunner:
 
             c.rate_limiter.wait()
 
-            dataset_slug = (
-                record.raw.get("dataset_slug") if record.raw else None
-            ) or "dataset"
+            dataset_slug = (record.raw.get("dataset_slug") if record.raw else None) or "dataset"
 
             target_dir = c.path_strategy.dataset_dir(
                 downloads_root,
@@ -135,7 +134,9 @@ class ETLRunner:
                         downloaded += 1
                     else:
                         failed += 1
-                        failures.append({"asset_url": asset.asset_url, "error": "non-success status"})
+                        failures.append(
+                            {"asset_url": asset.asset_url, "error": "non-success status"}
+                        )
                 except Exception as exc:
                     failed += 1
                     asset.download_status = DOWNLOAD_STATUS_FAILED
@@ -178,7 +179,7 @@ class ETLRunner:
             )
 
         # --- Complete ---
-        ended_at = datetime.now(timezone.utc)
+        ended_at = datetime.now(UTC)
         run_info = RunInfo(
             run_id=ctx.run_id,  # type: ignore[arg-type]
             pipeline_id=ctx.pipeline_id,

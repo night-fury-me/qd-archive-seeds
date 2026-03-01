@@ -17,7 +17,7 @@ from qdarchive_seeding.infra.logging.handlers import (
 @dataclass(slots=True)
 class LoggerBundle:
     logger: logging.Logger
-    log_queue: "queue.Queue[str]" | None = None
+    log_queue: queue.Queue[str] | None = None
 
 
 def configure_logger(
@@ -51,7 +51,9 @@ def configure_logger(
     if settings.file.enabled:
         if not settings.file.path:
             raise ValueError("File logging enabled but no path provided")
-        file_handler = build_file_handler(settings.file.path, logging.getLevelName(settings.level), 5_000_000, 3)
+        file_handler = build_file_handler(
+            settings.file.path, logging.getLevelName(settings.level), 5_000_000, 3
+        )
         file_handler.setFormatter(formatter)
         file_handler.addFilter(context_filter)
         logger.addHandler(file_handler)

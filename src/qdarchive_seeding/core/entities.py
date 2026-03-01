@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -18,7 +18,7 @@ class DatasetRecord:
     year: int | None = None
     owner_name: str | None = None
     owner_email: str | None = None
-    assets: list["AssetRecord"] = field(default_factory=list)
+    assets: list[AssetRecord] = field(default_factory=list)
     raw: dict[str, Any] | None = None
 
 
@@ -40,7 +40,7 @@ class AssetRecord:
 class RunInfo:
     run_id: UUID = field(default_factory=uuid4)
     pipeline_id: str | None = None
-    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     ended_at: datetime | None = None
     config_hash: str | None = None
     counts: dict[str, int] = field(default_factory=dict)

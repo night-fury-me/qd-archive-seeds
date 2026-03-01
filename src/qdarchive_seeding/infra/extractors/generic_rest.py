@@ -3,11 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
-
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
 from qdarchive_seeding.core.interfaces import AuthProvider, HttpClient, RunContext
-from qdarchive_seeding.infra.http.pagination import CursorPagination, OffsetPagination, PagePagination, PaginationType
+from qdarchive_seeding.infra.http.pagination import (
+    CursorPagination,
+    OffsetPagination,
+    PagePagination,
+    PaginationType,
+)
 
 
 @dataclass(slots=True)
@@ -29,7 +32,9 @@ class GenericRestExtractor:
                 size_param=ctx.config.source.pagination.size_param or "limit",
             )
         if pagination_type == "cursor":
-            return CursorPagination(cursor_param=ctx.config.source.pagination.cursor_param or "cursor")
+            return CursorPagination(
+                cursor_param=ctx.config.source.pagination.cursor_param or "cursor"
+            )
         return PagePagination(
             page_param=ctx.config.source.pagination.page_param or "page",
             size_param=ctx.config.source.pagination.size_param or "size",
@@ -44,7 +49,9 @@ class GenericRestExtractor:
         params = dict(ctx.config.source.params)
         headers, params = self.auth.apply(headers, params)
 
-        pagination_type = ctx.config.source.pagination.type if ctx.config.source.pagination else None
+        pagination_type = (
+            ctx.config.source.pagination.type if ctx.config.source.pagination else None
+        )
         paginator = self._select_pagination(pagination_type, ctx)
 
         records: list[DatasetRecord] = []
@@ -69,7 +76,9 @@ class GenericRestExtractor:
                     title=item.get("title"),
                     description=item.get("description"),
                     assets=[
-                        AssetRecord(asset_url=str(asset)) for asset in item.get("assets", []) if asset is not None
+                        AssetRecord(asset_url=str(asset))
+                        for asset in item.get("assets", [])
+                        if asset is not None
                     ],
                     raw=item,
                 )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from qdarchive_seeding.core.entities import DatasetRecord
 from qdarchive_seeding.core.interfaces import Transform

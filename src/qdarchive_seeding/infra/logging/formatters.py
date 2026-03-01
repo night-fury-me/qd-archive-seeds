@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 class ContextFormatter(logging.Formatter):
@@ -19,5 +19,5 @@ class ContextFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         record.run_id = getattr(record, "run_id", None) or self.run_id  # type: ignore[attr-defined]
         record.pipeline_id = getattr(record, "pipeline_id", None) or self.pipeline_id  # type: ignore[attr-defined]
-        record.asctime = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
+        record.asctime = datetime.fromtimestamp(record.created, tz=UTC).isoformat()
         return super().format(record)

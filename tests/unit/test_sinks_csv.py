@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
+from qdarchive_seeding.core.entities import DatasetRecord
 from qdarchive_seeding.infra.sinks.csv_sink import CSVSink
 
 

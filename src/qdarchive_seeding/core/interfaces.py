@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from pathlib import Path
 from threading import Event
-from typing import Any, Protocol, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
 
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class Extractor(Protocol):
-    def extract(self, ctx: "RunContext") -> Iterable[DatasetRecord]: ...
+    def extract(self, ctx: RunContext) -> Iterable[DatasetRecord]: ...
 
 
 class Transform(Protocol):
@@ -31,7 +31,9 @@ class Downloader(Protocol):
 
 
 class AuthProvider(Protocol):
-    def apply(self, headers: dict[str, str], params: dict[str, Any]) -> tuple[dict[str, str], dict[str, Any]]: ...
+    def apply(
+        self, headers: dict[str, str], params: dict[str, Any]
+    ) -> tuple[dict[str, str], dict[str, Any]]: ...
 
 
 class HttpClient(Protocol):
@@ -48,7 +50,7 @@ class HttpClient(Protocol):
 class RunContext(Protocol):
     run_id: str
     pipeline_id: str
-    config: "PipelineConfig"
+    config: PipelineConfig
     cancelled: Event
     metadata: dict[str, Any]
 
@@ -66,7 +68,7 @@ class ValidationResult(Protocol):
 class ComponentSpec(Protocol):
     name: str
     description: str
-    fields: list["FieldSpec"]
+    fields: list[FieldSpec]
 
     def validate(self, config: dict[str, Any]) -> list[str]: ...
 
@@ -92,11 +94,11 @@ class Registry(Protocol):
 
 
 class ConfigLoader(Protocol):
-    def load(self, path: str | Path) -> "PipelineConfig": ...
+    def load(self, path: str | Path) -> PipelineConfig: ...
 
 
 class ConfigValidator(Protocol):
-    def validate(self, config: "PipelineConfig") -> ValidationResult: ...
+    def validate(self, config: PipelineConfig) -> ValidationResult: ...
 
 
 class Policy(ABC):

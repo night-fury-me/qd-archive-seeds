@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from qdarchive_seeding.app.manifests import RunManifestWriter
@@ -11,8 +11,8 @@ def _make_run_info(run_id: str = "test-run-1") -> RunInfo:
     return RunInfo(
         run_id=run_id,  # type: ignore[arg-type]
         pipeline_id="test_pipe",
-        started_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
-        ended_at=datetime(2024, 1, 1, 12, 5, 0, tzinfo=timezone.utc),
+        started_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC),
+        ended_at=datetime(2024, 1, 1, 12, 5, 0, tzinfo=UTC),
         config_hash="abc123",
         counts={"extracted": 10, "downloaded": 8, "failed": 2},
         failures=[{"asset_url": "https://example.com/bad.pdf", "error": "timeout"}],
@@ -34,7 +34,7 @@ def test_list_runs_sorted(tmp_path: Path) -> None:
     writer = RunManifestWriter(runs_dir=tmp_path / "runs")
     writer.write(_make_run_info("run-a"))
     info2 = _make_run_info("run-b")
-    info2.started_at = datetime(2024, 6, 1, tzinfo=timezone.utc)
+    info2.started_at = datetime(2024, 6, 1, tzinfo=UTC)
     writer.write(info2)
     runs = writer.list_runs()
     assert len(runs) == 2
