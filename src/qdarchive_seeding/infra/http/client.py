@@ -4,7 +4,12 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 from qdarchive_seeding.core.interfaces import HttpClient
 
@@ -21,7 +26,9 @@ class HttpClientSettings:
 class HttpxClient(HttpClient):
     def __init__(self, settings: HttpClientSettings) -> None:
         self._settings = settings
-        self._client = httpx.Client(timeout=settings.timeout_seconds, headers={"User-Agent": settings.user_agent})
+        self._client = httpx.Client(
+            timeout=settings.timeout_seconds, headers={"User-Agent": settings.user_agent}
+        )
 
     def get(
         self,
@@ -34,7 +41,9 @@ class HttpxClient(HttpClient):
         @retry(
             retry=retry_if_exception_type(httpx.RequestError),
             stop=stop_after_attempt(self._settings.max_retries),
-            wait=wait_exponential_jitter(min=self._settings.backoff_min, max=self._settings.backoff_max),
+            wait=wait_exponential_jitter(
+                min=self._settings.backoff_min, max=self._settings.backoff_max
+            ),
         )
         def _request() -> httpx.Response:
             combined_headers = {**self._client.headers, **headers}

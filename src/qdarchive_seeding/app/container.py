@@ -14,13 +14,18 @@ from qdarchive_seeding.app.policies import IncrementalPolicy, RetryPolicy
 from qdarchive_seeding.app.progress import ProgressBus
 from qdarchive_seeding.core.constants import DEFAULT_CHUNK_SIZE_BYTES
 from qdarchive_seeding.core.interfaces import AuthProvider, Extractor, Policy, Sink, Transform
-from qdarchive_seeding.infra.http.auth import ApiKeyAuth, BearerAuth, NoAuth, OAuth2ClientCredentials
-from qdarchive_seeding.infra.http.client import HttpClientSettings, HttpxClient
-from qdarchive_seeding.infra.http.rate_limit import RateLimiter
 from qdarchive_seeding.infra.extractors.generic_rest import GenericRestExtractor, GenericRestOptions
 from qdarchive_seeding.infra.extractors.html_scraper import HtmlScraperExtractor, HtmlScraperOptions
 from qdarchive_seeding.infra.extractors.static_list import StaticListExtractor, StaticListOptions
 from qdarchive_seeding.infra.extractors.zenodo import ZenodoExtractor, ZenodoOptions
+from qdarchive_seeding.infra.http.auth import (
+    ApiKeyAuth,
+    BearerAuth,
+    NoAuth,
+    OAuth2ClientCredentials,
+)
+from qdarchive_seeding.infra.http.client import HttpClientSettings, HttpxClient
+from qdarchive_seeding.infra.http.rate_limit import RateLimiter
 from qdarchive_seeding.infra.logging.logger import LoggerBundle, configure_logger
 from qdarchive_seeding.infra.sinks.csv_sink import CSVSink
 from qdarchive_seeding.infra.sinks.excel_sink import ExcelSink
@@ -230,7 +235,9 @@ def _build_sink(config: PipelineConfig) -> Sink:
     options = config.sink.options
 
     if sink_type == "sqlite":
-        return SQLiteSink(name="sqlite", path=Path(options.get("path", "./metadata/qdarchive.sqlite")))  # type: ignore[arg-type]
+        return SQLiteSink(
+            name="sqlite", path=Path(options.get("path", "./metadata/qdarchive.sqlite"))
+        )  # type: ignore[arg-type]
     if sink_type == "csv":
         return CSVSink(
             name="csv",

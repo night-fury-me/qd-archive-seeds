@@ -19,7 +19,10 @@ class IncrementalPolicy(Policy):
     def should_skip_asset(self, asset: AssetRecord) -> bool:
         if self.force:
             return False
-        if self.run_mode == RUN_MODE_INCREMENTAL and asset.download_status == DOWNLOAD_STATUS_SUCCESS:
+        if (
+            self.run_mode == RUN_MODE_INCREMENTAL
+            and asset.download_status == DOWNLOAD_STATUS_SUCCESS
+        ):
             return True
         return False
 

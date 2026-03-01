@@ -26,7 +26,9 @@ class StaticListExtractor:
                 title=item.get("title"),
                 description=item.get("description"),
                 assets=[
-                    AssetRecord(asset_url=str(asset)) for asset in item.get("assets", []) if asset is not None
+                    AssetRecord(asset_url=str(asset))
+                    for asset in item.get("assets", [])
+                    if asset is not None
                 ],
                 raw=item,
             )

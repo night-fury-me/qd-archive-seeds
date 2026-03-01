@@ -16,9 +16,7 @@ class MongoDBSink(BaseSink):
     def __post_init__(self) -> None:
         client: MongoClient[dict[str, object]] = MongoClient(self.uri)
         db = client[self.database]
-        db["datasets"].create_index(
-            [("source_name", 1), ("source_dataset_id", 1)], unique=True
-        )
+        db["datasets"].create_index([("source_name", 1), ("source_dataset_id", 1)], unique=True)
         db["assets"].create_index("asset_url", unique=True)
         client.close()
 

@@ -42,12 +42,14 @@ def test_normalize_fields_from_raw() -> None:
 
 def test_infer_filetypes() -> None:
     t = InferFileTypes(name="i")
-    record = _make_record(assets=[
-        AssetRecord(asset_url="https://example.com/file.qdpx"),
-        AssetRecord(asset_url="https://example.com/file.zip"),
-        AssetRecord(asset_url="https://example.com/file.pdf"),
-        AssetRecord(asset_url="https://example.com/file.xyz"),
-    ])
+    record = _make_record(
+        assets=[
+            AssetRecord(asset_url="https://example.com/file.qdpx"),
+            AssetRecord(asset_url="https://example.com/file.zip"),
+            AssetRecord(asset_url="https://example.com/file.pdf"),
+            AssetRecord(asset_url="https://example.com/file.xyz"),
+        ]
+    )
     result = t.apply(record)
     assert result is not None
     assert result.assets[0].asset_type == "qdpx"
@@ -58,11 +60,13 @@ def test_infer_filetypes() -> None:
 
 def test_deduplicate_assets() -> None:
     t = DeduplicateAssets(name="d")
-    record = _make_record(assets=[
-        AssetRecord(asset_url="https://example.com/a.pdf"),
-        AssetRecord(asset_url="https://example.com/b.pdf"),
-        AssetRecord(asset_url="https://example.com/a.pdf"),
-    ])
+    record = _make_record(
+        assets=[
+            AssetRecord(asset_url="https://example.com/a.pdf"),
+            AssetRecord(asset_url="https://example.com/b.pdf"),
+            AssetRecord(asset_url="https://example.com/a.pdf"),
+        ]
+    )
     result = t.apply(record)
     assert result is not None
     assert len(result.assets) == 2
@@ -89,13 +93,15 @@ def test_transform_chain_short_circuits() -> None:
 
 
 def test_transform_chain_full_pipeline() -> None:
-    chain = TransformChain(transforms=[
-        ValidateRequiredFields(name="v", required_fields=["source_url"]),
-        NormalizeFields(name="n"),
-        InferFileTypes(name="i"),
-        DeduplicateAssets(name="d"),
-        SlugifyDataset(name="s"),
-    ])
+    chain = TransformChain(
+        transforms=[
+            ValidateRequiredFields(name="v", required_fields=["source_url"]),
+            NormalizeFields(name="n"),
+            InferFileTypes(name="i"),
+            DeduplicateAssets(name="d"),
+            SlugifyDataset(name="s"),
+        ]
+    )
     records = [
         _make_record(
             title="Test",

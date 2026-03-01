@@ -10,7 +10,9 @@ from qdarchive_seeding.infra.transforms.base import BaseTransform
 class NormalizeFields(BaseTransform):
     def apply(self, record: DatasetRecord) -> DatasetRecord | None:
         if record.owner_name is None and record.raw:
-            owner = record.raw.get("owner") or record.raw.get("uploader") or record.raw.get("author")
+            owner = (
+                record.raw.get("owner") or record.raw.get("uploader") or record.raw.get("author")
+            )
             if isinstance(owner, dict):
                 record.owner_name = owner.get("name") or owner.get("full_name")
                 record.owner_email = owner.get("email") or owner.get("mail")

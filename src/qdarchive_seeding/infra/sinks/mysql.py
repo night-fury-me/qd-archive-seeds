@@ -8,7 +8,6 @@ import pymysql
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
 from qdarchive_seeding.infra.sinks.base import BaseSink
 
-
 SCHEMA_DATASETS = """
 CREATE TABLE IF NOT EXISTS datasets (
   id VARCHAR(255) PRIMARY KEY,

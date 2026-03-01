@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
+from qdarchive_seeding.core.entities import DatasetRecord
 from qdarchive_seeding.infra.transforms.base import BaseTransform
 
 

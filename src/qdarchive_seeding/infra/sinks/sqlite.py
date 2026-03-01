@@ -3,11 +3,9 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
 from qdarchive_seeding.infra.sinks.base import BaseSink
-
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS datasets (
@@ -123,5 +121,3 @@ class SQLiteSink(BaseSink):
                     asset.error_message,
                 ),
             )
-
-

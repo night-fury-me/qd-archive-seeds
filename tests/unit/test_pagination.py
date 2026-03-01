@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from qdarchive_seeding.infra.http.pagination import CursorPagination, OffsetPagination, PagePagination
+from qdarchive_seeding.infra.http.pagination import (
+    CursorPagination,
+    OffsetPagination,
+    PagePagination,
+)
 
 
 def test_page_pagination_sequence() -> None:

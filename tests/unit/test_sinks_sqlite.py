@@ -40,7 +40,9 @@ def test_upsert_asset_updates(tmp_path: Path) -> None:
     asset.download_status = DOWNLOAD_STATUS_SUCCESS
     sink.upsert_asset(dataset_id, asset)
     conn = sqlite3.connect(tmp_path / "test.sqlite")
-    row = conn.execute("SELECT download_status FROM assets WHERE asset_url = ?", (asset.asset_url,)).fetchone()
+    row = conn.execute(
+        "SELECT download_status FROM assets WHERE asset_url = ?", (asset.asset_url,)
+    ).fetchone()
     conn.close()
     assert row[0] == DOWNLOAD_STATUS_SUCCESS
 

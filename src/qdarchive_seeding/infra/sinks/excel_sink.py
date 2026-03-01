@@ -37,7 +37,13 @@ class ExcelSink(BaseSink):
         )
         if self.path.exists():
             with pd.ExcelWriter(self.path, mode="a", if_sheet_exists="overlay") as writer:
-                df.to_excel(writer, sheet_name="datasets", index=False, header=False, startrow=writer.sheets["datasets"].max_row)
+                df.to_excel(
+                    writer,
+                    sheet_name="datasets",
+                    index=False,
+                    header=False,
+                    startrow=writer.sheets["datasets"].max_row,
+                )
         else:
             with pd.ExcelWriter(self.path) as writer:
                 df.to_excel(writer, sheet_name="datasets", index=False)
@@ -53,7 +59,9 @@ class ExcelSink(BaseSink):
                     "asset_type": asset.asset_type,
                     "local_dir": asset.local_dir,
                     "local_filename": asset.local_filename,
-                    "downloaded_at": asset.downloaded_at.isoformat() if asset.downloaded_at else None,
+                    "downloaded_at": asset.downloaded_at.isoformat()
+                    if asset.downloaded_at
+                    else None,
                     "checksum_sha256": asset.checksum_sha256,
                     "size_bytes": asset.size_bytes,
                     "download_status": asset.download_status,
@@ -63,7 +71,13 @@ class ExcelSink(BaseSink):
         )
         if self.path.exists():
             with pd.ExcelWriter(self.path, mode="a", if_sheet_exists="overlay") as writer:
-                df.to_excel(writer, sheet_name="assets", index=False, header=False, startrow=writer.sheets["assets"].max_row)
+                df.to_excel(
+                    writer,
+                    sheet_name="assets",
+                    index=False,
+                    header=False,
+                    startrow=writer.sheets["assets"].max_row,
+                )
         else:
             with pd.ExcelWriter(self.path) as writer:
                 df.to_excel(writer, sheet_name="assets", index=False)

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 import threading
-from dataclasses import dataclass, field
-from typing import Any, Callable, Union
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Union
 
 from qdarchive_seeding.core.entities import RunInfo
 
