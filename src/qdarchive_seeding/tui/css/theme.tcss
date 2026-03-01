@@ -50,3 +50,89 @@
 #monitor-actions Button {
     margin-right: 2;
 }
+
+/* Wizard layout */
+#wizard {
+    height: 100%;
+}
+
+#wizard-nav {
+    width: 20;
+    padding: 1;
+    border-right: solid $accent;
+}
+
+#wizard-nav .step-btn {
+    width: 100%;
+    margin: 0 0 1 0;
+}
+
+#wizard-form {
+    width: 1fr;
+    padding: 1 2;
+    overflow-y: auto;
+}
+
+#wizard-buttons {
+    height: 3;
+    dock: bottom;
+    padding: 0 2;
+}
+
+.hidden {
+    display: none;
+}
+
+/* Editor layout */
+#editor {
+    height: 100%;
+    padding: 1 2;
+}
+
+#editor-text {
+    height: 1fr;
+}
+
+#editor-actions {
+    height: 3;
+    padding: 0 1;
+}
+
+#editor-actions Button {
+    margin-right: 2;
+}
+
+/* Validate layout */
+#validate {
+    padding: 2 4;
+}
+
+/* History layout */
+#history {
+    height: 100%;
+    padding: 1 2;
+}
+
+#history-table {
+    height: 1fr;
+}
+
+/* Browse layout */
+#browse {
+    height: 100%;
+}
+
+#browse-tree {
+    width: 1fr;
+}
+
+#browse-detail {
+    width: 1fr;
+    padding: 1;
+    border-left: solid $accent;
+}
+
+/* Settings layout */
+#settings {
+    padding: 2 4;
+}
