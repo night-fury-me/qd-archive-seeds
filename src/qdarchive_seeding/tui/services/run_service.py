@@ -6,7 +6,6 @@ from typing import Any
 
 from qdarchive_seeding.app.config_loader import load_config
 from qdarchive_seeding.app.container import build_container
-from qdarchive_seeding.app.progress import ProgressEvent
 from qdarchive_seeding.app.runner import ETLRunner
 from qdarchive_seeding.core.entities import RunInfo
 

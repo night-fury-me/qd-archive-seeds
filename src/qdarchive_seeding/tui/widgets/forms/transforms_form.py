@@ -6,7 +6,6 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Checkbox, Static
 
-
 AVAILABLE_TRANSFORMS = [
     ("validate_required_fields", "Validate Required Fields"),
     ("normalize_fields", "Normalize Fields"),
