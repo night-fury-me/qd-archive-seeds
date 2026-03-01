@@ -14,7 +14,7 @@ from qdarchive_seeding.app.policies import IncrementalPolicy, RetryPolicy
 from qdarchive_seeding.app.progress import ProgressBus
 from qdarchive_seeding.core.constants import DEFAULT_CHUNK_SIZE_BYTES
 from qdarchive_seeding.core.interfaces import AuthProvider, Extractor, Policy, Sink, Transform
-from qdarchive_seeding.infra.http.auth import ApiKeyAuth, BearerAuth, NoAuth
+from qdarchive_seeding.infra.http.auth import ApiKeyAuth, BearerAuth, NoAuth, OAuth2ClientCredentials
 from qdarchive_seeding.infra.http.client import HttpClientSettings, HttpxClient
 from qdarchive_seeding.infra.http.rate_limit import RateLimiter
 from qdarchive_seeding.infra.extractors.generic_rest import GenericRestExtractor, GenericRestOptions
@@ -24,6 +24,8 @@ from qdarchive_seeding.infra.extractors.zenodo import ZenodoExtractor, ZenodoOpt
 from qdarchive_seeding.infra.logging.logger import LoggerBundle, configure_logger
 from qdarchive_seeding.infra.sinks.csv_sink import CSVSink
 from qdarchive_seeding.infra.sinks.excel_sink import ExcelSink
+from qdarchive_seeding.infra.sinks.mongodb import MongoDBSink
+from qdarchive_seeding.infra.sinks.mysql import MySQLSink
 from qdarchive_seeding.infra.sinks.sqlite import SQLiteSink
 from qdarchive_seeding.infra.storage.checksums import ChecksumComputer
 from qdarchive_seeding.infra.storage.downloader import Downloader
@@ -136,6 +138,17 @@ def _build_auth(config: PipelineConfig) -> AuthProvider:
         env_key = config.auth.env.get("token", config.auth.env.get("api_key", ""))
         token = os.environ.get(env_key, "")
         return BearerAuth(token=token)
+    if auth_type == "oauth2":
+        token_url = config.auth.env.get("token_url", "")
+        client_id_key = config.auth.env.get("client_id", "")
+        client_secret_key = config.auth.env.get("client_secret", "")
+        scope = config.auth.env.get("scope", "")
+        return OAuth2ClientCredentials(
+            token_url=os.environ.get(token_url, token_url),
+            client_id=os.environ.get(client_id_key, ""),
+            client_secret=os.environ.get(client_secret_key, ""),
+            scope=os.environ.get(scope, scope),
+        )
     return NoAuth()
 
 
@@ -226,5 +239,20 @@ def _build_sink(config: PipelineConfig) -> Sink:
         )
     if sink_type == "excel":
         return ExcelSink(name="excel", path=Path(options.get("path", "./metadata/qdarchive.xlsx")))  # type: ignore[arg-type]
+    if sink_type == "mysql":
+        return MySQLSink(
+            name="mysql",
+            host=str(options.get("host", "localhost")),
+            port=int(options.get("port", 3306)),  # type: ignore[arg-type]
+            database=str(options.get("database", "qdarchive")),
+            user=str(options.get("user", "root")),
+            password=os.environ.get(str(options.get("password_env", "")), ""),
+        )
+    if sink_type == "mongodb":
+        return MongoDBSink(
+            name="mongodb",
+            uri=str(options.get("uri", "mongodb://localhost:27017")),
+            database=str(options.get("database", "qdarchive")),
+        )
     msg = f"Unknown sink type: {sink_type}"
     raise ValueError(msg)
