@@ -1,0 +1,1 @@
+"""Config wizard form widgets."""

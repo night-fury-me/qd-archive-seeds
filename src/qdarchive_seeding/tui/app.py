@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from textual.app import App
 
+from qdarchive_seeding.tui.screens.config_editor import ConfigEditorScreen
+from qdarchive_seeding.tui.screens.config_validate import ConfigValidateScreen
+from qdarchive_seeding.tui.screens.config_wizard import ConfigWizardScreen
 from qdarchive_seeding.tui.screens.home import HomeScreen
 from qdarchive_seeding.tui.screens.run_monitor import RunMonitorScreen
 from qdarchive_seeding.tui.screens.run_select import RunSelectScreen
@@ -18,6 +19,9 @@ class QDArchiveApp(App[None]):
         "home": HomeScreen,
         "run_select": RunSelectScreen,
         "run_monitor": RunMonitorScreen,
+        "config_wizard": ConfigWizardScreen,
+        "config_editor": ConfigEditorScreen,
+        "config_validate": ConfigValidateScreen,
     }
 
     def on_mount(self) -> None:
