@@ -2,21 +2,21 @@ from __future__ import annotations
 
 import logging
 import queue
-from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 
 from rich.logging import RichHandler
 
 
-@dataclass(slots=True)
 class UILogQueueHandler(logging.Handler):
-    log_queue: "queue.Queue[str]"
+    def __init__(self, log_queue: queue.Queue[str]) -> None:
+        super().__init__()
+        self.log_queue = log_queue
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
             msg = self.format(record)
             self.log_queue.put_nowait(msg)
-        except Exception:  # pragma: no cover
+        except Exception:
             self.handleError(record)
 
 
@@ -32,6 +32,5 @@ def build_file_handler(path: str, level: int, max_bytes: int, backups: int) -> l
     return handler
 
 
-def build_queue_handler(log_queue: "queue.Queue[str]") -> UILogQueueHandler:
-    handler = UILogQueueHandler(log_queue=log_queue)
-    return handler
+def build_queue_handler(log_queue: queue.Queue[str]) -> UILogQueueHandler:
+    return UILogQueueHandler(log_queue=log_queue)
