@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from textual.app import App
 
+from qdarchive_seeding.tui.screens.browse_downloads import BrowseDownloadsScreen
 from qdarchive_seeding.tui.screens.config_editor import ConfigEditorScreen
 from qdarchive_seeding.tui.screens.config_validate import ConfigValidateScreen
 from qdarchive_seeding.tui.screens.config_wizard import ConfigWizardScreen
 from qdarchive_seeding.tui.screens.home import HomeScreen
+from qdarchive_seeding.tui.screens.run_history import RunHistoryScreen
 from qdarchive_seeding.tui.screens.run_monitor import RunMonitorScreen
 from qdarchive_seeding.tui.screens.run_select import RunSelectScreen
+from qdarchive_seeding.tui.screens.settings import SettingsScreen
 
 
 class QDArchiveApp(App[None]):
@@ -22,6 +25,9 @@ class QDArchiveApp(App[None]):
         "config_wizard": ConfigWizardScreen,
         "config_editor": ConfigEditorScreen,
         "config_validate": ConfigValidateScreen,
+        "run_history": RunHistoryScreen,
+        "browse_downloads": BrowseDownloadsScreen,
+        "settings": SettingsScreen,
     }
 
     def on_mount(self) -> None:
