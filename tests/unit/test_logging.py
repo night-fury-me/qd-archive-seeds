@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from qdarchive_seeding.app.config_models import LoggingSettings
 from qdarchive_seeding.infra.logging.logger import configure_logger
 
@@ -35,3 +37,18 @@ def test_context_filter_injects_fields() -> None:
     msg = bundle.log_queue.get_nowait()
     assert "run-123" in msg
     assert "pipe-456" in msg
+
+
+def test_file_logger_creates_parent_directory(tmp_path: Path) -> None:
+    log_path = tmp_path / "nested" / "logs" / "qdarchive.log"
+    settings = LoggingSettings(
+        level="INFO",
+        console={"enabled": False},
+        file={"enabled": True, "path": str(log_path)},
+    )
+
+    bundle = configure_logger("test_file_logger", settings)
+    bundle.logger.info("file logging works")
+
+    assert log_path.parent.exists()
+    assert log_path.exists()

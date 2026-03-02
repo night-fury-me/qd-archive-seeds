@@ -8,7 +8,7 @@ from qdarchive_seeding.infra.sinks.csv_sink import CSVSink
 
 
 def test_csv_sink_creates_headers(tmp_path: Path) -> None:
-    sink = CSVSink(
+    CSVSink(
         name="test",
         dataset_path=tmp_path / "ds.csv",
         asset_path=tmp_path / "as.csv",
