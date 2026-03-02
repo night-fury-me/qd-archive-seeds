@@ -120,13 +120,11 @@ def build_container(
     chunk_size = config.storage.chunk_size_bytes or DEFAULT_CHUNK_SIZE_BYTES
     checksum_algo = config.storage.checksum if config.storage.checksum != "none" else "sha256"
     checksum = ChecksumComputer(algo=checksum_algo)
-    download_transport = httpx.HTTPTransport(local_address="0.0.0.0")
     download_headers: dict[str, str] = {"User-Agent": "qdarchive-seeding/0.1"}
     # Apply auth headers to download client so authenticated file access works
     auth_headers, _ = auth.apply({}, {})
     download_headers.update(auth_headers)
     download_client = httpx.Client(
-        transport=download_transport,
         timeout=60.0,
         headers=download_headers,
         follow_redirects=True,
@@ -250,13 +248,11 @@ def _build_extractor(
 def _build_transforms(settings: list[TransformSettings]) -> TransformChain:
     transforms: list[Transform] = []
     for t in settings:
-        transform = _build_single_transform(t.name, t.options)
-        if transform is not None:
-            transforms.append(transform)
+        transforms.append(_build_single_transform(t.name, t.options))
     return TransformChain(transforms=transforms)
 
 
-def _build_single_transform(name: str, options: dict[str, object]) -> Transform | None:
+def _build_single_transform(name: str, options: dict[str, object]) -> Transform:
     if name == "validate_required_fields":
         fields = options.get("required_fields", [])
         if not isinstance(fields, list):
@@ -287,7 +283,8 @@ def _build_single_transform(name: str, options: dict[str, object]) -> Transform 
             categories=[str(c) for c in categories],
             extra_extensions=[str(e) for e in extra],
         )
-    return None
+    msg = f"Unknown transform: {name}"
+    raise ValueError(msg)
 
 
 def _build_sink(config: PipelineConfig) -> Sink:

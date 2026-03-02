@@ -224,7 +224,7 @@ class ETLRunner:
         # --- Complete ---
         ended_at = datetime.now(UTC)
         run_info = RunInfo(
-            run_id=ctx.run_id,  # type: ignore[arg-type]
+            run_id=ctx.run_id,
             pipeline_id=ctx.pipeline_id,
             started_at=started_at,
             ended_at=ended_at,

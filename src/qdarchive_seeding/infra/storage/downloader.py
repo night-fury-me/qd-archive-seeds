@@ -102,14 +102,14 @@ class Downloader:
         asset_url: str,
         total_bytes: int | None,
     ) -> str:
-        hasher = self.checksum
+        hasher = self.checksum.create_hasher()
         written = 0
         cb = self.on_progress
         for chunk in response.iter_bytes(self.chunk_size_bytes):
             fh.write(chunk)
+            hasher.update(chunk)
             written += len(chunk)
             if cb is not None:
                 cb(written, total_bytes)
         fh.flush()
-        fh.seek(0)
-        return hasher.update_from_file(fh, self.chunk_size_bytes)
+        return hasher.hexdigest()

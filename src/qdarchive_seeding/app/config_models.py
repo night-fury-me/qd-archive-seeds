@@ -26,7 +26,7 @@ class PaginationSettings(BaseConfig):
 class SourceSettings(BaseConfig):
     name: str
     type: Literal["rest_api", "html", "static_list"]
-    base_url: str
+    base_url: str = ""
     endpoints: dict[str, str] = Field(default_factory=dict)
     params: dict[str, Any] = Field(default_factory=dict)
     pagination: PaginationSettings | None = None

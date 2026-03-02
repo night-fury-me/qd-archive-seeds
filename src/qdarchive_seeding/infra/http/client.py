@@ -33,9 +33,7 @@ class HttpClientSettings:
 class HttpxClient(HttpClient):
     def __init__(self, settings: HttpClientSettings) -> None:
         self._settings = settings
-        transport = httpx.HTTPTransport(local_address="0.0.0.0")
         self._client = httpx.Client(
-            transport=transport,
             timeout=settings.timeout_seconds,
             headers={"User-Agent": settings.user_agent},
             follow_redirects=True,

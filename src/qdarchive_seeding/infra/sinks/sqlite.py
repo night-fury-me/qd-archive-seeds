@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS datasets (
   year INTEGER,
   owner_name TEXT,
   owner_email TEXT,
-  created_at TEXT
+  created_at TEXT,
+  updated_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS assets (
@@ -34,7 +35,8 @@ CREATE TABLE IF NOT EXISTS assets (
   checksum_sha256 TEXT,
   size_bytes INTEGER,
   download_status TEXT,
-  error_message TEXT
+  error_message TEXT,
+  updated_at TEXT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dataset_unique ON datasets(source_name, source_dataset_id);
@@ -59,8 +61,8 @@ class SQLiteSink(BaseSink):
                 INSERT INTO datasets (
                   id, source_name, source_dataset_id, source_url,
                   title, description, doi, license, year,
-                  owner_name, owner_email, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                  owner_name, owner_email, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                 ON CONFLICT(source_name, source_dataset_id)
                 DO UPDATE SET
                   source_url=excluded.source_url,
@@ -70,7 +72,8 @@ class SQLiteSink(BaseSink):
                   license=excluded.license,
                   year=excluded.year,
                   owner_name=excluded.owner_name,
-                  owner_email=excluded.owner_email
+                  owner_email=excluded.owner_email,
+                  updated_at=datetime('now')
                 """,
                 (
                     dataset_id,
@@ -95,8 +98,9 @@ class SQLiteSink(BaseSink):
                 """
                 INSERT INTO assets (
                   id, dataset_id, asset_url, asset_type, local_dir, local_filename,
-                  downloaded_at, checksum_sha256, size_bytes, download_status, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  downloaded_at, checksum_sha256, size_bytes, download_status, error_message,
+                  updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                 ON CONFLICT(asset_url)
                 DO UPDATE SET
                   asset_type=excluded.asset_type,
@@ -106,7 +110,8 @@ class SQLiteSink(BaseSink):
                   checksum_sha256=excluded.checksum_sha256,
                   size_bytes=excluded.size_bytes,
                   download_status=excluded.download_status,
-                  error_message=excluded.error_message
+                  error_message=excluded.error_message,
+                  updated_at=datetime('now')
                 """,
                 (
                     asset_id,

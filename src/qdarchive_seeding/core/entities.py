@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 
 @dataclass(slots=True)
@@ -38,7 +38,7 @@ class AssetRecord:
 
 @dataclass(slots=True)
 class RunInfo:
-    run_id: UUID = field(default_factory=uuid4)
+    run_id: str = field(default_factory=lambda: str(uuid4()))
     pipeline_id: str | None = None
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     ended_at: datetime | None = None

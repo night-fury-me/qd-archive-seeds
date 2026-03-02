@@ -42,6 +42,10 @@ class CursorPagination:
     cursor_param: str = "cursor"
     next_cursor: str | None = None
 
+    def update_cursor(self, cursor: str | None) -> None:
+        """Set the cursor for the next page. Pass None to signal end of pages."""
+        self.next_cursor = cursor
+
     def iter_params(self, base_params: dict[str, Any]) -> Iterator[dict[str, Any]]:
         cursor = self.next_cursor
         while True:
@@ -49,7 +53,11 @@ class CursorPagination:
             if cursor:
                 params[self.cursor_param] = cursor
             yield params
-            cursor = None
+            # After yielding, check if a new cursor was set via update_cursor()
+            if self.next_cursor is None:
+                break
+            cursor = self.next_cursor
+            self.next_cursor = None
 
 
 PaginationType = Literal["page", "offset", "cursor"]
