@@ -10,31 +10,36 @@ source:
   endpoints:
     search: "/records"
   params:
-    q: "qdp OR qdpx"
-    size: 50
+    q: 'resource_type.type:dataset AND (filetype:qdpx OR filetype:qdc OR filetype:mqda OR filetype:mqbac OR filetype:mqtc OR filetype:mqex OR filetype:mqmtr OR filetype:mx24 OR filetype:mx24bac OR filetype:mc24 OR filetype:mex24 OR filetype:mx22 OR filetype:mex22 OR filetype:mx20 OR filetype:mx18 OR filetype:mx12 OR filetype:mx11 OR filetype:mx5 OR filetype:mx4 OR filetype:m2k OR filetype:nvp OR filetype:nvpx OR filetype:atlasproj OR filetype:hpr7 OR filetype:ppj OR filetype:pprj OR filetype:qlt OR filetype:f4p OR filetype:qpd)'
+    size: 25
   pagination:
     type: "page"
     page_param: "page"
     size_param: "size"
 
 auth:
-  type: "none"
+  type: "bearer"
   env:
-    api_key: "ZENODO_TOKEN"
+    token: "ZENODO_TOKEN"
 
 extractor:
   name: "zenodo_extractor"
   options:
     include_files: true
 
-transforms:
+pre_transforms:
   - name: "validate_required_fields"
     options:
-      required_fields: ["asset_url", "source_url"]
+      required_fields: ["source_url", "has_assets"]
   - name: "normalize_fields"
-  - name: "infer_filetypes"
   - name: "deduplicate_assets"
+  - name: "filter_by_extensions"
+    options:
+      categories: ["analysis_data"]
   - name: "slugify_dataset"
+
+post_transforms:
+  - name: "classify_qda_files"
 
 storage:
   downloads_root: "./downloads"

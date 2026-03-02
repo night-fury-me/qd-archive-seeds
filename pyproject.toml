@@ -27,6 +27,7 @@ dependencies = [
   "typer[all]>=0.12",
   "pymysql>=1.1",
   "pymongo>=4.7",
+  "requests>=2.32.5",
 ]
 
 [project.optional-dependencies]
@@ -58,6 +59,10 @@ python_version = "3.11"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "qdarchive_seeding.tui.*"
+ignore_errors = true
 
 [tool.pytest.ini_options]
 addopts = "-q"
