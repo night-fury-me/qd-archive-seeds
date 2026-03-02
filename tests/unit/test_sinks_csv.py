@@ -3,8 +3,8 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from qdarchive_seeding.core.entities import DatasetRecord
-from qdarchive_seeding.infra.sinks.csv_sink import CSVSink
+from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
+from qdarchive_seeding.infra.sinks.csv_sink import CSVSink, _read_csv
 
 
 def test_csv_sink_creates_headers(tmp_path: Path) -> None:
@@ -63,3 +63,31 @@ def test_csv_sink_upsert_updates_fields(tmp_path: Path) -> None:
         lines = list(csv.reader(f))
     assert len(lines) == 2  # header + 1 row
     assert lines[1][4] == "New Title"  # title column
+
+
+def test_csv_sink_upsert_asset_writes_row(tmp_path: Path) -> None:
+    sink = CSVSink(
+        name="test",
+        dataset_path=tmp_path / "ds.csv",
+        asset_path=tmp_path / "as.csv",
+    )
+    asset = AssetRecord(asset_url="https://example.com/file.pdf", asset_type="document")
+    sink.upsert_asset("ds-1", asset)
+
+    with (tmp_path / "as.csv").open() as f:
+        lines = list(csv.reader(f))
+    assert len(lines) == 2
+    assert lines[1][0] == "https://example.com/file.pdf"
+
+
+def test_read_csv_missing_or_empty(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.csv"
+    headers, rows = _read_csv(missing, "id")
+    assert headers == []
+    assert rows == {}
+
+    empty = tmp_path / "empty.csv"
+    empty.write_text("")
+    headers, rows = _read_csv(empty, "id")
+    assert headers == []
+    assert rows == {}
