@@ -3,6 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from qdarchive_seeding.app.config_models import LoggingSettings
+import logging
+import queue
+
+from qdarchive_seeding.infra.logging.handlers import UILogQueueHandler
 from qdarchive_seeding.infra.logging.logger import configure_logger
 
 
@@ -52,3 +56,38 @@ def test_file_logger_creates_parent_directory(tmp_path: Path) -> None:
 
     assert log_path.parent.exists()
     assert log_path.exists()
+
+
+def test_file_logger_missing_path_raises() -> None:
+    settings = LoggingSettings(
+        level="INFO",
+        console={"enabled": False},
+        file={"enabled": True, "path": None},
+    )
+
+    try:
+        configure_logger("test_file_logger", settings)
+        assert False, "Expected ValueError when file path is missing"
+    except ValueError as exc:
+        assert "no path" in str(exc)
+
+
+def test_queue_handler_handles_formatter_errors() -> None:
+    log_queue: queue.Queue[str] = queue.Queue()
+    handler = UILogQueueHandler(log_queue)
+
+    class BadFormatter(logging.Formatter):
+        def format(self, record: logging.LogRecord) -> str:
+            raise RuntimeError("formatting failed")
+
+    handler.setFormatter(BadFormatter())
+    called: list[bool] = []
+
+    def fake_handle_error(_record: logging.LogRecord) -> None:
+        called.append(True)
+
+    handler.handleError = fake_handle_error  # type: ignore[assignment]
+    record = logging.LogRecord("test", logging.INFO, __file__, 1, "msg", (), None)
+    handler.emit(record)
+
+    assert called == [True]
