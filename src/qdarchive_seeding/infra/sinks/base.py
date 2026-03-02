@@ -15,3 +15,6 @@ class BaseSink(Sink):
 
     def upsert_asset(self, dataset_id: str, asset: AssetRecord) -> None:
         raise NotImplementedError
+
+    def close(self) -> None:
+        return None
