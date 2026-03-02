@@ -488,7 +488,7 @@ The following file extensions are recognized as QDA analysis data by the `classi
 | M9 | Done | CLI (Typer: `seed run`, `validate-config`, `status`, `export`) |
 | M10 | Pending | Complete stub implementations (MySQL, MongoDB, OAuth2) |
 | M11 | Pending | TUI v1 — core screens: Home, RunSelect, RunMonitor, live log viewer |
-| M12 | Pending | TUI v2 — Config Wizard (8 steps), Config Editor, Config Validate |
+| M12 | Pending | TUI v2 — Config Wizard, Config Editor, Config Validate |
 | M13 | Pending | TUI v3 — Run History, Browse Downloads, Settings, reactive state |
 
 ---
@@ -519,4 +519,9 @@ The biggest challenge is **precision vs. recall**: broad keyword searches return
 
 ## License
 
+<!-- 
+
+This project is licensed under the MIT License.
+For details, please refer to the LICENSE file in the repository root.
+-->
 MIT
