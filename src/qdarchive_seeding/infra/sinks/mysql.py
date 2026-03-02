@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pymysql  # type: ignore[import-untyped]
@@ -50,7 +50,7 @@ class MySQLSink(BaseSink):
     port: int = 3306
     database: str = "qdarchive"
     user: str = "root"
-    password: str = ""
+    password: str = field(default="", repr=False)
 
     def __post_init__(self) -> None:
         conn = self._connect()
