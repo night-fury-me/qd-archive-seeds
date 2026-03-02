@@ -10,7 +10,11 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
-from qdarchive_seeding.core.constants import DOWNLOAD_STATUS_FAILED, DOWNLOAD_STATUS_SUCCESS
+from qdarchive_seeding.core.constants import (
+    DOWNLOAD_STATUS_FAILED,
+    DOWNLOAD_STATUS_RESUMABLE,
+    DOWNLOAD_STATUS_SUCCESS,
+)
 from qdarchive_seeding.core.entities import AssetRecord
 from qdarchive_seeding.infra.storage.checksums import ChecksumComputer
 from qdarchive_seeding.infra.storage.downloader import Downloader
@@ -242,3 +246,73 @@ def test_creates_target_directory(tmp_path: Path) -> None:
 
     assert nested.exists()
     assert (nested / "data.csv").exists()
+
+
+def test_resume_with_range_and_416_retries(tmp_path: Path) -> None:
+    target_dir = tmp_path / "downloads"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    part_path = target_dir / "data.csv.part"
+    part_path.write_bytes(b"partial")
+
+    responses = [
+        FakeResponse(data=b"", status_code=416, headers={}),
+        FakeResponse(
+            data=SAMPLE_CONTENT,
+            status_code=200,
+            headers={"content-length": str(len(SAMPLE_CONTENT))},
+        ),
+    ]
+
+    class SequenceClient:
+        def __init__(self, seq: list[FakeResponse]) -> None:
+            self._seq = list(seq)
+            self.headers: list[dict[str, str]] = []
+
+        @contextmanager
+        def stream(
+            self, method: str, url: str, *, headers: dict[str, str] | None = None
+        ) -> Iterator[FakeResponse]:
+            self.headers.append(headers or {})
+            yield self._seq.pop(0)
+
+    client = SequenceClient(responses)
+    dl = Downloader(client=client, checksum=ChecksumComputer(), chunk_size_bytes=16)
+    asset = _make_asset()
+
+    result = dl.download(asset, target_dir)
+
+    assert "Range" in client.headers[0]
+    assert (target_dir / "data.csv").exists()
+    assert result.bytes_downloaded == len(SAMPLE_CONTENT)
+
+
+def test_failure_with_partial_file_sets_resumable(tmp_path: Path) -> None:
+    target_dir = tmp_path / "downloads"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "data.csv.part").write_bytes(b"partial")
+    dl = _make_downloader(status_code=500)
+    asset = _make_asset()
+
+    with pytest.raises(httpx.HTTPStatusError):
+        dl.download(asset, target_dir)
+
+    assert asset.download_status == DOWNLOAD_STATUS_RESUMABLE
+
+
+def test_non_http_error_sets_resumable(tmp_path: Path) -> None:
+    target_dir = tmp_path / "downloads"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "data.csv.part").write_bytes(b"partial")
+
+    class BoomClient:
+        @contextmanager
+        def stream(self, _method: str, _url: str, *, headers: dict[str, str] | None = None):
+            raise RuntimeError("boom")
+
+    dl = Downloader(client=BoomClient(), checksum=ChecksumComputer(), chunk_size_bytes=16)
+    asset = _make_asset()
+
+    with pytest.raises(RuntimeError):
+        dl.download(asset, target_dir)
+
+    assert asset.download_status == DOWNLOAD_STATUS_RESUMABLE
