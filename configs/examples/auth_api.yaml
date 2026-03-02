@@ -25,7 +25,7 @@ auth:
   header_name: "X-API-Key"
 
 extractor:
-  name: "generic_rest"
+  name: "generic_rest_extractor"
   options:
     records_path: "items"
 
