@@ -408,7 +408,7 @@ uv run ruff format .
 uv run mypy src
 
 # Tests with coverage
-uv run pytest --cov=qdarchive_seeding
+uv run pytest --cov=qdarchive_seeding --cov-report=term-missing
 ```
 
 ### Code Conventions
