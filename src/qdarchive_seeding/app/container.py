@@ -8,7 +8,7 @@ from uuid import uuid4
 import httpx
 
 from qdarchive_seeding.app.config_loader import config_hash
-from qdarchive_seeding.app.config_models import PipelineConfig
+from qdarchive_seeding.app.config_models import PipelineConfig, TransformSettings
 from qdarchive_seeding.app.manifests import RunManifestWriter
 from qdarchive_seeding.app.policies import IncrementalPolicy, RetryPolicy
 from qdarchive_seeding.app.progress import ProgressBus
@@ -37,7 +37,9 @@ from qdarchive_seeding.infra.storage.downloader import Downloader
 from qdarchive_seeding.infra.storage.filesystem import FileSystem
 from qdarchive_seeding.infra.storage.paths import PathStrategy
 from qdarchive_seeding.infra.transforms.base import TransformChain
+from qdarchive_seeding.infra.transforms.classify_qda_files import ClassifyQdaFiles
 from qdarchive_seeding.infra.transforms.deduplicate_assets import DeduplicateAssets
+from qdarchive_seeding.infra.transforms.filter_by_extensions import FilterByExtensions
 from qdarchive_seeding.infra.transforms.infer_filetypes import InferFileTypes
 from qdarchive_seeding.infra.transforms.normalize_fields import NormalizeFields
 from qdarchive_seeding.infra.transforms.slugify_dataset import SlugifyDataset
@@ -53,7 +55,8 @@ class Container:
     http_client: HttpxClient
     rate_limiter: RateLimiter
     extractor: Extractor
-    transform_chain: TransformChain
+    pre_transform_chain: TransformChain
+    post_transform_chain: TransformChain
     downloader: Downloader
     sink: Sink
     policy: Policy
@@ -62,6 +65,24 @@ class Container:
     path_strategy: PathStrategy
     filesystem: FileSystem
     config_hash: str
+
+
+def _load_dotenv(path: Path = Path(".env")) -> None:
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+
+        cleaned_value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, cleaned_value)
 
 
 def build_container(
@@ -73,6 +94,7 @@ def build_container(
     runs_dir: Path = Path("runs"),
     enable_log_queue: bool = False,
 ) -> Container:
+    _load_dotenv()
     run_id = run_id or str(uuid4())
 
     logger_bundle = configure_logger(
@@ -88,12 +110,18 @@ def build_container(
     http_client = HttpxClient(HttpClientSettings())
     rate_limiter = RateLimiter(max_per_second=5.0)
     extractor = _build_extractor(config, http_client, auth)
-    transform_chain = _build_transforms(config)
+    pre_transform_chain = _build_transforms(config.pre_transforms)
+    post_transform_chain = _build_transforms(config.post_transforms)
 
     chunk_size = config.storage.chunk_size_bytes or DEFAULT_CHUNK_SIZE_BYTES
     checksum_algo = config.storage.checksum if config.storage.checksum != "none" else "sha256"
     checksum = ChecksumComputer(algo=checksum_algo)
-    download_client = httpx.Client(timeout=60.0, headers={"User-Agent": "qdarchive-seeding/0.1"})
+    download_transport = httpx.HTTPTransport(local_address="0.0.0.0")
+    download_client = httpx.Client(
+        transport=download_transport,
+        timeout=60.0,
+        headers={"User-Agent": "qdarchive-seeding/0.1"},
+    )
     downloader = Downloader(client=download_client, checksum=checksum, chunk_size_bytes=chunk_size)
 
     sink = _build_sink(config)
@@ -117,7 +145,8 @@ def build_container(
         http_client=http_client,
         rate_limiter=rate_limiter,
         extractor=extractor,
-        transform_chain=transform_chain,
+        pre_transform_chain=pre_transform_chain,
+        post_transform_chain=post_transform_chain,
         downloader=downloader,
         sink=sink,
         policy=policy,
@@ -201,9 +230,9 @@ def _build_extractor(
     raise ValueError(msg)
 
 
-def _build_transforms(config: PipelineConfig) -> TransformChain:
+def _build_transforms(settings: list[TransformSettings]) -> TransformChain:
     transforms: list[Transform] = []
-    for t in config.transforms:
+    for t in settings:
         transform = _build_single_transform(t.name, t.options)
         if transform is not None:
             transforms.append(transform)
@@ -227,6 +256,20 @@ def _build_single_transform(name: str, options: dict[str, object]) -> Transform 
         return DeduplicateAssets(name=name)
     if name == "slugify_dataset":
         return SlugifyDataset(name=name)
+    if name == "classify_qda_files":
+        return ClassifyQdaFiles(name=name)
+    if name == "filter_by_extensions":
+        categories = options.get("categories", ["analysis_data"])
+        if not isinstance(categories, list):
+            categories = ["analysis_data"]
+        extra = options.get("extra_extensions", [])
+        if not isinstance(extra, list):
+            extra = []
+        return FilterByExtensions(
+            name=name,
+            categories=[str(c) for c in categories],
+            extra_extensions=[str(e) for e in extra],
+        )
     return None
 
 
@@ -236,21 +279,26 @@ def _build_sink(config: PipelineConfig) -> Sink:
 
     if sink_type == "sqlite":
         return SQLiteSink(
-            name="sqlite", path=Path(options.get("path", "./metadata/qdarchive.sqlite"))
-        )  # type: ignore[arg-type]
+            name="sqlite",
+            path=Path(str(options.get("path", "./metadata/qdarchive.sqlite"))),
+        )
     if sink_type == "csv":
         return CSVSink(
             name="csv",
-            dataset_path=Path(options.get("dataset_path", "./metadata/datasets.csv")),  # type: ignore[arg-type]
-            asset_path=Path(options.get("asset_path", "./metadata/assets.csv")),  # type: ignore[arg-type]
+            dataset_path=Path(str(options.get("dataset_path", "./metadata/datasets.csv"))),
+            asset_path=Path(str(options.get("asset_path", "./metadata/assets.csv"))),
         )
     if sink_type == "excel":
-        return ExcelSink(name="excel", path=Path(options.get("path", "./metadata/qdarchive.xlsx")))  # type: ignore[arg-type]
+        return ExcelSink(
+            name="excel",
+            path=Path(str(options.get("path", "./metadata/qdarchive.xlsx"))),
+        )
     if sink_type == "mysql":
+        port_val = options.get("port", 3306)
         return MySQLSink(
             name="mysql",
             host=str(options.get("host", "localhost")),
-            port=int(options.get("port", 3306)),  # type: ignore[arg-type]
+            port=int(port_val) if port_val is not None else 3306,
             database=str(options.get("database", "qdarchive")),
             user=str(options.get("user", "root")),
             password=os.environ.get(str(options.get("password_env", "")), ""),
