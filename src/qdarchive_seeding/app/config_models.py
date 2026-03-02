@@ -23,6 +23,14 @@ class PaginationSettings(BaseConfig):
     offset_param: str | None = None
 
 
+class HttpSettings(BaseConfig):
+    timeout_seconds: float = 30.0
+    max_retries: int = 3
+    backoff_min: float = 0.5
+    backoff_max: float = 6.0
+    rate_limit_per_second: float = 5.0
+
+
 class SourceSettings(BaseConfig):
     name: str
     type: Literal["rest_api", "html", "static_list"]
@@ -86,6 +94,7 @@ class PipelineConfig(BaseConfig):
     post_transforms: list[TransformSettings] = Field(default_factory=list)
     storage: StorageSettings
     sink: SinkSettings
+    http: HttpSettings = Field(default_factory=HttpSettings)
     logging: LoggingSettings
 
     @model_validator(mode="before")

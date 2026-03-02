@@ -56,12 +56,29 @@ def _load_dotenv(path: Path = Path(".env")) -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
 
+        # Strip optional 'export ' prefix
+        if line.startswith("export "):
+            line = line[7:]
+
         key, value = line.split("=", 1)
         key = key.strip()
         if not key:
             continue
 
-        cleaned_value = value.strip().strip('"').strip("'")
+        # Strip inline comments (only outside quotes)
+        value = value.strip()
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            # Quoted value — strip the quotes but preserve inner content
+            cleaned_value = value[1:-1]
+        else:
+            # Unquoted — strip inline comments
+            comment_idx = value.find(" #")
+            if comment_idx != -1:
+                value = value[:comment_idx]
+            cleaned_value = value.strip()
+
         os.environ.setdefault(key, cleaned_value)
 
 
@@ -91,16 +108,21 @@ def build_container(
     )
 
     auth = _build_auth(config, registries)
-    http_client = HttpxClient(HttpClientSettings())
-    rate_limiter = RateLimiter(max_per_second=5.0)
+    http_settings = HttpClientSettings(
+        timeout_seconds=config.http.timeout_seconds,
+        max_retries=config.http.max_retries,
+        backoff_min=config.http.backoff_min,
+        backoff_max=config.http.backoff_max,
+    )
+    http_client = HttpxClient(http_settings)
+    rate_limiter = RateLimiter(max_per_second=config.http.rate_limit_per_second)
     extractor = _build_extractor(config, http_client, auth, registries)
     pre_transform_chain = _build_transforms(config.pre_transforms, registries)
     post_transform_chain = _build_transforms(config.post_transforms, registries)
 
     chunk_size = config.storage.chunk_size_bytes or DEFAULT_CHUNK_SIZE_BYTES
-    checksum_algo = config.storage.checksum if config.storage.checksum != "none" else "sha256"
     checksum_factory = registries.checksums.get("default")
-    checksum = checksum_factory(checksum_algo)
+    checksum = checksum_factory(config.storage.checksum)
     download_headers: dict[str, str] = {"User-Agent": "qdarchive-seeding/0.1"}
     # Apply auth headers to download client so authenticated file access works
     auth_headers, _ = auth.apply({}, {})
