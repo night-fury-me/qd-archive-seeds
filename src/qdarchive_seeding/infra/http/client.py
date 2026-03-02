@@ -6,12 +6,19 @@ from typing import Any
 import httpx
 from tenacity import (
     retry,
-    retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential_jitter,
 )
 
 from qdarchive_seeding.core.interfaces import HttpClient
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Retry on connection errors and 5xx server errors."""
+    if isinstance(exc, httpx.RequestError):
+        return True
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500
 
 
 @dataclass(slots=True)
@@ -26,8 +33,11 @@ class HttpClientSettings:
 class HttpxClient(HttpClient):
     def __init__(self, settings: HttpClientSettings) -> None:
         self._settings = settings
+        transport = httpx.HTTPTransport(local_address="0.0.0.0")
         self._client = httpx.Client(
-            timeout=settings.timeout_seconds, headers={"User-Agent": settings.user_agent}
+            transport=transport,
+            timeout=settings.timeout_seconds,
+            headers={"User-Agent": settings.user_agent},
         )
 
     def get(
@@ -39,15 +49,17 @@ class HttpxClient(HttpClient):
         timeout: float | None = None,
     ) -> httpx.Response:
         @retry(
-            retry=retry_if_exception_type(httpx.RequestError),
+            retry=retry_if_exception(_is_retryable),
             stop=stop_after_attempt(self._settings.max_retries),
             wait=wait_exponential_jitter(
-                min=self._settings.backoff_min, max=self._settings.backoff_max
+                initial=self._settings.backoff_min, max=self._settings.backoff_max
             ),
         )
         def _request() -> httpx.Response:
             combined_headers = {**self._client.headers, **headers}
-            return self._client.get(url, headers=combined_headers, params=params, timeout=timeout)
+            resp = self._client.get(url, headers=combined_headers, params=params, timeout=timeout)
+            resp.raise_for_status()
+            return resp
 
         return _request()
 

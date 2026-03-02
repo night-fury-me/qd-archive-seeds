@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 
 from qdarchive_seeding.core.entities import DatasetRecord
 from qdarchive_seeding.core.interfaces import Transform
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -27,6 +30,12 @@ class TransformChain:
                 if current is None:
                     break
                 current = transform.apply(current)
+                if current is None:
+                    logger.debug(
+                        "Record %s dropped by transform '%s'",
+                        record.source_dataset_id or record.title or "unknown",
+                        transform.name,
+                    )
             if current is not None:
                 result.append(current)
         return result

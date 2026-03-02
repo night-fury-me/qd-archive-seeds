@@ -17,7 +17,7 @@ class ContextFormatter(logging.Formatter):
         self.pipeline_id = pipeline_id
 
     def format(self, record: logging.LogRecord) -> str:
-        record.run_id = getattr(record, "run_id", None) or self.run_id  # type: ignore[attr-defined]
-        record.pipeline_id = getattr(record, "pipeline_id", None) or self.pipeline_id  # type: ignore[attr-defined]
+        record.run_id = getattr(record, "run_id", None) or self.run_id
+        record.pipeline_id = getattr(record, "pipeline_id", None) or self.pipeline_id
         record.asctime = datetime.fromtimestamp(record.created, tz=UTC).isoformat()
         return super().format(record)

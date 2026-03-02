@@ -34,35 +34,50 @@ def configure_logger(
     logger.propagate = False
     logger.handlers.clear()
 
-    formatter = ContextFormatter(
-        fmt="%(asctime)s | %(levelname)s | %(component)s | run=%(run_id)s | pipeline=%(pipeline_id)s | %(message)s",
-        run_id=run_id,
-        pipeline_id=pipeline_id,
+    console_fmt = "%(asctime)s | %(levelname)s | %(component)s | %(message)s"
+    file_fmt = (
+        "%(asctime)s | %(levelname)s | %(component)s"
+        " | run=%(run_id)s | pipeline=%(pipeline_id)s | %(message)s"
     )
 
     context_filter = ContextFilter(run_id=run_id, pipeline_id=pipeline_id, component=component)
 
     if settings.console.enabled:
+        console_formatter = ContextFormatter(
+            fmt=console_fmt,
+            run_id=run_id,
+            pipeline_id=pipeline_id,
+        )
         console_handler = build_console_handler(logging.getLevelName(settings.level))
-        console_handler.setFormatter(formatter)
+        console_handler.setFormatter(console_formatter)
         console_handler.addFilter(context_filter)
         logger.addHandler(console_handler)
 
     if settings.file.enabled:
         if not settings.file.path:
             raise ValueError("File logging enabled but no path provided")
+        file_formatter = ContextFormatter(
+            fmt=file_fmt,
+            run_id=run_id,
+            pipeline_id=pipeline_id,
+        )
         file_handler = build_file_handler(
             settings.file.path, logging.getLevelName(settings.level), 5_000_000, 3
         )
-        file_handler.setFormatter(formatter)
+        file_handler.setFormatter(file_formatter)
         file_handler.addFilter(context_filter)
         logger.addHandler(file_handler)
 
-    log_queue = None
+    log_queue: queue.Queue[str] | None = None
     if enable_queue:
         log_queue = queue.Queue(maxsize=10_000)
+        queue_formatter = ContextFormatter(
+            fmt=file_fmt,
+            run_id=run_id,
+            pipeline_id=pipeline_id,
+        )
         queue_handler = build_queue_handler(log_queue)
-        queue_handler.setFormatter(formatter)
+        queue_handler.setFormatter(queue_formatter)
         queue_handler.addFilter(context_filter)
         logger.addHandler(queue_handler)
 
