@@ -39,3 +39,15 @@ def test_list_runs_sorted(tmp_path: Path) -> None:
     runs = writer.list_runs()
     assert len(runs) == 2
     assert runs[0]["run_id"] == "run-b"
+
+
+def test_list_runs_skips_invalid_json(tmp_path: Path) -> None:
+    writer = RunManifestWriter(runs_dir=tmp_path / "runs")
+    writer.write(_make_run_info("run-good"))
+    bad = (tmp_path / "runs" / "bad.json")
+    bad.write_text("{bad-json")
+
+    runs = writer.list_runs()
+
+    assert len(runs) == 1
+    assert runs[0]["run_id"] == "run-good"
