@@ -48,13 +48,15 @@ class HtmlScraperExtractor:
             if self.options.asset_selector:
                 for asset_node in item.select(self.options.asset_selector):
                     href = asset_node.get("href")
-                    if href:
+                    if isinstance(href, str):
                         asset_links.append(href)
 
+            link_href = link_node.get("href")
+            source_url = link_href if isinstance(link_href, str) else url
             record = DatasetRecord(
                 source_name=ctx.config.source.name,
                 source_dataset_id=None,
-                source_url=link_node.get("href") or url,
+                source_url=source_url,
                 title=title_node.get_text(strip=True),
                 description=description,
                 assets=[AssetRecord(asset_url=link) for link in asset_links],

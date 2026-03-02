@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import queue
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from rich.logging import RichHandler
 
@@ -27,7 +28,9 @@ def build_console_handler(level: int) -> logging.Handler:
 
 
 def build_file_handler(path: str, level: int, max_bytes: int, backups: int) -> logging.Handler:
-    handler = RotatingFileHandler(path, maxBytes=max_bytes, backupCount=backups)
+    log_path = Path(path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    handler = RotatingFileHandler(log_path, maxBytes=max_bytes, backupCount=backups)
     handler.setLevel(level)
     return handler
 

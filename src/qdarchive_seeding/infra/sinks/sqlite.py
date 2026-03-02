@@ -57,7 +57,8 @@ class SQLiteSink(BaseSink):
             conn.execute(
                 """
                 INSERT INTO datasets (
-                  id, source_name, source_dataset_id, source_url, title, description, doi, license, year,
+                  id, source_name, source_dataset_id, source_url,
+                  title, description, doi, license, year,
                   owner_name, owner_email, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                 ON CONFLICT(source_name, source_dataset_id)

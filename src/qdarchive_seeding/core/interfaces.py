@@ -3,7 +3,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from pathlib import Path
-from threading import Event
 from typing import TYPE_CHECKING, Any, Protocol
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
@@ -51,7 +50,7 @@ class RunContext(Protocol):
     run_id: str
     pipeline_id: str
     config: PipelineConfig
-    cancelled: Event
+    cancelled: bool
     metadata: dict[str, Any]
 
 

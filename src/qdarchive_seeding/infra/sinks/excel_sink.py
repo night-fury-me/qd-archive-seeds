@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
 from qdarchive_seeding.infra.sinks.base import BaseSink
