@@ -63,8 +63,7 @@ class GenericRestExtractor:
 
         total_yielded = 0
         effective_max_pages = self.options.max_pages or self.options._safety_max_pages
-        page_count = 0
-        for page_params in paginator.iter_params(params):
+        for page_count, page_params in enumerate(paginator.iter_params(params)):
             if page_count >= effective_max_pages:
                 logger.warning("Reached max pages limit (%d), stopping", effective_max_pages)
                 break
@@ -99,4 +98,3 @@ class GenericRestExtractor:
                     ],
                     raw=item,
                 )
-            page_count += 1
