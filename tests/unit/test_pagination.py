@@ -31,9 +31,40 @@ def test_offset_pagination_sequence() -> None:
     assert pages[2]["offset"] == 100
 
 
+def test_offset_pagination_without_size_param() -> None:
+    pag = OffsetPagination(offset_param="offset", size_param="limit")
+    pages = []
+    for i, params in enumerate(pag.iter_params({})):
+        pages.append(params)
+        if i >= 2:
+            break
+    assert pages[0]["offset"] == 0
+    assert pages[1]["offset"] == 1
+    assert pages[2]["offset"] == 2
+
+
 def test_cursor_pagination_first_page_no_cursor() -> None:
     pag = CursorPagination(cursor_param="cursor")
     params_iter = pag.iter_params({"q": "test"})
     first = next(params_iter)
     assert "cursor" not in first
     assert first["q"] == "test"
+
+
+def test_cursor_pagination_updates_cursor() -> None:
+    pag = CursorPagination(cursor_param="cursor")
+    params_iter = pag.iter_params({"q": "test"})
+
+    first = next(params_iter)
+    assert "cursor" not in first
+
+    pag.update_cursor("abc")
+    second = next(params_iter)
+    assert second["cursor"] == "abc"
+
+    pag.update_cursor(None)
+    try:
+        next(params_iter)
+        assert False, "Iterator should stop when cursor is None"
+    except StopIteration:
+        assert True
