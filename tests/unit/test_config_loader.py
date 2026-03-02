@@ -28,6 +28,13 @@ def test_load_invalid_yaml(tmp_path: Path) -> None:
         load_config(bad)
 
 
+def test_load_root_not_mapping(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("- item1\n- item2\n")
+    with pytest.raises(ConfigError, match="Config root must be a mapping"):
+        load_config(bad)
+
+
 def test_load_extra_field_rejected(tmp_path: Path, minimal_config_dict: dict[str, Any]) -> None:
     minimal_config_dict["pipeline"]["unknown_field"] = "bad"
     path = tmp_path / "extra.yaml"
