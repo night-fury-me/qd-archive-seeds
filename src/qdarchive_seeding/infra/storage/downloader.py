@@ -39,9 +39,7 @@ class Downloader:
 
     def download(self, asset: AssetRecord, target_dir: Path) -> DownloadResult:
         target_dir.mkdir(parents=True, exist_ok=True)
-        filename = safe_filename(
-            asset.local_filename or Path(asset.asset_url).name or "file"
-        )
+        filename = safe_filename(asset.local_filename or Path(asset.asset_url).name or "file")
         temp_path = target_dir / f"{filename}.part"
         final_path = target_dir / filename
 
