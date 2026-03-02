@@ -23,7 +23,7 @@ from qdarchive_seeding.core.constants import (
     DOWNLOAD_STATUS_SKIPPED,
     DOWNLOAD_STATUS_SUCCESS,
 )
-from qdarchive_seeding.core.entities import DatasetRecord, RunInfo
+from qdarchive_seeding.core.entities import RunInfo
 
 logger = logging.getLogger(__name__)
 
@@ -99,9 +99,7 @@ class ETLRunner:
                 result = c.pre_transform_chain.run([raw_record])
                 if not result:
                     if extracted % 50 == 0:
-                        bus.publish(
-                            CountersUpdated(extracted=extracted, transformed=transformed)
-                        )
+                        bus.publish(CountersUpdated(extracted=extracted, transformed=transformed))
                     continue
 
                 record = result[0]
@@ -124,9 +122,7 @@ class ETLRunner:
                 # --- Download assets immediately ---
                 c.rate_limiter.wait()
 
-                dataset_slug = (
-                    (record.raw.get("dataset_slug") if record.raw else None) or "dataset"
-                )
+                dataset_slug = (record.raw.get("dataset_slug") if record.raw else None) or "dataset"
                 target_dir = c.path_strategy.dataset_dir(
                     downloads_root,
                     source_name=record.source_name,
@@ -151,8 +147,7 @@ class ETLRunner:
                         bus.publish(
                             AssetDownloadUpdate(
                                 asset_url=asset.asset_url,
-                                status=dl_result.asset.download_status
-                                or DOWNLOAD_STATUS_SUCCESS,
+                                status=dl_result.asset.download_status or DOWNLOAD_STATUS_SUCCESS,
                                 bytes_downloaded=dl_result.bytes_downloaded,
                             )
                         )
@@ -189,9 +184,7 @@ class ETLRunner:
                         c.sink.upsert_asset(dataset_id, asset)
                     loaded += 1
                 except Exception as exc:
-                    log.error(
-                        "Sink error for record %s: %s", record.source_dataset_id, exc
-                    )
+                    log.error("Sink error for record %s: %s", record.source_dataset_id, exc)
                     bus.publish(
                         ErrorEvent(
                             component="sink",
@@ -223,9 +216,7 @@ class ETLRunner:
         except Exception as exc:
             log.error("Extraction failed: %s", exc)
             bus.publish(
-                ErrorEvent(
-                    component="extractor", error_type=type(exc).__name__, message=str(exc)
-                )
+                ErrorEvent(component="extractor", error_type=type(exc).__name__, message=str(exc))
             )
 
         log.info("Extracted %d raw, %d passed filters", extracted, transformed)

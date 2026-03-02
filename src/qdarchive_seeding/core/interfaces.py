@@ -16,6 +16,8 @@ class Extractor(Protocol):
 
 
 class Transform(Protocol):
+    name: str
+
     def apply(self, record: DatasetRecord) -> DatasetRecord | None: ...
 
 

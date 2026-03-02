@@ -6,7 +6,7 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from qdarchive_seeding.app.config_loader import load_config
@@ -39,8 +39,8 @@ class CliProgressDisplay:
 
     def __init__(self) -> None:
         self._progress: Progress | None = None
-        self._overall_id: object | None = None
-        self._file_id: object | None = None
+        self._overall_id: TaskID | None = None
+        self._file_id: TaskID | None = None
         self._total_assets: int = 0
         self._completed_assets: int = 0
 
@@ -76,7 +76,8 @@ class CliProgressDisplay:
             self._total_assets = event.total_assets
             if self._progress is not None and self._overall_id is not None:
                 self._progress.update(
-                    self._overall_id, total=self._total_assets  # type: ignore[arg-type]
+                    self._overall_id,
+                    total=self._total_assets,
                 )
 
     def _on_stream_progress(self, event: AssetDownloadProgress) -> None:
@@ -84,13 +85,13 @@ class CliProgressDisplay:
             return
         if event.total_bytes is not None:
             self._progress.update(
-                self._file_id,  # type: ignore[arg-type]
+                self._file_id,
                 completed=event.bytes_downloaded,
                 total=event.total_bytes,
             )
         else:
             self._progress.update(
-                self._file_id,  # type: ignore[arg-type]
+                self._file_id,
                 completed=event.bytes_downloaded,
             )
 
@@ -98,11 +99,12 @@ class CliProgressDisplay:
         self._completed_assets += 1
         if self._progress is not None and self._overall_id is not None:
             self._progress.update(
-                self._overall_id, completed=self._completed_assets  # type: ignore[arg-type]
+                self._overall_id,
+                completed=self._completed_assets,
             )
         # Reset file bar for next asset
         if self._progress is not None and self._file_id is not None:
-            self._progress.reset(self._file_id)  # type: ignore[arg-type]
+            self._progress.reset(self._file_id)
 
     def _start_progress(self, label: str) -> None:
         self._stop_progress()
@@ -114,9 +116,7 @@ class CliProgressDisplay:
             TimeElapsedColumn(),
             console=console,
         )
-        self._overall_id = self._progress.add_task(
-            label, total=self._total_assets or None
-        )
+        self._overall_id = self._progress.add_task(label, total=self._total_assets or None)
         self._file_id = self._progress.add_task("Current file", total=None)
         self._progress.start()
 
