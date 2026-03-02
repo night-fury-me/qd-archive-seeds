@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class BaseConfig(BaseModel):
@@ -82,7 +82,19 @@ class PipelineConfig(BaseConfig):
     source: SourceSettings
     auth: AuthSettings
     extractor: ExtractorSettings
-    transforms: list[TransformSettings] = Field(default_factory=list)
+    pre_transforms: list[TransformSettings] = Field(default_factory=list)
+    post_transforms: list[TransformSettings] = Field(default_factory=list)
     storage: StorageSettings
     sink: SinkSettings
     logging: LoggingSettings
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_transforms(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Auto-migrate old ``transforms:`` key to ``pre_transforms:``."""
+        if isinstance(data, dict) and "transforms" in data:
+            if "pre_transforms" not in data:
+                data["pre_transforms"] = data.pop("transforms")
+            else:
+                data.pop("transforms")
+        return data

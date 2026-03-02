@@ -19,12 +19,10 @@ class IncrementalPolicy(Policy):
     def should_skip_asset(self, asset: AssetRecord) -> bool:
         if self.force:
             return False
-        if (
+        return (
             self.run_mode == RUN_MODE_INCREMENTAL
             and asset.download_status == DOWNLOAD_STATUS_SUCCESS
-        ):
-            return True
-        return False
+        )
 
     def should_retry(self, error: Exception, attempt: int) -> bool:
         return False
@@ -40,9 +38,7 @@ class RetryPolicy(Policy):
             return True
         if asset.download_status == DOWNLOAD_STATUS_FAILED and self.retry_failed:
             return False
-        if asset.download_status == DOWNLOAD_STATUS_FAILED:
-            return True
-        return False
+        return asset.download_status == DOWNLOAD_STATUS_FAILED
 
     def should_retry(self, error: Exception, attempt: int) -> bool:
         return attempt < self.max_attempts

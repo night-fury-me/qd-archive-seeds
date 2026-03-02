@@ -6,11 +6,14 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from qdarchive_seeding.app.config_loader import load_config
 from qdarchive_seeding.app.container import build_container
 from qdarchive_seeding.app.progress import (
+    AssetDownloadProgress,
+    AssetDownloadUpdate,
     Completed,
     CountersUpdated,
     ErrorEvent,
@@ -22,6 +25,107 @@ from qdarchive_seeding.core.exceptions import ConfigError
 
 seed_app = typer.Typer(help="Seed pipeline commands.")
 console = Console()
+
+_STAGE_LABELS: dict[str, str] = {
+    "extract": "Extracting records",
+    "pre_transform": "Running pre-transforms",
+    "download": "Downloading & loading",
+    "done": "Done",
+}
+
+
+class CliProgressDisplay:
+    """Two-bar progress display: an overall asset bar and a per-file byte bar."""
+
+    def __init__(self) -> None:
+        self._progress: Progress | None = None
+        self._overall_id: object | None = None
+        self._file_id: object | None = None
+        self._total_assets: int = 0
+        self._completed_assets: int = 0
+
+    def __call__(self, event: ProgressEvent) -> None:
+        if isinstance(event, StageChanged):
+            self._on_stage(event)
+        elif isinstance(event, CountersUpdated):
+            self._on_counters(event)
+        elif isinstance(event, AssetDownloadProgress):
+            self._on_stream_progress(event)
+        elif isinstance(event, AssetDownloadUpdate):
+            self._on_asset_download(event)
+        elif isinstance(event, ErrorEvent):
+            out = self._progress.console if self._progress else console
+            out.print(f"[red]Error ({event.component}):[/red] {event.message}")
+        elif isinstance(event, Completed):
+            self._stop_progress()
+            _print_summary(event)
+
+    def _on_stage(self, event: StageChanged) -> None:
+        label = _STAGE_LABELS.get(event.stage, event.stage)
+        if event.stage == "download":
+            self._start_progress(label)
+        elif event.stage == "done":
+            self._stop_progress()
+            console.print(f"[bold green]{label}[/bold green]")
+        else:
+            self._stop_progress()
+            console.print(f"[bold blue]{label}[/bold blue]")
+
+    def _on_counters(self, event: CountersUpdated) -> None:
+        if event.total_assets > 0 and self._total_assets == 0:
+            self._total_assets = event.total_assets
+            if self._progress is not None and self._overall_id is not None:
+                self._progress.update(
+                    self._overall_id, total=self._total_assets  # type: ignore[arg-type]
+                )
+
+    def _on_stream_progress(self, event: AssetDownloadProgress) -> None:
+        if self._progress is None or self._file_id is None:
+            return
+        if event.total_bytes is not None:
+            self._progress.update(
+                self._file_id,  # type: ignore[arg-type]
+                completed=event.bytes_downloaded,
+                total=event.total_bytes,
+            )
+        else:
+            self._progress.update(
+                self._file_id,  # type: ignore[arg-type]
+                completed=event.bytes_downloaded,
+            )
+
+    def _on_asset_download(self, _event: AssetDownloadUpdate) -> None:
+        self._completed_assets += 1
+        if self._progress is not None and self._overall_id is not None:
+            self._progress.update(
+                self._overall_id, completed=self._completed_assets  # type: ignore[arg-type]
+            )
+        # Reset file bar for next asset
+        if self._progress is not None and self._file_id is not None:
+            self._progress.reset(self._file_id)  # type: ignore[arg-type]
+
+    def _start_progress(self, label: str) -> None:
+        self._stop_progress()
+        self._progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=console,
+        )
+        self._overall_id = self._progress.add_task(
+            label, total=self._total_assets or None
+        )
+        self._file_id = self._progress.add_task("Current file", total=None)
+        self._progress.start()
+
+    def _stop_progress(self) -> None:
+        if self._progress is not None:
+            self._progress.stop()
+            self._progress = None
+            self._overall_id = None
+            self._file_id = None
 
 
 @seed_app.command("run")
@@ -46,20 +150,8 @@ def run_pipeline(
 
     container = build_container(cfg, force=force, retry_failed=retry_failed)
 
-    def _on_event(event: ProgressEvent) -> None:
-        if isinstance(event, StageChanged):
-            console.print(f"[bold blue]Stage:[/bold blue] {event.stage}")
-        elif isinstance(event, CountersUpdated):
-            console.print(
-                f"  extracted={event.extracted} transformed={event.transformed} "
-                f"downloaded={event.downloaded} failed={event.failed} skipped={event.skipped}"
-            )
-        elif isinstance(event, ErrorEvent):
-            console.print(f"[red]Error ({event.component}):[/red] {event.message}")
-        elif isinstance(event, Completed):
-            _print_summary(event)
-
-    container.progress_bus.subscribe(_on_event)
+    display = CliProgressDisplay()
+    container.progress_bus.subscribe(display)
 
     runner = ETLRunner(container)
     runner.run(dry_run=dry_run)
@@ -73,7 +165,8 @@ def _print_summary(event: Completed) -> None:
     for key, value in info.counts.items():
         table.add_row(key, str(value))
     table.add_row("run_id", str(info.run_id))
-    table.add_row("duration", str((info.ended_at - info.started_at) if info.ended_at else "n/a"))  # type: ignore[arg-type]
+    duration = str(info.ended_at - info.started_at) if info.ended_at else "n/a"
+    table.add_row("duration", duration)
     console.print(table)
     if info.failures:
         console.print(f"[yellow]{len(info.failures)} failures recorded.[/yellow]")
@@ -139,7 +232,7 @@ def export_data(
         console.print(f"[yellow]Database not found:[/yellow] {db}")
         raise typer.Exit(code=1)
 
-    import pandas as pd
+    import pandas as pd  # type: ignore[import-untyped]  # no stubs available
 
     conn = sqlite3.connect(db)
     try:

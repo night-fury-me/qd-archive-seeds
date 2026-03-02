@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import logging
-import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Union
 
 from qdarchive_seeding.core.entities import RunInfo
 
@@ -23,6 +22,7 @@ class CountersUpdated:
     downloaded: int = 0
     failed: int = 0
     skipped: int = 0
+    total_assets: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +30,15 @@ class AssetDownloadUpdate:
     asset_url: str
     status: str
     bytes_downloaded: int = 0
+    total_bytes: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AssetDownloadProgress:
+    """Emitted during streaming to report byte-level progress for the current asset."""
+
+    asset_url: str
+    bytes_downloaded: int
     total_bytes: int | None = None
 
 
@@ -46,7 +55,14 @@ class Completed:
     run_info: RunInfo
 
 
-ProgressEvent = Union[StageChanged, CountersUpdated, AssetDownloadUpdate, ErrorEvent, Completed]
+ProgressEvent = (
+    StageChanged
+    | CountersUpdated
+    | AssetDownloadUpdate
+    | AssetDownloadProgress
+    | ErrorEvent
+    | Completed
+)
 
 Callback = Callable[[ProgressEvent], None]
 
@@ -54,26 +70,19 @@ Callback = Callable[[ProgressEvent], None]
 class ProgressBus:
     def __init__(self) -> None:
         self._subscribers: list[Callback] = []
-        self._lock = threading.Lock()
 
     def publish(self, event: ProgressEvent) -> None:
-        with self._lock:
-            subscribers = list(self._subscribers)
-        for callback in subscribers:
+        for callback in self._subscribers:
             try:
                 callback(event)
             except Exception:
                 logger.debug("Subscriber exception ignored", exc_info=True)
 
     def subscribe(self, callback: Callback) -> Callable[[], None]:
-        with self._lock:
-            self._subscribers.append(callback)
+        self._subscribers.append(callback)
 
         def unsubscribe() -> None:
-            with self._lock:
-                try:
-                    self._subscribers.remove(callback)
-                except ValueError:
-                    pass
+            with contextlib.suppress(ValueError):
+                self._subscribers.remove(callback)
 
         return unsubscribe
