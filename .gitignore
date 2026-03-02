@@ -1,6 +1,6 @@
 __pycache__/
 *.py[cod]
-
+*.pyc
 # Packaging metadata
 *.egg-info/
 
@@ -19,3 +19,13 @@ dist/
 
 # Temporarily excluded module
 src/qdarchive_seeding/tui/
+
+# Local/runtime files to ignore
+.coverage
+.env
+
+# Runtime artifacts
+logs/
+metadata/
+runs/
+
