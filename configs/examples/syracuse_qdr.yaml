@@ -1,0 +1,62 @@
+pipeline:
+  id: "syracuse_qdr_seed_v1"
+  run_mode: "incremental"
+  max_items: 500
+
+source:
+  name: "syracuse_qdr"
+  type: "rest_api"
+  base_url: "https://data.qdr.syr.edu/api"
+  endpoints:
+    search: "/search"
+    dataset: "/datasets/:persistentId/"
+  params:
+    q: "*"
+    type: "dataset"
+    per_page: 1000
+  pagination:
+    type: "offset"
+    offset_param: "start"
+    size_param: "per_page"
+
+auth:
+  type: "none"
+  env: {}
+
+extractor:
+  name: "syracuse_qdr_extractor"
+  options:
+    max_datasets: 500
+
+pre_transforms:
+  - name: "validate_required_fields"
+    options:
+      required_fields: ["source_url", "has_assets"]
+  - name: "normalize_fields"
+  - name: "deduplicate_assets"
+  - name: "filter_by_extensions"
+    options:
+      categories: ["analysis_data"]
+  - name: "slugify_dataset"
+
+post_transforms:
+  - name: "classify_qda_files"
+
+storage:
+  downloads_root: "./downloads"
+  layout: "{source_name}/{dataset_slug}/"
+  checksum: "sha256"
+
+sink:
+  type: "sqlite"
+  options:
+    path: "./metadata/qdarchive.sqlite"
+
+logging:
+  level: "INFO"
+  console:
+    enabled: true
+    rich: true
+  file:
+    enabled: true
+    path: "./logs/qdarchive.log"

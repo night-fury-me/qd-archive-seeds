@@ -17,6 +17,10 @@ from qdarchive_seeding.core.interfaces import AuthProvider, Extractor, Policy, S
 from qdarchive_seeding.infra.extractors.generic_rest import GenericRestExtractor, GenericRestOptions
 from qdarchive_seeding.infra.extractors.html_scraper import HtmlScraperExtractor, HtmlScraperOptions
 from qdarchive_seeding.infra.extractors.static_list import StaticListExtractor, StaticListOptions
+from qdarchive_seeding.infra.extractors.syracuse_qdr import (
+    SyracuseQdrExtractor,
+    SyracuseQdrOptions,
+)
 from qdarchive_seeding.infra.extractors.zenodo import ZenodoExtractor, ZenodoOptions
 from qdarchive_seeding.infra.http.auth import (
     ApiKeyAuth,
@@ -117,10 +121,15 @@ def build_container(
     checksum_algo = config.storage.checksum if config.storage.checksum != "none" else "sha256"
     checksum = ChecksumComputer(algo=checksum_algo)
     download_transport = httpx.HTTPTransport(local_address="0.0.0.0")
+    download_headers: dict[str, str] = {"User-Agent": "qdarchive-seeding/0.1"}
+    # Apply auth headers to download client so authenticated file access works
+    auth_headers, _ = auth.apply({}, {})
+    download_headers.update(auth_headers)
     download_client = httpx.Client(
         transport=download_transport,
         timeout=60.0,
-        headers={"User-Agent": "qdarchive-seeding/0.1"},
+        headers=download_headers,
+        follow_redirects=True,
     )
     downloader = Downloader(client=download_client, checksum=checksum, chunk_size_bytes=chunk_size)
 
@@ -220,6 +229,14 @@ def _build_extractor(
                 description_selector=options.get("description_selector"),
                 asset_selector=options.get("asset_selector"),
                 max_items=options.get("max_items"),
+            ),
+        )
+    if name == "syracuse_qdr_extractor":
+        return SyracuseQdrExtractor(
+            http_client=http_client,
+            auth=auth,
+            options=SyracuseQdrOptions(
+                max_datasets=options.get("max_datasets"),
             ),
         )
     if name == "static_list_extractor":

@@ -38,6 +38,7 @@ class HttpxClient(HttpClient):
             transport=transport,
             timeout=settings.timeout_seconds,
             headers={"User-Agent": settings.user_agent},
+            follow_redirects=True,
         )
 
     def get(
