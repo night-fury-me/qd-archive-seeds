@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from typer.testing import CliRunner
 from rich.console import Console
+from typer.testing import CliRunner
 
 from qdarchive_seeding.app.progress import (
     AssetDownloadProgress,
@@ -241,6 +241,6 @@ def test_cli_main_module_executes(monkeypatch: object) -> None:
     sys.modules.pop("qdarchive_seeding.cli.main", None)
     try:
         runpy.run_module("qdarchive_seeding.cli.main", run_name="__main__")
-        assert False, "Expected SystemExit from CLI entrypoint"
+        raise AssertionError("Expected SystemExit from CLI entrypoint")
     except SystemExit as exc:
         assert exc.code in (0, None)

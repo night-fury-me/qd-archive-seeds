@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
-from qdarchive_seeding.app.config_models import PipelineConfig
+from qdarchive_seeding.app.config_models import LoggingSettings, PipelineConfig
 from qdarchive_seeding.app.container import Container, build_container
 from qdarchive_seeding.app.progress import (
     Completed,
@@ -20,7 +21,6 @@ from qdarchive_seeding.infra.logging.logger import configure_logger
 from qdarchive_seeding.infra.storage.filesystem import FileSystem
 from qdarchive_seeding.infra.storage.paths import PathStrategy
 from qdarchive_seeding.infra.transforms.base import TransformChain
-from qdarchive_seeding.app.config_models import LoggingSettings
 
 
 def _build_test_container(tmp_path: Path, config: PipelineConfig) -> Any:
@@ -310,9 +310,7 @@ def test_runner_pre_and_post_transform_filter(
     assert info.counts["transformed"] == 0
 
 
-def test_runner_post_transform_drop(
-    tmp_path: Path, minimal_config: PipelineConfig
-) -> None:
+def test_runner_post_transform_drop(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     record = DatasetRecord(
         source_name="s",
         source_dataset_id="1",
@@ -357,8 +355,7 @@ def test_runner_cancelled_breaks_loop(tmp_path: Path, minimal_config: PipelineCo
 
 def test_runner_filters_every_50_items(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     records = [
-        DatasetRecord(source_name="s", source_dataset_id=str(i), source_url="u")
-        for i in range(50)
+        DatasetRecord(source_name="s", source_dataset_id=str(i), source_url="u") for i in range(50)
     ]
     container = _make_container(
         tmp_path,
@@ -404,7 +401,9 @@ def test_runner_dry_run_skips_assets(tmp_path: Path, minimal_config: PipelineCon
     assert record.assets[0].download_status == DOWNLOAD_STATUS_SKIPPED
 
 
-def test_runner_cancelled_during_assets_breaks(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+def test_runner_cancelled_during_assets_breaks(
+    tmp_path: Path, minimal_config: PipelineConfig
+) -> None:
     class CancelAssets(list[AssetRecord]):
         def __init__(self, ctx: Any) -> None:
             super().__init__(

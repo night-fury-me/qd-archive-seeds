@@ -15,7 +15,7 @@ def test_mysql_sink_executes_schema_and_upserts(monkeypatch: object) -> None:
         def execute(self, sql: str, _params: Any = None) -> None:
             executed.append(sql)
 
-        def __enter__(self) -> "DummyCursor":
+        def __enter__(self) -> DummyCursor:
             return self
 
         def __exit__(self, *_args: object) -> None:

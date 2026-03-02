@@ -65,6 +65,7 @@ def test_cursor_pagination_updates_cursor() -> None:
     pag.update_cursor(None)
     try:
         next(params_iter)
-        assert False, "Iterator should stop when cursor is None"
     except StopIteration:
         assert True
+    else:
+        raise AssertionError("Iterator should stop when cursor is None")

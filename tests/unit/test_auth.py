@@ -46,7 +46,7 @@ def test_oauth2_client_credentials_fetches_and_caches_token(monkeypatch: object)
             return {"access_token": "token-123", "expires_in": 100}
 
     class DummyClient:
-        def __enter__(self) -> "DummyClient":
+        def __enter__(self) -> DummyClient:
             return self
 
         def __exit__(self, *args: object) -> None:

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import os
+from pathlib import Path
 
 from qdarchive_seeding.app.config_models import PipelineConfig
 from qdarchive_seeding.app.container import _build_policy, _load_dotenv, build_container
-from qdarchive_seeding.app.registry import create_default_registries
 from qdarchive_seeding.app.policies import IncrementalPolicy, RetryPolicy
+from qdarchive_seeding.app.registry import create_default_registries
 from qdarchive_seeding.infra.http.auth import BearerAuth
 
 
@@ -38,11 +37,7 @@ def test_load_dotenv_parses_export_and_comments(tmp_path: Path, monkeypatch: obj
     monkeypatch.setenv("UNCHANGED", "keep")  # type: ignore[attr-defined]
 
     (tmp_path / ".env").write_text(
-        "export FOO=alpha\n"
-        "BAR=bravo # comment\n"
-        "QUOTED=\"value # not comment\"\n"
-        "=bad\n"
-        "# ignored\n"
+        'export FOO=alpha\nBAR=bravo # comment\nQUOTED="value # not comment"\n=bad\n# ignored\n'
     )
 
     _load_dotenv(tmp_path / ".env")

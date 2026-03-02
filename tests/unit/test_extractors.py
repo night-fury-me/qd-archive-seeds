@@ -13,13 +13,13 @@ from qdarchive_seeding.infra.extractors.generic_rest import (
     GenericRestExtractor,
     GenericRestOptions,
 )
-from qdarchive_seeding.infra.extractors.static_list import (
-    StaticListExtractor,
-    StaticListOptions,
-)
 from qdarchive_seeding.infra.extractors.html_scraper import (
     HtmlScraperExtractor,
     HtmlScraperOptions,
+)
+from qdarchive_seeding.infra.extractors.static_list import (
+    StaticListExtractor,
+    StaticListOptions,
 )
 from qdarchive_seeding.infra.extractors.syracuse_qdr import (
     SyracuseQdrExtractor,
@@ -687,6 +687,7 @@ class TestHtmlScraperExtractor:
         class HtmlClient:
             def get(self, _url: str, *, headers=None, params=None, timeout=None):
                 return FakeResponse(_json={}, text=html)
+
         config = _make_config(
             {
                 "source": {
@@ -732,6 +733,7 @@ class TestHtmlScraperExtractor:
         class HtmlClient:
             def get(self, _url: str, *, headers=None, params=None, timeout=None):
                 return FakeResponse(_json={}, text=html)
+
         config = _make_config(
             {
                 "source": {
@@ -779,9 +781,7 @@ class TestSyracuseQdrExtractor:
             "data": {
                 "latestVersion": {
                     "license": {"name": "CC0"},
-                    "files": [
-                        {"dataFile": {"id": 1, "filename": "file.txt", "filesize": 10}}
-                    ],
+                    "files": [{"dataFile": {"id": 1, "filename": "file.txt", "filesize": 10}}],
                 }
             }
         }
@@ -948,15 +948,11 @@ class TestSyracuseQdrExtractor:
     def test_license_string_and_invalid_year_and_no_authors(self) -> None:
         search_payload: dict[str, Any] = {
             "data": {
-                "items": [
-                    {"global_id": "doi:10.1/one", "name": "One", "published_at": "bad"}
-                ],
+                "items": [{"global_id": "doi:10.1/one", "name": "One", "published_at": "bad"}],
                 "total_count": 1,
             }
         }
-        files_payload: dict[str, Any] = {
-            "data": {"latestVersion": {"license": "MIT", "files": []}}
-        }
+        files_payload: dict[str, Any] = {"data": {"latestVersion": {"license": "MIT", "files": []}}}
         http_client = FakeHttpClient([search_payload, files_payload])
         config = _make_config(
             {
