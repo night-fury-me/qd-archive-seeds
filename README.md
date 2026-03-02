@@ -519,9 +519,4 @@ The biggest challenge is **precision vs. recall**: broad keyword searches return
 
 ## License
 
-<!-- 
-
-This project is licensed under the MIT License.
-For details, please refer to the LICENSE file in the repository root.
--->
-MIT
+This project is licensed under the MIT License. For details, please refer to the `LICENSE` file in the repository root.
