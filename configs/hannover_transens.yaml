@@ -1,0 +1,51 @@
+pipeline:
+  id: "hannover_transens_v1"
+  run_mode: "full"
+  max_items: 1
+
+source:
+  name: "uni_hannover"
+  type: "static_list"
+  base_url: "https://data.uni-hannover.de"
+
+auth:
+  type: "none"
+
+extractor:
+  name: "static_list_extractor"
+  options:
+    records:
+      - id: "3f9bdd8f-97d0-4721-8a5b-6f4779ab30ca"
+        source_url: "https://data.uni-hannover.de/dataset/data-for-the-paper-about-the-citizens-working-group-in-the-prpject-transens"
+        title: "Data for the paper about the Citizens' Working Group in the project TRANSENS"
+        description: "Interview data for each category. Used software: MAXQDA. Paper in Ambio examining nuclear waste management approaches."
+        assets:
+          - "https://data.uni-hannover.de/dataset/3f9bdd8f-97d0-4721-8a5b-6f4779ab30ca/resource/aa026180-9720-4165-a80d-945200ec9dcb/download/reports-summary-upload.docx"
+          - "https://data.uni-hannover.de/dataset/3f9bdd8f-97d0-4721-8a5b-6f4779ab30ca/resource/48cdf9d0-b5dc-407a-aae1-6fbed9dc82ad/download/transens_livia_14.8.24.mx24"
+
+pre_transforms:
+  - name: "normalize_fields"
+  - name: "deduplicate_assets"
+  - name: "slugify_dataset"
+
+post_transforms:
+  - name: "classify_qda_files"
+
+storage:
+  downloads_root: "./downloads"
+  layout: "{source_name}/{dataset_slug}/"
+  checksum: "sha256"
+
+sink:
+  type: "sqlite"
+  options:
+    path: "./metadata/qdarchive.sqlite"
+
+logging:
+  level: "INFO"
+  console:
+    enabled: true
+    rich: true
+  file:
+    enabled: true
+    path: "./logs/hannover_transens.log"
