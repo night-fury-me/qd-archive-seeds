@@ -89,7 +89,7 @@ class Downloader:
         asset.local_filename = final_path.name
         asset.download_status = DOWNLOAD_STATUS_SUCCESS
         asset.downloaded_at = datetime.now(UTC)
-        asset.checksum_sha256 = checksum
+        asset.checksum_sha256 = checksum or None
         asset.size_bytes = final_path.stat().st_size
         return DownloadResult(
             asset=asset, bytes_downloaded=asset.size_bytes or 0, checksum=checksum
