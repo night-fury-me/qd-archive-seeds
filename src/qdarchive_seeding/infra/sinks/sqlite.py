@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
@@ -47,83 +47,87 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_unique ON assets(asset_url);
 @dataclass(slots=True)
 class SQLiteSink(BaseSink):
     path: Path
+    _conn: sqlite3.Connection = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.path) as conn:
-            conn.executescript(SCHEMA)
+        self._conn = sqlite3.connect(self.path)
+        self._conn.executescript(SCHEMA)
+
+    def close(self) -> None:
+        self._conn.close()
 
     def upsert_dataset(self, record: DatasetRecord) -> str:
         dataset_id = record.source_dataset_id or record.source_url
-        with sqlite3.connect(self.path) as conn:
-            conn.execute(
-                """
-                INSERT INTO datasets (
-                  id, source_name, source_dataset_id, source_url,
-                  title, description, doi, license, year,
-                  owner_name, owner_email, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-                ON CONFLICT(source_name, source_dataset_id)
-                DO UPDATE SET
-                  source_url=excluded.source_url,
-                  title=excluded.title,
-                  description=excluded.description,
-                  doi=excluded.doi,
-                  license=excluded.license,
-                  year=excluded.year,
-                  owner_name=excluded.owner_name,
-                  owner_email=excluded.owner_email,
-                  updated_at=datetime('now')
-                """,
-                (
-                    dataset_id,
-                    record.source_name,
-                    record.source_dataset_id,
-                    record.source_url,
-                    record.title,
-                    record.description,
-                    record.doi,
-                    record.license,
-                    record.year,
-                    record.owner_name,
-                    record.owner_email,
-                ),
-            )
+        self._conn.execute(
+            """
+            INSERT INTO datasets (
+              id, source_name, source_dataset_id, source_url,
+              title, description, doi, license, year,
+              owner_name, owner_email, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(source_name, source_dataset_id)
+            DO UPDATE SET
+              source_url=excluded.source_url,
+              title=excluded.title,
+              description=excluded.description,
+              doi=excluded.doi,
+              license=excluded.license,
+              year=excluded.year,
+              owner_name=excluded.owner_name,
+              owner_email=excluded.owner_email,
+              updated_at=datetime('now')
+            """,
+            (
+                dataset_id,
+                record.source_name,
+                record.source_dataset_id,
+                record.source_url,
+                record.title,
+                record.description,
+                record.doi,
+                record.license,
+                record.year,
+                record.owner_name,
+                record.owner_email,
+            ),
+        )
+        self._conn.commit()
         return dataset_id
 
     def upsert_asset(self, dataset_id: str, asset: AssetRecord) -> None:
         asset_id = asset.asset_url
-        with sqlite3.connect(self.path) as conn:
-            conn.execute(
-                """
-                INSERT INTO assets (
-                  id, dataset_id, asset_url, asset_type, local_dir, local_filename,
-                  downloaded_at, checksum_sha256, size_bytes, download_status, error_message,
-                  updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                ON CONFLICT(asset_url)
-                DO UPDATE SET
-                  asset_type=excluded.asset_type,
-                  local_dir=excluded.local_dir,
-                  local_filename=excluded.local_filename,
-                  downloaded_at=excluded.downloaded_at,
-                  checksum_sha256=excluded.checksum_sha256,
-                  size_bytes=excluded.size_bytes,
-                  download_status=excluded.download_status,
-                  error_message=excluded.error_message,
-                  updated_at=datetime('now')
-                """,
-                (
-                    asset_id,
-                    dataset_id,
-                    asset.asset_url,
-                    asset.asset_type,
-                    asset.local_dir,
-                    asset.local_filename,
-                    asset.downloaded_at.isoformat() if asset.downloaded_at else None,
-                    asset.checksum_sha256,
-                    asset.size_bytes,
-                    asset.download_status,
-                    asset.error_message,
-                ),
-            )
+        self._conn.execute(
+            """
+            INSERT INTO assets (
+              id, dataset_id, asset_url, asset_type, local_dir, local_filename,
+              downloaded_at, checksum_sha256, size_bytes, download_status, error_message,
+              updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(asset_url)
+            DO UPDATE SET
+              asset_type=excluded.asset_type,
+              local_dir=excluded.local_dir,
+              local_filename=excluded.local_filename,
+              downloaded_at=excluded.downloaded_at,
+              checksum_sha256=excluded.checksum_sha256,
+              size_bytes=excluded.size_bytes,
+              download_status=excluded.download_status,
+              error_message=excluded.error_message,
+              updated_at=datetime('now')
+            """,
+            (
+                asset_id,
+                dataset_id,
+                asset.asset_url,
+                asset.asset_type,
+                asset.local_dir,
+                asset.local_filename,
+                asset.downloaded_at.isoformat() if asset.downloaded_at else None,
+                asset.checksum_sha256,
+                asset.size_bytes,
+                asset.download_status,
+                asset.error_message,
+            ),
+        )
+        self._conn.commit()
