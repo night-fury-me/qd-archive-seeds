@@ -27,7 +27,7 @@ dependencies = [
   "typer[all]>=0.12",
   "pymysql>=1.1",
   "pymongo>=4.7",
-  "requests>=2.32.5",
+
 ]
 
 [dependency-groups]
@@ -37,7 +37,7 @@ dev = [
   "ruff>=0.5",
   "mypy>=1.10",
   "types-PyYAML>=6.0.12",
-  "types-requests>=2.32.0",
+
   "respx>=0.21",
   "pytest-asyncio>=0.23",
 ]

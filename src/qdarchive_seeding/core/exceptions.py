@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+
 class QDArchiveError(Exception):
     """Base exception for QDArchive seeding."""
 

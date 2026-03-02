@@ -20,7 +20,7 @@ def test_csv_sink_creates_headers(tmp_path: Path) -> None:
     assert "source_name" in header
 
 
-def test_csv_sink_appends(tmp_path: Path) -> None:
+def test_csv_sink_upsert_deduplicates(tmp_path: Path) -> None:
     sink = CSVSink(
         name="test",
         dataset_path=tmp_path / "ds.csv",
@@ -36,4 +36,30 @@ def test_csv_sink_appends(tmp_path: Path) -> None:
     sink.upsert_dataset(record)
     with (tmp_path / "ds.csv").open() as f:
         lines = list(csv.reader(f))
-    assert len(lines) == 3  # header + 2 rows (CSV is append-only)
+    assert len(lines) == 2  # header + 1 row (upsert replaces existing)
+
+
+def test_csv_sink_upsert_updates_fields(tmp_path: Path) -> None:
+    sink = CSVSink(
+        name="test",
+        dataset_path=tmp_path / "ds.csv",
+        asset_path=tmp_path / "as.csv",
+    )
+    record1 = DatasetRecord(
+        source_name="test",
+        source_dataset_id="1",
+        source_url="https://example.com",
+        title="Old Title",
+    )
+    record2 = DatasetRecord(
+        source_name="test",
+        source_dataset_id="1",
+        source_url="https://example.com",
+        title="New Title",
+    )
+    sink.upsert_dataset(record1)
+    sink.upsert_dataset(record2)
+    with (tmp_path / "ds.csv").open() as f:
+        lines = list(csv.reader(f))
+    assert len(lines) == 2  # header + 1 row
+    assert lines[1][4] == "New Title"  # title column
