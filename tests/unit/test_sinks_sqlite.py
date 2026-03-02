@@ -22,6 +22,7 @@ def test_upsert_dataset_idempotent(tmp_path: Path) -> None:
     record = _make_record()
     sink.upsert_dataset(record)
     sink.upsert_dataset(record)
+    sink.close()
     conn = sqlite3.connect(tmp_path / "test.sqlite")
     count = conn.execute("SELECT COUNT(*) FROM datasets").fetchone()[0]
     conn.close()
@@ -39,6 +40,7 @@ def test_upsert_asset_updates(tmp_path: Path) -> None:
     sink.upsert_asset(dataset_id, asset)
     asset.download_status = DOWNLOAD_STATUS_SUCCESS
     sink.upsert_asset(dataset_id, asset)
+    sink.close()
     conn = sqlite3.connect(tmp_path / "test.sqlite")
     row = conn.execute(
         "SELECT download_status FROM assets WHERE asset_url = ?", (asset.asset_url,)
@@ -51,4 +53,5 @@ def test_upsert_dataset_returns_id(tmp_path: Path) -> None:
     sink = SQLiteSink(name="test", path=tmp_path / "test.sqlite")
     record = _make_record()
     dataset_id = sink.upsert_dataset(record)
+    sink.close()
     assert dataset_id == "ds-1"
