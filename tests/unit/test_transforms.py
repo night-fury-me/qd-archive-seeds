@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
-from qdarchive_seeding.infra.transforms.base import TransformChain
-from qdarchive_seeding.infra.transforms.base import BaseTransform
+from qdarchive_seeding.infra.transforms.base import BaseTransform, TransformChain
 from qdarchive_seeding.infra.transforms.classify_qda_files import ClassifyQdaFiles
 from qdarchive_seeding.infra.transforms.deduplicate_assets import DeduplicateAssets
 from qdarchive_seeding.infra.transforms.filter_by_extensions import FilterByExtensions
@@ -32,9 +31,10 @@ def test_base_transform_apply_raises() -> None:
     t = BaseTransform(name="base")
     try:
         t.apply(_make_record())
-        assert False, "Expected NotImplementedError"
     except NotImplementedError:
         assert True
+    else:
+        raise AssertionError("Expected NotImplementedError")
 
 
 def test_validate_required_filters_missing() -> None:

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import logging
+import queue
 from pathlib import Path
 
 from qdarchive_seeding.app.config_models import LoggingSettings
-import logging
-import queue
-
 from qdarchive_seeding.infra.logging.handlers import UILogQueueHandler
 from qdarchive_seeding.infra.logging.logger import configure_logger
 
@@ -67,9 +66,10 @@ def test_file_logger_missing_path_raises() -> None:
 
     try:
         configure_logger("test_file_logger", settings)
-        assert False, "Expected ValueError when file path is missing"
     except ValueError as exc:
         assert "no path" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError when file path is missing")
 
 
 def test_queue_handler_handles_formatter_errors() -> None:

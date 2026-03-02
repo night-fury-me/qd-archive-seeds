@@ -2,35 +2,34 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
 
 from qdarchive_seeding.app.config_models import PipelineConfig
-from qdarchive_seeding.app.registry import InMemoryRegistry, create_default_registries
-from qdarchive_seeding.core.exceptions import RegistryError
-import httpx
-
-from qdarchive_seeding.infra.http.auth import ApiKeyAuth, BearerAuth, OAuth2ClientCredentials
-from qdarchive_seeding.infra.storage.checksums import ChecksumComputer
-from qdarchive_seeding.infra.storage.downloader import Downloader
 from qdarchive_seeding.app.manifests import RunManifestWriter
 from qdarchive_seeding.app.progress import ProgressBus
-from qdarchive_seeding.infra.storage.filesystem import FileSystem
-from qdarchive_seeding.infra.storage.paths import PathStrategy
+from qdarchive_seeding.app.registry import InMemoryRegistry, create_default_registries
+from qdarchive_seeding.core.exceptions import RegistryError
 from qdarchive_seeding.infra.extractors.generic_rest import GenericRestExtractor
-from qdarchive_seeding.infra.extractors.zenodo import ZenodoExtractor
 from qdarchive_seeding.infra.extractors.html_scraper import HtmlScraperExtractor
-from qdarchive_seeding.infra.extractors.syracuse_qdr import SyracuseQdrExtractor
 from qdarchive_seeding.infra.extractors.static_list import StaticListExtractor
+from qdarchive_seeding.infra.extractors.syracuse_qdr import SyracuseQdrExtractor
+from qdarchive_seeding.infra.extractors.zenodo import ZenodoExtractor
+from qdarchive_seeding.infra.http.auth import ApiKeyAuth, BearerAuth, OAuth2ClientCredentials
 from qdarchive_seeding.infra.sinks.csv_sink import CSVSink
 from qdarchive_seeding.infra.sinks.excel_sink import ExcelSink
 from qdarchive_seeding.infra.sinks.sqlite import SQLiteSink
-from qdarchive_seeding.infra.transforms.filter_by_extensions import FilterByExtensions
-from qdarchive_seeding.infra.transforms.validate_required import ValidateRequiredFields
-from qdarchive_seeding.infra.transforms.normalize_fields import NormalizeFields
-from qdarchive_seeding.infra.transforms.infer_filetypes import InferFileTypes
-from qdarchive_seeding.infra.transforms.deduplicate_assets import DeduplicateAssets
-from qdarchive_seeding.infra.transforms.slugify_dataset import SlugifyDataset
+from qdarchive_seeding.infra.storage.checksums import ChecksumComputer
+from qdarchive_seeding.infra.storage.downloader import Downloader
+from qdarchive_seeding.infra.storage.filesystem import FileSystem
+from qdarchive_seeding.infra.storage.paths import PathStrategy
 from qdarchive_seeding.infra.transforms.classify_qda_files import ClassifyQdaFiles
+from qdarchive_seeding.infra.transforms.deduplicate_assets import DeduplicateAssets
+from qdarchive_seeding.infra.transforms.filter_by_extensions import FilterByExtensions
+from qdarchive_seeding.infra.transforms.infer_filetypes import InferFileTypes
+from qdarchive_seeding.infra.transforms.normalize_fields import NormalizeFields
+from qdarchive_seeding.infra.transforms.slugify_dataset import SlugifyDataset
+from qdarchive_seeding.infra.transforms.validate_required import ValidateRequiredFields
 
 
 def test_register_and_get() -> None:
@@ -192,8 +191,8 @@ def test_registry_sink_factories(tmp_path: Path, monkeypatch: object) -> None:
     excel_sink = registries.sinks.get("excel")({"path": str(tmp_path / "db.xlsx")})
     assert isinstance(excel_sink, ExcelSink)
 
-    import qdarchive_seeding.infra.sinks.mysql as mysql_module
     import qdarchive_seeding.infra.sinks.mongodb as mongo_module
+    import qdarchive_seeding.infra.sinks.mysql as mysql_module
 
     class DummyMySQLSink(mysql_module.MySQLSink):
         def __post_init__(self) -> None:
