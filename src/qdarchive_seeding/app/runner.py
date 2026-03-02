@@ -218,6 +218,8 @@ class ETLRunner:
             bus.publish(
                 ErrorEvent(component="extractor", error_type=type(exc).__name__, message=str(exc))
             )
+        finally:
+            c.sink.close()
 
         log.info("Extracted %d raw, %d passed filters", extracted, transformed)
 
