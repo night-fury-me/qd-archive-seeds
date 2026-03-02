@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
 from qdarchive_seeding.infra.transforms.base import TransformChain
+from qdarchive_seeding.infra.transforms.base import BaseTransform
 from qdarchive_seeding.infra.transforms.classify_qda_files import ClassifyQdaFiles
 from qdarchive_seeding.infra.transforms.deduplicate_assets import DeduplicateAssets
+from qdarchive_seeding.infra.transforms.filter_by_extensions import FilterByExtensions
 from qdarchive_seeding.infra.transforms.infer_filetypes import InferFileTypes
 from qdarchive_seeding.infra.transforms.normalize_fields import NormalizeFields
 from qdarchive_seeding.infra.transforms.slugify_dataset import SlugifyDataset
@@ -24,6 +26,15 @@ def test_validate_required_passes() -> None:
     t = ValidateRequiredFields(name="v", required_fields=["source_url"])
     record = _make_record(source_url="https://example.com")
     assert t.apply(record) is not None
+
+
+def test_base_transform_apply_raises() -> None:
+    t = BaseTransform(name="base")
+    try:
+        t.apply(_make_record())
+        assert False, "Expected NotImplementedError"
+    except NotImplementedError:
+        assert True
 
 
 def test_validate_required_filters_missing() -> None:
@@ -65,6 +76,14 @@ def test_normalize_fields_from_raw() -> None:
     assert result.owner_email == "a@b.com"
 
 
+def test_normalize_fields_owner_string() -> None:
+    t = NormalizeFields(name="n")
+    record = _make_record(raw={"owner": "Jane"})
+    result = t.apply(record)
+    assert result is not None
+    assert result.owner_name == "Jane"
+
+
 def test_infer_filetypes() -> None:
     t = InferFileTypes(name="i")
     record = _make_record(
@@ -81,6 +100,18 @@ def test_infer_filetypes() -> None:
     assert result.assets[1].asset_type == "archive"
     assert result.assets[2].asset_type == "document"
     assert result.assets[3].asset_type == "unknown"
+
+
+def test_infer_filetypes_skips_existing_type() -> None:
+    t = InferFileTypes(name="i")
+    record = _make_record(
+        assets=[
+            AssetRecord(asset_url="https://example.com/file.qdpx", asset_type="custom"),
+        ]
+    )
+    result = t.apply(record)
+    assert result is not None
+    assert result.assets[0].asset_type == "custom"
 
 
 def test_deduplicate_assets() -> None:
@@ -106,6 +137,26 @@ def test_slugify_dataset() -> None:
     slug = result.raw["dataset_slug"]
     assert " " not in slug
     assert slug == "hello-world-test-2024"
+
+
+def test_slugify_dataset_falls_back_to_source_id() -> None:
+    t = SlugifyDataset(name="s")
+    record = _make_record(source_dataset_id="ID 123")
+    record.title = None
+    result = t.apply(record)
+    assert result is not None
+    assert result.raw is not None
+    assert result.raw["dataset_slug"] == "id-123"
+
+
+def test_slugify_dataset_default_when_missing_all() -> None:
+    t = SlugifyDataset(name="s")
+    record = _make_record(source_dataset_id=None, source_url="https://example.com")
+    record.title = None
+    result = t.apply(record)
+    assert result is not None
+    assert result.raw is not None
+    assert result.raw["dataset_slug"] == "dataset"
 
 
 def test_transform_chain_short_circuits() -> None:
@@ -157,6 +208,18 @@ def test_classify_qda_files_analysis_data() -> None:
     assert all(a.asset_type == "analysis_data" for a in result.assets)
 
 
+def test_classify_qda_files_uses_local_filename() -> None:
+    t = ClassifyQdaFiles(name="c")
+    record = _make_record(
+        assets=[
+            AssetRecord(asset_url="https://example.com/unknown", local_filename="file.qdpx"),
+        ]
+    )
+    result = t.apply(record)
+    assert result is not None
+    assert result.assets[0].asset_type == "analysis_data"
+
+
 def test_classify_qda_files_primary_data() -> None:
     t = ClassifyQdaFiles(name="c")
     record = _make_record(
@@ -183,3 +246,34 @@ def test_classify_qda_files_additional_data() -> None:
     result = t.apply(record)
     assert result is not None
     assert all(a.asset_type == "additional_data" for a in result.assets)
+
+
+def test_filter_by_extensions_keeps_matching_assets() -> None:
+    t = FilterByExtensions(name="f", categories=["analysis_data"], extra_extensions=[".zip"])
+    record = _make_record(
+        assets=[
+            AssetRecord(asset_url="https://example.com/file.qdpx"),
+            AssetRecord(asset_url="https://example.com/archive.zip"),
+        ]
+    )
+    assert t.apply(record) is not None
+
+
+def test_filter_by_extensions_drops_when_no_match() -> None:
+    t = FilterByExtensions(name="f", categories=["analysis_data"], extra_extensions=[])
+    record = _make_record(
+        assets=[
+            AssetRecord(asset_url="https://example.com/file.txt"),
+        ]
+    )
+    assert t.apply(record) is None
+
+
+def test_filter_by_extensions_primary_data_and_local_filename() -> None:
+    t = FilterByExtensions(name="f", categories=["primary_data"], extra_extensions=[])
+    record = _make_record(
+        assets=[
+            AssetRecord(asset_url="https://example.com/ignored", local_filename="file.pdf"),
+        ]
+    )
+    assert t.apply(record) is not None
