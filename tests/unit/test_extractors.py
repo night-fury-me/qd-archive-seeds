@@ -17,6 +17,14 @@ from qdarchive_seeding.infra.extractors.static_list import (
     StaticListExtractor,
     StaticListOptions,
 )
+from qdarchive_seeding.infra.extractors.html_scraper import (
+    HtmlScraperExtractor,
+    HtmlScraperOptions,
+)
+from qdarchive_seeding.infra.extractors.syracuse_qdr import (
+    SyracuseQdrExtractor,
+    SyracuseQdrOptions,
+)
 from qdarchive_seeding.infra.extractors.zenodo import ZenodoExtractor, ZenodoOptions
 from qdarchive_seeding.infra.http.auth import NoAuth
 
@@ -204,6 +212,33 @@ class TestZenodoExtractor:
 
         assert records == []
         assert len(http_client.calls) == 1
+
+    def test_max_pages_limit_stops(self) -> None:
+        page1: dict[str, Any] = {"hits": {"hits": [{"id": "1", "metadata": {}, "files": []}]}}
+        page2: dict[str, Any] = {"hits": {"hits": [{"id": "2", "metadata": {}, "files": []}]}}
+        http_client = FakeHttpClient([page1, page2])
+
+        config = _make_config(
+            {
+                "source": {
+                    "name": "zenodo",
+                    "type": "rest_api",
+                    "base_url": "https://zenodo.org/api",
+                    "endpoints": {"search": "/records"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = ZenodoExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=ZenodoOptions(max_pages=1),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert len(records) == 1
+        assert records[0].source_dataset_id == "1"
 
 
 # ===================================================================
@@ -411,3 +446,537 @@ class TestGenericRestExtractor:
         assert len(records) == 1
         assert records[0].source_dataset_id == "nested-1"
         assert records[0].title == "Nested Item"
+
+    def test_offset_pagination_type(self) -> None:
+        page1: dict[str, Any] = {"items": [{"id": "1", "title": "One"}]}
+        page2_empty: dict[str, Any] = {"items": []}
+
+        http_client = FakeHttpClient([page1, page2_empty])
+        config = _make_config(
+            {
+                "source": {
+                    "name": "offset_source",
+                    "type": "rest_api",
+                    "base_url": "https://api.example.com",
+                    "endpoints": {"search": "/items"},
+                    "pagination": {"type": "offset", "size_param": "limit"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = GenericRestExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=GenericRestOptions(records_path="items"),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert len(records) == 1
+        assert http_client.calls[0]["params"].get("offset") == 0
+
+    def test_cursor_pagination_type(self) -> None:
+        page1: dict[str, Any] = {"items": [{"id": "1", "title": "One"}]}
+
+        http_client = FakeHttpClient([page1])
+        config = _make_config(
+            {
+                "source": {
+                    "name": "cursor_source",
+                    "type": "rest_api",
+                    "base_url": "https://api.example.com",
+                    "endpoints": {"search": "/items"},
+                    "pagination": {"type": "cursor", "cursor_param": "cursor"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = GenericRestExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=GenericRestOptions(records_path="items"),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert len(records) == 1
+        assert "cursor" not in http_client.calls[0]["params"]
+
+    def test_max_pages_limits_extraction(self) -> None:
+        page1: dict[str, Any] = {"items": [{"id": "1"}]}
+        page2: dict[str, Any] = {"items": [{"id": "2"}]}
+
+        http_client = FakeHttpClient([page1, page2])
+        config = _make_config(
+            {
+                "source": {
+                    "name": "limited_source",
+                    "type": "rest_api",
+                    "base_url": "https://api.example.com",
+                    "endpoints": {"search": "/items"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = GenericRestExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=GenericRestOptions(records_path="items", max_pages=1),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert len(records) == 1
+        assert records[0].source_dataset_id == "1"
+
+    def test_items_not_list_stops(self) -> None:
+        page1: dict[str, Any] = {"items": {"id": "1"}}
+
+        http_client = FakeHttpClient([page1])
+        config = _make_config(
+            {
+                "source": {
+                    "name": "bad_items",
+                    "type": "rest_api",
+                    "base_url": "https://api.example.com",
+                    "endpoints": {"search": "/items"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = GenericRestExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=GenericRestOptions(records_path="items"),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert records == []
+
+    def test_skips_non_dict_items(self) -> None:
+        page1: dict[str, Any] = {"items": ["bad", {"id": "ok", "title": "Good"}]}
+        page2_empty: dict[str, Any] = {"items": []}
+
+        http_client = FakeHttpClient([page1, page2_empty])
+        config = _make_config(
+            {
+                "source": {
+                    "name": "mixed_items",
+                    "type": "rest_api",
+                    "base_url": "https://api.example.com",
+                    "endpoints": {"search": "/items"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = GenericRestExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=GenericRestOptions(records_path="items"),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert len(records) == 1
+        assert records[0].source_dataset_id == "ok"
+
+
+class TestZenodoExtractorEdges:
+    def test_include_files_false(self) -> None:
+        payload: dict[str, Any] = {
+            "hits": {"hits": [{"id": "1", "metadata": {}, "files": [{"key": "f"}]}]}
+        }
+        http_client = FakeHttpClient([payload])
+        config = _make_config(
+            {
+                "source": {
+                    "name": "zenodo",
+                    "type": "rest_api",
+                    "base_url": "https://zenodo.org/api",
+                    "endpoints": {"search": "/records"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = ZenodoExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=ZenodoOptions(include_files=False),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert len(records) == 1
+        assert records[0].assets == []
+
+    def test_hits_not_list_stops(self) -> None:
+        payload: dict[str, Any] = {"hits": {"hits": {"id": "1"}}}
+        http_client = FakeHttpClient([payload])
+        config = _make_config(
+            {
+                "source": {
+                    "name": "zenodo",
+                    "type": "rest_api",
+                    "base_url": "https://zenodo.org/api",
+                    "endpoints": {"search": "/records"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = ZenodoExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=ZenodoOptions(),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert records == []
+
+    def test_license_and_year_parsing(self) -> None:
+        payload: dict[str, Any] = {
+            "hits": {
+                "hits": [
+                    {
+                        "id": "1",
+                        "metadata": {
+                            "license": {"id": "cc-by"},
+                            "publication_date": "bad-date",
+                        },
+                        "files": [],
+                    }
+                ]
+            }
+        }
+        http_client = FakeHttpClient([payload])
+        config = _make_config(
+            {
+                "source": {
+                    "name": "zenodo",
+                    "type": "rest_api",
+                    "base_url": "https://zenodo.org/api",
+                    "endpoints": {"search": "/records"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = ZenodoExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=ZenodoOptions(),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert records[0].license == "cc-by"
+        assert records[0].year is None
+
+
+class TestHtmlScraperExtractor:
+    def test_extracts_records_from_html(self) -> None:
+        html = (
+            "<div class='item'>"
+            "<a class='link' href='https://example.com/ds1'>Link</a>"
+            "<h2 class='title'>Title 1</h2>"
+            "<p class='desc'>Desc 1</p>"
+            "<a class='asset' href='https://example.com/file1.qdpx'>file</a>"
+            "</div>"
+        )
+
+        class HtmlClient:
+            def get(self, _url: str, *, headers=None, params=None, timeout=None):
+                return FakeResponse(_json={}, text=html)
+        config = _make_config(
+            {
+                "source": {
+                    "name": "html",
+                    "type": "html",
+                    "base_url": "https://example.com",
+                    "endpoints": {"search": "/list"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = HtmlScraperExtractor(
+            http_client=HtmlClient(),
+            options=HtmlScraperOptions(
+                list_selector=".item",
+                title_selector=".title",
+                link_selector=".link",
+                description_selector=".desc",
+                asset_selector=".asset",
+            ),
+        )
+
+        records = extractor.extract(ctx)
+
+        assert len(records) == 1
+        assert records[0].title == "Title 1"
+        assert records[0].description == "Desc 1"
+        assert records[0].assets[0].asset_url == "https://example.com/file1.qdpx"
+
+    def test_respects_max_items_and_skips_missing_nodes(self) -> None:
+        html = (
+            "<div class='item'><h2 class='title'>A</h2></div>"
+            "<div class='item'>"
+            "<a class='link' href='https://example.com/ds1'>Link</a>"
+            "<h2 class='title'>Title 1</h2>"
+            "</div>"
+            "<div class='item'>"
+            "<a class='link' href='https://example.com/ds2'>Link</a>"
+            "<h2 class='title'>Title 2</h2>"
+            "</div>"
+        )
+
+        class HtmlClient:
+            def get(self, _url: str, *, headers=None, params=None, timeout=None):
+                return FakeResponse(_json={}, text=html)
+        config = _make_config(
+            {
+                "source": {
+                    "name": "html",
+                    "type": "html",
+                    "base_url": "https://example.com",
+                    "endpoints": {"search": "/list"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = HtmlScraperExtractor(
+            http_client=HtmlClient(),
+            options=HtmlScraperOptions(
+                list_selector=".item",
+                title_selector=".title",
+                link_selector=".link",
+                max_items=1,
+            ),
+        )
+
+        records = extractor.extract(ctx)
+
+        assert len(records) == 1
+        assert records[0].title == "Title 1"
+
+
+class TestSyracuseQdrExtractor:
+    def test_extracts_datasets_and_files(self) -> None:
+        search_payload: dict[str, Any] = {
+            "data": {
+                "items": [
+                    {
+                        "global_id": "doi:10.123/abc",
+                        "name": "Dataset 1",
+                        "description": "Desc",
+                        "published_at": "2024-01-02T00:00:00Z",
+                        "authors": ["Smith, Jane"],
+                    }
+                ],
+                "total_count": 1,
+            }
+        }
+        files_payload: dict[str, Any] = {
+            "data": {
+                "latestVersion": {
+                    "license": {"name": "CC0"},
+                    "files": [
+                        {"dataFile": {"id": 1, "filename": "file.txt", "filesize": 10}}
+                    ],
+                }
+            }
+        }
+
+        http_client = FakeHttpClient([search_payload, files_payload])
+        config = _make_config(
+            {
+                "source": {
+                    "name": "syracuse",
+                    "type": "rest_api",
+                    "base_url": "https://example.com/api",
+                    "endpoints": {"search": "/search", "dataset": "/datasets/:persistentId/"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = SyracuseQdrExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=SyracuseQdrOptions(max_datasets=10),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert len(records) == 1
+        assert records[0].license == "CC0"
+        assert records[0].year == 2024
+        assert records[0].owner_name == "Smith, Jane"
+        assert records[0].assets[0].local_filename == "file.txt"
+
+    def test_skips_missing_global_id_and_file_errors(self) -> None:
+        search_payload: dict[str, Any] = {
+            "data": {
+                "items": [
+                    {"name": "Missing ID"},
+                    {"global_id": "doi:10.999/err", "name": "Bad Files"},
+                ],
+                "total_count": 2,
+            }
+        }
+
+        class ErrorHttpClient(FakeHttpClient):
+            def get(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str] | None = None,
+                params: dict[str, Any] | None = None,
+                timeout: float | None = None,
+            ) -> FakeResponse:  # type: ignore[override]
+                if "datasets" in url:
+                    raise RuntimeError("fail")
+                return super().get(url, headers=headers, params=params, timeout=timeout)
+
+        http_client = ErrorHttpClient([search_payload])
+        config = _make_config(
+            {
+                "source": {
+                    "name": "syracuse",
+                    "type": "rest_api",
+                    "base_url": "https://example.com/api",
+                    "endpoints": {"search": "/search", "dataset": "/datasets/:persistentId/"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = SyracuseQdrExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=SyracuseQdrOptions(max_datasets=10),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert records == []
+
+    def test_stops_when_max_datasets_reached(self) -> None:
+        search_payload: dict[str, Any] = {
+            "data": {
+                "items": [{"global_id": "doi:10.1/one", "name": "One"}],
+                "total_count": 1,
+            }
+        }
+        http_client = FakeHttpClient([search_payload])
+        config = _make_config(
+            {
+                "source": {
+                    "name": "syracuse",
+                    "type": "rest_api",
+                    "base_url": "https://example.com/api",
+                    "endpoints": {"search": "/search", "dataset": "/datasets/:persistentId/"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = SyracuseQdrExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=SyracuseQdrOptions(max_datasets=-1),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert records == []
+        assert http_client.calls == []
+
+    def test_breaks_when_items_invalid_or_empty(self) -> None:
+        search_payload: dict[str, Any] = {"data": {"items": {}, "total_count": 0}}
+        http_client = FakeHttpClient([search_payload])
+        config = _make_config(
+            {
+                "source": {
+                    "name": "syracuse",
+                    "type": "rest_api",
+                    "base_url": "https://example.com/api",
+                    "endpoints": {"search": "/search", "dataset": "/datasets/:persistentId/"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = SyracuseQdrExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=SyracuseQdrOptions(max_datasets=10),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert records == []
+
+    def test_respects_effective_max_inside_items(self) -> None:
+        search_payload: dict[str, Any] = {
+            "data": {
+                "items": [
+                    {"global_id": "doi:10.1/one", "name": "One"},
+                    {"global_id": "doi:10.1/two", "name": "Two"},
+                ],
+                "total_count": 2,
+            }
+        }
+        files_payload: dict[str, Any] = {"data": {"latestVersion": {"files": []}}}
+        http_client = FakeHttpClient([search_payload, files_payload])
+        config = _make_config(
+            {
+                "source": {
+                    "name": "syracuse",
+                    "type": "rest_api",
+                    "base_url": "https://example.com/api",
+                    "endpoints": {"search": "/search", "dataset": "/datasets/:persistentId/"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = SyracuseQdrExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=SyracuseQdrOptions(max_datasets=1),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert len(records) == 1
+
+    def test_license_string_and_invalid_year_and_no_authors(self) -> None:
+        search_payload: dict[str, Any] = {
+            "data": {
+                "items": [
+                    {"global_id": "doi:10.1/one", "name": "One", "published_at": "bad"}
+                ],
+                "total_count": 1,
+            }
+        }
+        files_payload: dict[str, Any] = {
+            "data": {"latestVersion": {"license": "MIT", "files": []}}
+        }
+        http_client = FakeHttpClient([search_payload, files_payload])
+        config = _make_config(
+            {
+                "source": {
+                    "name": "syracuse",
+                    "type": "rest_api",
+                    "base_url": "https://example.com/api",
+                    "endpoints": {"search": "/search", "dataset": "/datasets/:persistentId/"},
+                }
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = SyracuseQdrExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=SyracuseQdrOptions(max_datasets=10),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert records[0].license == "MIT"
+        assert records[0].year is None
+        assert records[0].owner_name is None
