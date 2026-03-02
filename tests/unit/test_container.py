@@ -22,3 +22,4 @@ def test_build_container_loads_env_from_dotenv(
 
     assert isinstance(container.auth, BearerAuth)
     assert container.auth.token == "test-token"
+    container.sink.close()
