@@ -41,21 +41,23 @@ class ZenodoExtractor:
 
         seen_ids: set[str] = set()
         prefix = strategy.base_query_prefix
+        facets = strategy.facet_filters
 
-        # Extension-based queries
+        # Extension-based queries: use prefix in query string + facet params
         for ext in strategy.extension_queries:
             query = f"{prefix} filetype:{ext}".strip() if prefix else f"filetype:{ext}"
             logger.info("Running extension query: %s", query)
             yield from self._extract_single_query(
-                ctx, query, seen_ids=seen_ids, query_string=ext
+                ctx, query, seen_ids=seen_ids, query_string=ext, extra_params=facets
             )
 
-        # Natural language queries
+        # NL queries: use only facet params for filtering (not the prefix),
+        # because Zenodo's facet param (e.g. type=dataset) returns far more
+        # results than embedding resource_type.type:dataset in the q string.
         for nl_query in strategy.natural_language_queries:
-            query = f"{prefix} {nl_query}".strip() if prefix else nl_query
-            logger.info("Running NL query: %s", query)
+            logger.info("Running NL query: %s", nl_query)
             yield from self._extract_single_query(
-                ctx, query, seen_ids=seen_ids, query_string=nl_query
+                ctx, nl_query, seen_ids=seen_ids, query_string=nl_query, extra_params=facets
             )
 
     def _extract_single_query(
@@ -65,6 +67,7 @@ class ZenodoExtractor:
         *,
         seen_ids: set[str] | None = None,
         query_string: str = "",
+        extra_params: dict[str, str] | None = None,
     ) -> Iterator[DatasetRecord]:
         """Run a single paginated query against the Zenodo API."""
         endpoint = ctx.config.source.endpoints.get("search", "/records")
@@ -74,6 +77,8 @@ class ZenodoExtractor:
         headers: dict[str, str] = {}
         params = dict(ctx.config.source.params)
         params["q"] = query
+        if extra_params:
+            params.update(extra_params)
         headers, params = self.auth.apply(headers, params)
 
         pagination = ctx.config.source.pagination

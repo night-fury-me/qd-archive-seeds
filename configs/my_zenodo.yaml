@@ -20,6 +20,8 @@ source:
     size_param: "size"
   search_strategy:
     base_query_prefix: "resource_type.type:dataset AND"
+    facet_filters:
+      type: "dataset"
     extension_queries:
       # REFI-QDA Standard
       - "qdpx"

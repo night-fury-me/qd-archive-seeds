@@ -37,11 +37,16 @@ class SearchStrategy(BaseConfig):
 
     When set on a source, the extractor will iterate over all extension
     and natural-language queries, deduplicating results across them.
+
+    ``base_query_prefix`` is prepended to the ``q`` param for extension queries.
+    ``facet_filters`` are added as separate API params (e.g. ``type: dataset``)
+    and apply to both extension and NL queries.
     """
 
     extension_queries: list[str] = Field(default_factory=list)
     natural_language_queries: list[str] = Field(default_factory=list)
     base_query_prefix: str = ""
+    facet_filters: dict[str, str] = Field(default_factory=dict)
 
 
 class SourceSettings(BaseConfig):
