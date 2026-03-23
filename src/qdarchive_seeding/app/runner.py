@@ -114,12 +114,6 @@ class ETLRunner:
                     record = result[0]
                     transformed += 1
                     total_assets += len(record.assets)
-                    if transformed % 500 == 0 or transformed <= 5:
-                        log.info(
-                            "Collected %d datasets so far (%d files)...",
-                            transformed,
-                            total_assets,
-                        )
                     bus.publish(
                         CountersUpdated(
                             extracted=extracted,
