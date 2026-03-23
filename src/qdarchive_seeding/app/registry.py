@@ -207,6 +207,27 @@ def _build_syracuse_qdr_extractor(
     )
 
 
+def _build_harvard_dataverse_extractor(
+    http_client: Any,
+    auth: AuthProvider,
+    options: dict[str, Any],
+) -> Extractor:
+    from qdarchive_seeding.infra.extractors.harvard_dataverse import (
+        HarvardDataverseExtractor,
+        HarvardDataverseOptions,
+    )
+
+    return HarvardDataverseExtractor(
+        http_client=http_client,
+        auth=auth,
+        options=HarvardDataverseOptions(
+            include_files=options.get("include_files", True),
+            max_pages=options.get("max_pages"),
+            per_page=options.get("per_page", 10),
+        ),
+    )
+
+
 def _build_static_list_extractor(
     http_client: Any,
     auth: AuthProvider,
@@ -443,6 +464,9 @@ def create_default_registries() -> ComponentRegistries:
     registries.extractors.register("html_scraper_extractor", _build_html_scraper_extractor)
     registries.extractors.register("syracuse_qdr_extractor", _build_syracuse_qdr_extractor)
     registries.extractors.register("static_list_extractor", _build_static_list_extractor)
+    registries.extractors.register(
+        "harvard_dataverse_extractor", _build_harvard_dataverse_extractor
+    )
 
     # Transforms
     registries.transforms.register("validate_required_fields", _build_validate_required_fields)

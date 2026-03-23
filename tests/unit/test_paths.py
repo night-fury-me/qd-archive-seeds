@@ -19,6 +19,23 @@ def test_asset_path() -> None:
     assert result == Path("/root/zenodo/ds/file.pdf")
 
 
+def test_dataset_dir_with_version() -> None:
+    strategy = PathStrategy(layout_template="{source_name}/{dataset_slug}/{version}/")
+    result = strategy.dataset_dir(
+        Path("/root"), source_name="zenodo", dataset_slug="my-dataset", version="v1"
+    )
+    assert result == Path("/root/zenodo/my-dataset/v1/")
+
+
+def test_dataset_dir_with_version_none_collapses() -> None:
+    strategy = PathStrategy(layout_template="{source_name}/{dataset_slug}/{version}/")
+    result = strategy.dataset_dir(
+        Path("/root"), source_name="zenodo", dataset_slug="my-dataset", version=None
+    )
+    # Empty version should collapse the double slash
+    assert result == Path("/root/zenodo/my-dataset/")
+
+
 def test_safe_filename_normal() -> None:
     assert safe_filename("hello-world_2024.pdf") == "hello-world_2024.pdf"
 

@@ -25,6 +25,10 @@ from qdarchive_seeding.infra.extractors.syracuse_qdr import (
     SyracuseQdrExtractor,
     SyracuseQdrOptions,
 )
+from qdarchive_seeding.infra.extractors.harvard_dataverse import (
+    HarvardDataverseExtractor,
+    HarvardDataverseOptions,
+)
 from qdarchive_seeding.infra.extractors.zenodo import ZenodoExtractor, ZenodoOptions
 from qdarchive_seeding.infra.http.auth import NoAuth
 
@@ -801,6 +805,125 @@ class TestZenodoExtractorEdges:
 
         assert records[0].license == "cc-by"
         assert records[0].year is None
+
+
+class TestHarvardDataverseExtractor:
+    """Tests for HarvardDataverseExtractor."""
+
+    def _make_dv_config(self, **source_overrides: object) -> PipelineConfig:
+        source: dict[str, Any] = {
+            "name": "harvard-dataverse",
+            "type": "rest_api",
+            "base_url": "https://dataverse.harvard.edu/api",
+            "endpoints": {
+                "search": "/search",
+                "files": "/datasets/:persistentId/versions/:latest/files",
+            },
+            "repository_id": 10,
+            "repository_url": "https://dataverse.harvard.edu",
+        }
+        source.update(source_overrides)
+        return _make_config({"source": source})
+
+    def test_extracts_datasets_from_search(self) -> None:
+        search_page: dict[str, Any] = {
+            "data": {
+                "items": [
+                    {
+                        "global_id": "doi:10.7910/DVN/ABC",
+                        "name": "Qualitative Study",
+                        "description": "A study",
+                        "url": "https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/ABC",
+                        "authors": ["Smith, Jane"],
+                        "keywords": ["interview"],
+                    }
+                ],
+                "total_count": 1,
+            }
+        }
+        files_response: dict[str, Any] = {
+            "data": [
+                {
+                    "dataFile": {
+                        "id": 42,
+                        "filename": "data.qdpx",
+                        "filesize": 1024,
+                    }
+                }
+            ]
+        }
+
+        http_client = FakeHttpClient([search_page, files_response])
+        config = self._make_dv_config()
+        ctx = FakeRunContext(config=config)
+        extractor = HarvardDataverseExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=HarvardDataverseOptions(per_page=10),
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert len(records) == 1
+        r = records[0]
+        assert r.source_dataset_id == "doi:10.7910/DVN/ABC"
+        assert r.title == "Qualitative Study"
+        assert r.repository_id == 10
+        assert r.download_method == "API-CALL"
+        assert r.keywords == ["interview"]
+        assert len(r.persons) == 1
+        assert r.persons[0].name == "Smith, Jane"
+        assert len(r.assets) == 1
+        assert r.assets[0].local_filename == "data.qdpx"
+        assert r.assets[0].file_type == "qdpx"
+
+    def test_deduplicates_across_queries(self) -> None:
+        hit_a: dict[str, Any] = {
+            "data": {
+                "items": [{"global_id": "doi:10.1/A", "name": "A", "url": "u"}],
+                "total_count": 1,
+            }
+        }
+        hit_b: dict[str, Any] = {
+            "data": {
+                "items": [
+                    {"global_id": "doi:10.1/A", "name": "A dup", "url": "u"},
+                    {"global_id": "doi:10.1/B", "name": "B", "url": "u2"},
+                ],
+                "total_count": 2,
+            }
+        }
+        http_client = FakeHttpClient([hit_a, hit_b])
+        config = self._make_dv_config(
+            search_strategy={
+                "extension_queries": ["qdpx", "mqda"],
+                "natural_language_queries": [],
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = HarvardDataverseExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=HarvardDataverseOptions(include_files=False),
+        )
+
+        records = list(extractor.extract(ctx))
+        ids = [r.source_dataset_id for r in records]
+        assert ids == ["doi:10.1/A", "doi:10.1/B"]
+
+    def test_empty_search_yields_nothing(self) -> None:
+        empty: dict[str, Any] = {"data": {"items": [], "total_count": 0}}
+        http_client = FakeHttpClient([empty])
+        config = self._make_dv_config()
+        ctx = FakeRunContext(config=config)
+        extractor = HarvardDataverseExtractor(
+            http_client=http_client,
+            auth=NoAuth(),
+            options=HarvardDataverseOptions(),
+        )
+
+        records = list(extractor.extract(ctx))
+        assert records == []
 
 
 class TestHtmlScraperExtractor:
