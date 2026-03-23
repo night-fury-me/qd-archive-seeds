@@ -13,6 +13,7 @@ class PipelineSettings(BaseConfig):
     id: str
     run_mode: Literal["incremental", "full"] = "incremental"
     max_items: int | None = None
+    phases: list[Literal["metadata", "download"]] = ["metadata", "download"]
 
 
 class PaginationSettings(BaseConfig):
@@ -31,6 +32,18 @@ class HttpSettings(BaseConfig):
     rate_limit_per_second: float = 5.0
 
 
+class SearchStrategy(BaseConfig):
+    """Multi-query search configuration.
+
+    When set on a source, the extractor will iterate over all extension
+    and natural-language queries, deduplicating results across them.
+    """
+
+    extension_queries: list[str] = Field(default_factory=list)
+    natural_language_queries: list[str] = Field(default_factory=list)
+    base_query_prefix: str = ""
+
+
 class SourceSettings(BaseConfig):
     name: str
     type: Literal["rest_api", "html", "static_list"]
@@ -38,6 +51,9 @@ class SourceSettings(BaseConfig):
     endpoints: dict[str, str] = Field(default_factory=dict)
     params: dict[str, Any] = Field(default_factory=dict)
     pagination: PaginationSettings | None = None
+    search_strategy: SearchStrategy | None = None
+    repository_id: int | None = None
+    repository_url: str | None = None
 
 
 class AuthSettings(BaseConfig):
