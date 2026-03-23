@@ -201,6 +201,8 @@ def test_runner_download_and_sink_errors(tmp_path: Path, minimal_config: Pipelin
         assets=[AssetRecord(asset_url="https://example.com/a")],
         raw={"dataset_slug": "ds"},
     )
+    # In two-phase mode: sink error in Phase 1 prevents download in Phase 2.
+    # Test sink error alone first.
     container = _make_container(
         tmp_path,
         minimal_config,
@@ -217,9 +219,37 @@ def test_runner_download_and_sink_errors(tmp_path: Path, minimal_config: Pipelin
     runner = ETLRunner(container)
     info = runner.run(dry_run=False)
 
+    # Sink error in Phase 1 means record not collected for Phase 2
+    assert any(isinstance(e, ErrorEvent) and e.component == "sink" for e in events)
+
+
+def test_runner_download_errors(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+    """Download failure in Phase 2 is reported correctly."""
+    record = DatasetRecord(
+        source_name="s",
+        source_dataset_id="1",
+        source_url="u",
+        assets=[AssetRecord(asset_url="https://example.com/a")],
+        raw={"dataset_slug": "ds"},
+    )
+    container = _make_container(
+        tmp_path,
+        minimal_config,
+        extractor=_ListExtractor([record]),
+        pre_transforms=[_Transform("pre")],
+        post_transforms=[_Transform("post")],
+        downloader=_Downloader(should_fail=True),
+        sink=_Sink(should_fail=False),
+        policy=_Policy(skip=False),
+    )
+    events: list[ProgressEvent] = []
+    container.progress_bus.subscribe(events.append)
+
+    runner = ETLRunner(container)
+    info = runner.run(dry_run=False)
+
     assert info.counts["failed"] == 1
     assert any(isinstance(e, ErrorEvent) and e.component == "downloader" for e in events)
-    assert any(isinstance(e, ErrorEvent) and e.component == "sink" for e in events)
 
 
 def test_runner_respects_policy_skip_and_max_items(
@@ -397,8 +427,9 @@ def test_runner_dry_run_skips_assets(tmp_path: Path, minimal_config: PipelineCon
     runner = ETLRunner(container)
     info = runner.run(dry_run=True)
 
+    # In two-phase mode, dry_run skips Phase 2 entirely; assets stay UNKNOWN
     assert info.counts["skipped"] == 1
-    assert record.assets[0].download_status == DOWNLOAD_STATUS_SKIPPED
+    assert info.counts["downloaded"] == 0
 
 
 def test_runner_cancelled_during_assets_breaks(

@@ -16,14 +16,16 @@ from qdarchive_seeding.app.progress import (
     Completed,
     CountersUpdated,
     ErrorEvent,
+    MetadataCollected,
     StageChanged,
 )
 from qdarchive_seeding.core.constants import (
+    DOWNLOAD_RESULT_UNKNOWN,
     DOWNLOAD_STATUS_FAILED,
     DOWNLOAD_STATUS_SKIPPED,
     DOWNLOAD_STATUS_SUCCESS,
 )
-from qdarchive_seeding.core.entities import RunInfo
+from qdarchive_seeding.core.entities import DatasetRecord, RunInfo
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +39,26 @@ class ConcreteRunContext:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(slots=True)
+class DownloadDecision:
+    """Controls what fraction of collected datasets to download."""
+
+    download_all: bool = True
+    percentage: int = 100  # 1-100
+
+
 class ETLRunner:
     def __init__(self, container: Container) -> None:
         self._c = container
 
-    def run(self, *, dry_run: bool = False) -> RunInfo:
+    def run(
+        self,
+        *,
+        dry_run: bool = False,
+        no_confirm: bool = False,
+        metadata_only: bool = False,
+        download_decision: DownloadDecision | None = None,
+    ) -> RunInfo:
         c = self._c
         run_id = c.run_id
         log = c.logger_bundle.logger
@@ -61,68 +78,163 @@ class ETLRunner:
         failed = 0
         skipped = 0
         failures: list[dict[str, Any]] = []
-
-        # --- Streaming extract → transform → download → load ---
-        # Each dataset is downloaded and loaded as soon as it passes
-        # pre-transforms, so the user sees progress immediately instead
-        # of waiting for all pages to be fetched first.
-        bus.publish(StageChanged("extract"))
-        log.info("Starting extraction (source=%s)", c.config.source.name)
-
-        max_items = c.config.pipeline.max_items
-        downloads_root = Path(c.config.storage.downloads_root)
         total_assets = 0
 
-        # Wire downloader progress callback to the bus
-        _current_asset_url = ""
+        phases = c.config.pipeline.phases
+        collected_records: list[DatasetRecord] = []
+        collected_dataset_ids: list[str] = []
 
-        def _on_download_progress(bytes_so_far: int, total_bytes: int | None) -> None:
-            bus.publish(
-                AssetDownloadProgress(
-                    asset_url=_current_asset_url,
-                    bytes_downloaded=bytes_so_far,
-                    total_bytes=total_bytes,
-                )
-            )
+        # ===== Phase 1: Metadata Collection =====
+        if "metadata" in phases:
+            bus.publish(StageChanged("metadata_collection"))
+            log.info("Phase 1: Collecting metadata (source=%s)", c.config.source.name)
 
-        c.downloader.on_progress = _on_download_progress
+            max_items = c.config.pipeline.max_items
 
-        try:
-            for raw_record in c.extractor.extract(ctx):
-                if ctx.cancelled:
-                    log.warning("Run cancelled")
-                    break
+            try:
+                for raw_record in c.extractor.extract(ctx):
+                    if ctx.cancelled:
+                        log.warning("Run cancelled")
+                        break
 
-                extracted += 1
+                    extracted += 1
 
-                # --- Pre-transform (filter) ---
-                result = c.pre_transform_chain.run([raw_record])
-                if not result:
-                    if extracted % 50 == 0:
-                        bus.publish(CountersUpdated(extracted=extracted, transformed=transformed))
-                    continue
+                    # --- Pre-transform (filter) ---
+                    result = c.pre_transform_chain.run([raw_record])
+                    if not result:
+                        if extracted % 50 == 0:
+                            bus.publish(
+                                CountersUpdated(extracted=extracted, transformed=transformed)
+                            )
+                        continue
 
-                record = result[0]
-                transformed += 1
-                total_assets += len(record.assets)
-                log.info(
-                    "Dataset %d matched: %s (%d assets)",
-                    transformed,
-                    record.title or record.source_dataset_id,
-                    len(record.assets),
-                )
+                    record = result[0]
+                    transformed += 1
+                    total_assets += len(record.assets)
+                    log.info(
+                        "Dataset %d matched: %s (%d assets)",
+                        transformed,
+                        record.title or record.source_dataset_id,
+                        len(record.assets),
+                    )
+                    bus.publish(
+                        CountersUpdated(
+                            extracted=extracted,
+                            transformed=transformed,
+                            total_assets=total_assets,
+                        )
+                    )
+
+                    # --- Post-transform ---
+                    post_result = c.post_transform_chain.run([record])
+                    if not post_result:
+                        continue
+                    record = post_result[0]
+
+                    # --- Store metadata (no download yet) ---
+                    for asset in record.assets:
+                        asset.download_status = DOWNLOAD_RESULT_UNKNOWN
+
+                    try:
+                        dataset_id = c.sink.upsert_dataset(record)
+                        for asset in record.assets:
+                            c.sink.upsert_asset(dataset_id, asset)
+                        loaded += 1
+                        collected_records.append(record)
+                        collected_dataset_ids.append(dataset_id)
+                    except Exception as exc:
+                        log.error(
+                            "Sink error for record %s: %s", record.source_dataset_id, exc
+                        )
+                        bus.publish(
+                            ErrorEvent(
+                                component="sink",
+                                error_type=type(exc).__name__,
+                                message=str(exc),
+                            )
+                        )
+
+                    # Stop once we have enough filtered datasets
+                    if max_items is not None and transformed >= max_items:
+                        log.info(
+                            "Reached max_items=%d filtered datasets (extracted %d raw)",
+                            max_items,
+                            extracted,
+                        )
+                        break
+
+            except Exception as exc:
+                log.error("Extraction failed: %s", exc)
                 bus.publish(
-                    CountersUpdated(
-                        extracted=extracted,
-                        transformed=transformed,
-                        total_assets=total_assets,
+                    ErrorEvent(
+                        component="extractor",
+                        error_type=type(exc).__name__,
+                        message=str(exc),
                     )
                 )
 
-                # --- Download assets immediately ---
+            log.info(
+                "Phase 1 complete: extracted %d raw, %d passed filters, %d loaded",
+                extracted,
+                transformed,
+                loaded,
+            )
+            bus.publish(
+                MetadataCollected(
+                    total_projects=loaded,
+                    total_files=total_assets,
+                )
+            )
+
+        # ===== Phase 2: Download =====
+        if "download" in phases and not metadata_only and not dry_run:
+            bus.publish(StageChanged("download"))
+            log.info("Phase 2: Downloading assets for %d datasets", len(collected_records))
+
+            downloads_root = Path(c.config.storage.downloads_root)
+
+            # Apply download decision (percentage)
+            decision = download_decision or DownloadDecision()
+            if not decision.download_all and decision.percentage < 100:
+                limit = max(1, len(collected_records) * decision.percentage // 100)
+                records_to_download = collected_records[:limit]
+                dataset_ids_to_download = collected_dataset_ids[:limit]
+                log.info(
+                    "Downloading %d/%d datasets (%d%%)",
+                    limit,
+                    len(collected_records),
+                    decision.percentage,
+                )
+            else:
+                records_to_download = collected_records
+                dataset_ids_to_download = collected_dataset_ids
+
+            # Wire downloader progress callback to the bus
+            _current_asset_url = ""
+
+            def _on_download_progress(bytes_so_far: int, total_bytes: int | None) -> None:
+                bus.publish(
+                    AssetDownloadProgress(
+                        asset_url=_current_asset_url,
+                        bytes_downloaded=bytes_so_far,
+                        total_bytes=total_bytes,
+                    )
+                )
+
+            c.downloader.on_progress = _on_download_progress
+
+            for record, dataset_id in zip(
+                records_to_download, dataset_ids_to_download, strict=True
+            ):
+                if ctx.cancelled:
+                    log.warning("Run cancelled during download")
+                    break
+
                 c.rate_limiter.wait()
 
-                dataset_slug = (record.raw.get("dataset_slug") if record.raw else None) or "dataset"
+                dataset_slug = (
+                    (record.raw.get("dataset_slug") if record.raw else None) or "dataset"
+                )
                 target_dir = c.path_strategy.dataset_dir(
                     downloads_root,
                     source_name=record.source_name,
@@ -137,17 +249,14 @@ class ETLRunner:
                         skipped += 1
                         asset.download_status = DOWNLOAD_STATUS_SKIPPED
                         continue
-                    if dry_run:
-                        skipped += 1
-                        asset.download_status = DOWNLOAD_STATUS_SKIPPED
-                        continue
                     try:
                         _current_asset_url = asset.asset_url
                         dl_result = c.downloader.download(asset, target_dir)
                         bus.publish(
                             AssetDownloadUpdate(
                                 asset_url=asset.asset_url,
-                                status=dl_result.asset.download_status or DOWNLOAD_STATUS_SUCCESS,
+                                status=dl_result.asset.download_status
+                                or DOWNLOAD_STATUS_SUCCESS,
                                 bytes_downloaded=dl_result.bytes_downloaded,
                             )
                         )
@@ -173,25 +282,12 @@ class ETLRunner:
                         )
                         log.error("Download failed for %s: %s", asset.asset_url, exc)
 
-                # --- Post-transform + Load ---
-                post_result = c.post_transform_chain.run([record])
-                if not post_result:
-                    continue
-
+                # Update sink with download results
                 try:
-                    dataset_id = c.sink.upsert_dataset(record)
                     for asset in record.assets:
                         c.sink.upsert_asset(dataset_id, asset)
-                    loaded += 1
                 except Exception as exc:
-                    log.error("Sink error for record %s: %s", record.source_dataset_id, exc)
-                    bus.publish(
-                        ErrorEvent(
-                            component="sink",
-                            error_type=type(exc).__name__,
-                            message=str(exc),
-                        )
-                    )
+                    log.error("Sink update error for %s: %s", dataset_id, exc)
 
                 bus.publish(
                     CountersUpdated(
@@ -203,25 +299,10 @@ class ETLRunner:
                         total_assets=total_assets,
                     )
                 )
+        elif dry_run:
+            skipped = total_assets
 
-                # Stop once we have enough filtered datasets
-                if max_items is not None and transformed >= max_items:
-                    log.info(
-                        "Reached max_items=%d filtered datasets (extracted %d raw)",
-                        max_items,
-                        extracted,
-                    )
-                    break
-
-        except Exception as exc:
-            log.error("Extraction failed: %s", exc)
-            bus.publish(
-                ErrorEvent(component="extractor", error_type=type(exc).__name__, message=str(exc))
-            )
-        finally:
-            c.sink.close()
-
-        log.info("Extracted %d raw, %d passed filters", extracted, transformed)
+        c.sink.close()
 
         # --- Complete ---
         ended_at = datetime.now(UTC)

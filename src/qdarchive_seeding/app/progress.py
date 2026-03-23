@@ -51,6 +51,15 @@ class ErrorEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class MetadataCollected:
+    """Emitted after Phase 1 (metadata collection) completes."""
+
+    total_projects: int = 0
+    total_files: int = 0
+    queries_run: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class Completed:
     run_info: RunInfo
 
@@ -61,6 +70,7 @@ ProgressEvent = (
     | AssetDownloadUpdate
     | AssetDownloadProgress
     | ErrorEvent
+    | MetadataCollected
     | Completed
 )
 
