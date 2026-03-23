@@ -68,6 +68,6 @@ def test_static_list_to_sqlite(tmp_path: Path) -> None:
     assert info.counts["transformed"] == 2
 
     conn = sqlite3.connect(tmp_path / "test.sqlite")
-    datasets = conn.execute("SELECT COUNT(*) FROM datasets").fetchone()[0]
+    projects = conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
     conn.close()
-    assert datasets == 2
+    assert projects == 2
