@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import platform
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -58,6 +59,7 @@ class ETLRunner:
         no_confirm: bool = False,
         metadata_only: bool = False,
         download_decision: DownloadDecision | None = None,
+        confirm_callback: Callable[[int, int], DownloadDecision] | None = None,
     ) -> RunInfo:
         c = self._c
         run_id = c.run_id
@@ -188,126 +190,147 @@ class ETLRunner:
 
         # ===== Phase 2: Download =====
         if "download" in phases and not metadata_only and not dry_run:
-            bus.publish(StageChanged("download"))
-            log.info("Phase 2: Downloading assets for %d datasets", len(collected_records))
-
-            downloads_root = Path(c.config.storage.downloads_root)
-
-            # Apply download decision (percentage)
-            decision = download_decision or DownloadDecision()
-            if not decision.download_all and decision.percentage < 100:
-                limit = max(1, len(collected_records) * decision.percentage // 100)
-                records_to_download = collected_records[:limit]
-                dataset_ids_to_download = collected_dataset_ids[:limit]
-                log.info(
-                    "Downloading %d/%d datasets (%d%%)",
-                    limit,
-                    len(collected_records),
-                    decision.percentage,
-                )
+            # Get download decision: callback (interactive) > explicit > default
+            if confirm_callback is not None and not no_confirm and loaded > 0:
+                decision = confirm_callback(loaded, total_assets)
             else:
-                records_to_download = collected_records
-                dataset_ids_to_download = collected_dataset_ids
+                decision = download_decision or DownloadDecision()
 
-            # Wire downloader progress callback to the bus
-            _current_asset_url = ""
+            # User chose to skip download
+            if decision.percentage == 0:
+                log.info("Download skipped by user")
+                skipped = total_assets
+            elif collected_records:
+                bus.publish(StageChanged("download"))
+                log.info("Phase 2: Downloading assets for %d datasets", len(collected_records))
 
-            def _on_download_progress(bytes_so_far: int, total_bytes: int | None) -> None:
-                bus.publish(
-                    AssetDownloadProgress(
-                        asset_url=_current_asset_url,
-                        bytes_downloaded=bytes_so_far,
-                        total_bytes=total_bytes,
+                downloads_root = Path(c.config.storage.downloads_root)
+                if not decision.download_all and decision.percentage < 100:
+                    limit = max(1, len(collected_records) * decision.percentage // 100)
+                    records_to_download = collected_records[:limit]
+                    dataset_ids_to_download = collected_dataset_ids[:limit]
+                    log.info(
+                        "Downloading %d/%d datasets (%d%%)",
+                        limit,
+                        len(collected_records),
+                        decision.percentage,
                     )
-                )
+                else:
+                    records_to_download = collected_records
+                    dataset_ids_to_download = collected_dataset_ids
 
-            c.downloader.on_progress = _on_download_progress
+                # Wire downloader progress callback to the bus
+                _current_asset_url = ""
 
-            for record, dataset_id in zip(
-                records_to_download, dataset_ids_to_download, strict=True
-            ):
-                if ctx.cancelled:
-                    log.warning("Run cancelled during download")
-                    break
+                def _on_download_progress(
+                    bytes_so_far: int, total_bytes: int | None
+                ) -> None:
+                    bus.publish(
+                        AssetDownloadProgress(
+                            asset_url=_current_asset_url,
+                            bytes_downloaded=bytes_so_far,
+                            total_bytes=total_bytes,
+                        )
+                    )
 
-                # Restore prior download statuses from DB so the policy
-                # can skip already-downloaded files on resume.
-                if hasattr(c.sink, "get_file_statuses"):
-                    prior_statuses = c.sink.get_file_statuses(dataset_id)
-                    for asset in record.assets:
-                        fname = asset.local_filename or asset.asset_url.rsplit("/", 1)[-1]
-                        if fname in prior_statuses:
-                            asset.download_status = prior_statuses[fname]
+                c.downloader.on_progress = _on_download_progress
 
-                c.rate_limiter.wait()
-
-                dataset_slug = (
-                    (record.raw.get("dataset_slug") if record.raw else None) or "dataset"
-                )
-                target_dir = c.path_strategy.dataset_dir(
-                    downloads_root,
-                    source_name=record.source_name,
-                    dataset_slug=dataset_slug,
-                )
-                c.filesystem.ensure_dir(target_dir)
-
-                for asset in record.assets:
+                for record, dataset_id in zip(
+                    records_to_download, dataset_ids_to_download, strict=True
+                ):
                     if ctx.cancelled:
+                        log.warning("Run cancelled during download")
                         break
-                    if c.policy.should_skip_asset(asset):
-                        skipped += 1
-                        asset.download_status = DOWNLOAD_STATUS_SKIPPED
-                        continue
-                    try:
-                        _current_asset_url = asset.asset_url
-                        dl_result = c.downloader.download(asset, target_dir)
-                        bus.publish(
-                            AssetDownloadUpdate(
-                                asset_url=asset.asset_url,
-                                status=dl_result.asset.download_status
-                                or DOWNLOAD_STATUS_SUCCESS,
-                                bytes_downloaded=dl_result.bytes_downloaded,
-                            )
-                        )
-                        if dl_result.asset.download_status == DOWNLOAD_STATUS_SUCCESS:
-                            downloaded += 1
-                        else:
-                            failed += 1
-                            failures.append(
-                                {"asset_url": asset.asset_url, "error": "non-success status"}
-                            )
-                    except Exception as exc:
-                        failed += 1
-                        asset.download_status = DOWNLOAD_STATUS_FAILED
-                        asset.error_message = str(exc)
-                        failures.append({"asset_url": asset.asset_url, "error": str(exc)})
-                        bus.publish(
-                            ErrorEvent(
-                                component="downloader",
-                                error_type=type(exc).__name__,
-                                message=str(exc),
-                                asset_url=asset.asset_url,
-                            )
-                        )
-                        log.error("Download failed for %s: %s", asset.asset_url, exc)
 
-                # Update sink with download results
-                try:
-                    for asset in record.assets:
-                        c.sink.upsert_asset(dataset_id, asset)
-                except Exception as exc:
-                    log.error("Sink update error for %s: %s", dataset_id, exc)
+                    # Restore prior download statuses from DB so the policy
+                    # can skip already-downloaded files on resume.
+                    if hasattr(c.sink, "get_file_statuses"):
+                        prior_statuses = c.sink.get_file_statuses(dataset_id)
+                        for asset in record.assets:
+                            fname = (
+                                asset.local_filename
+                                or asset.asset_url.rsplit("/", 1)[-1]
+                            )
+                            if fname in prior_statuses:
+                                asset.download_status = prior_statuses[fname]
 
-                bus.publish(
-                    CountersUpdated(
-                        extracted=extracted,
-                        transformed=transformed,
-                        downloaded=downloaded,
-                        failed=failed,
-                        skipped=skipped,
-                        total_assets=total_assets,
+                    c.rate_limiter.wait()
+
+                    dataset_slug = (
+                        (record.raw.get("dataset_slug") if record.raw else None)
+                        or "dataset"
                     )
-                )
+                    target_dir = c.path_strategy.dataset_dir(
+                        downloads_root,
+                        source_name=record.source_name,
+                        dataset_slug=dataset_slug,
+                    )
+                    c.filesystem.ensure_dir(target_dir)
+
+                    for asset in record.assets:
+                        if ctx.cancelled:
+                            break
+                        if c.policy.should_skip_asset(asset):
+                            skipped += 1
+                            asset.download_status = DOWNLOAD_STATUS_SKIPPED
+                            continue
+                        try:
+                            _current_asset_url = asset.asset_url
+                            dl_result = c.downloader.download(asset, target_dir)
+                            bus.publish(
+                                AssetDownloadUpdate(
+                                    asset_url=asset.asset_url,
+                                    status=dl_result.asset.download_status
+                                    or DOWNLOAD_STATUS_SUCCESS,
+                                    bytes_downloaded=dl_result.bytes_downloaded,
+                                )
+                            )
+                            if dl_result.asset.download_status == DOWNLOAD_STATUS_SUCCESS:
+                                downloaded += 1
+                            else:
+                                failed += 1
+                                failures.append(
+                                    {
+                                        "asset_url": asset.asset_url,
+                                        "error": "non-success status",
+                                    }
+                                )
+                        except Exception as exc:
+                            failed += 1
+                            asset.download_status = DOWNLOAD_STATUS_FAILED
+                            asset.error_message = str(exc)
+                            failures.append(
+                                {"asset_url": asset.asset_url, "error": str(exc)}
+                            )
+                            bus.publish(
+                                ErrorEvent(
+                                    component="downloader",
+                                    error_type=type(exc).__name__,
+                                    message=str(exc),
+                                    asset_url=asset.asset_url,
+                                )
+                            )
+                            log.error(
+                                "Download failed for %s: %s", asset.asset_url, exc
+                            )
+
+                    # Update sink with download results
+                    try:
+                        for asset in record.assets:
+                            c.sink.upsert_asset(dataset_id, asset)
+                    except Exception as exc:
+                        log.error("Sink update error for %s: %s", dataset_id, exc)
+
+                    bus.publish(
+                        CountersUpdated(
+                            extracted=extracted,
+                            transformed=transformed,
+                            downloaded=downloaded,
+                            failed=failed,
+                            skipped=skipped,
+                            total_assets=total_assets,
+                        )
+                    )
         elif dry_run:
             skipped = total_assets
 

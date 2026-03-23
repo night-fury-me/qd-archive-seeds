@@ -37,14 +37,12 @@ _STAGE_LABELS: dict[str, str] = {
 class CliProgressDisplay:
     """Two-bar progress display: an overall asset bar and a per-file byte bar."""
 
-    def __init__(self, *, no_confirm: bool = False) -> None:
+    def __init__(self) -> None:
         self._progress: Progress | None = None
         self._overall_id: TaskID | None = None
         self._file_id: TaskID | None = None
         self._total_assets: int = 0
         self._completed_assets: int = 0
-        self._no_confirm = no_confirm
-        self.download_decision: DownloadDecision = DownloadDecision()
 
     def __call__(self, event: ProgressEvent) -> None:
         if isinstance(event, StageChanged):
@@ -92,9 +90,6 @@ class CliProgressDisplay:
         table.add_row("Total unique datasets", str(event.total_projects))
         table.add_row("Total files", str(event.total_files))
         console.print(table)
-
-        if not self._no_confirm and event.total_projects > 0:
-            self.download_decision = _prompt_download_decision(event.total_projects)
 
     def _on_stream_progress(self, event: AssetDownloadProgress) -> None:
         if self._progress is None or self._file_id is None:
@@ -144,9 +139,14 @@ class CliProgressDisplay:
             self._file_id = None
 
 
-def _prompt_download_decision(total_projects: int) -> DownloadDecision:
-    """Prompt the user for a download decision after metadata collection."""
+def _prompt_download_decision(total_projects: int, total_files: int) -> DownloadDecision:
+    """Prompt the user for a download decision after metadata collection.
+
+    Called synchronously by the runner between Phase 1 and Phase 2.
+    Signature matches ``confirm_callback: Callable[[int, int], DownloadDecision]``.
+    """
     console.print()
+    console.print(f"[bold]Found {total_projects} datasets with {total_files} files.[/bold]")
     console.print("[bold]Download options:[/bold]")
     console.print("  [1] Download all datasets")
     console.print("  [2] Download a percentage of datasets")
@@ -197,7 +197,7 @@ def run_pipeline(
 
     container = build_container(cfg, force=force, retry_failed=retry_failed)
 
-    display = CliProgressDisplay(no_confirm=no_confirm)
+    display = CliProgressDisplay()
     container.progress_bus.subscribe(display)
 
     runner = ETLRunner(container)
@@ -205,7 +205,7 @@ def run_pipeline(
         dry_run=dry_run,
         no_confirm=no_confirm,
         metadata_only=metadata_only,
-        download_decision=display.download_decision if not no_confirm else None,
+        confirm_callback=_prompt_download_decision if not no_confirm else None,
     )
 
 
