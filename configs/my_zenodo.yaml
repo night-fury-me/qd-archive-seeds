@@ -112,8 +112,8 @@ sink:
 
 http:
   timeout_seconds: 15
-  max_retries: 2
-  rate_limit_per_second: 5.0
+  max_retries: 3
+  rate_limit_per_second: 0.5  # Zenodo allows 30 req/min
 
 logging:
   level: "INFO"

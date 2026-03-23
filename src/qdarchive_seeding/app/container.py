@@ -114,8 +114,8 @@ def build_container(
         backoff_min=config.http.backoff_min,
         backoff_max=config.http.backoff_max,
     )
-    http_client = HttpxClient(http_settings)
     rate_limiter = RateLimiter(max_per_second=config.http.rate_limit_per_second)
+    http_client = HttpxClient(http_settings, rate_limiter=rate_limiter)
     extractor = _build_extractor(config, http_client, auth, registries)
     pre_transform_chain = _build_transforms(config.pre_transforms, registries)
     post_transform_chain = _build_transforms(config.post_transforms, registries)

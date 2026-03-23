@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,12 +15,16 @@ from tenacity import (
 
 from qdarchive_seeding.core.interfaces import HttpClient
 
+logger = logging.getLogger(__name__)
+
 
 def _is_retryable(exc: BaseException) -> bool:
-    """Retry on connection errors and 5xx server errors."""
+    """Retry on connection errors, 5xx, and 429 (rate-limited) responses."""
     if isinstance(exc, httpx.RequestError):
         return True
-    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500 or exc.response.status_code == 429
+    return False
 
 
 @dataclass(slots=True)
@@ -39,8 +45,13 @@ class _IPv4Transport(httpx.HTTPTransport):
 
 
 class HttpxClient(HttpClient):
-    def __init__(self, settings: HttpClientSettings) -> None:
+    def __init__(
+        self,
+        settings: HttpClientSettings,
+        rate_limiter: Any | None = None,
+    ) -> None:
         self._settings = settings
+        self._rate_limiter = rate_limiter
         self._client = httpx.Client(
             timeout=settings.timeout_seconds,
             headers={"User-Agent": settings.user_agent},
@@ -64,8 +75,15 @@ class HttpxClient(HttpClient):
             ),
         )
         def _request() -> httpx.Response:
+            if self._rate_limiter is not None:
+                self._rate_limiter.wait()
             combined_headers = {**self._client.headers, **headers}
             resp = self._client.get(url, headers=combined_headers, params=params, timeout=timeout)
+            if resp.status_code == 429:
+                retry_after = resp.headers.get("retry-after", "")
+                wait_secs = int(retry_after) if retry_after.isdigit() else 60
+                logger.warning("Rate limited (429), waiting %ds before retry", wait_secs)
+                time.sleep(wait_secs)
             resp.raise_for_status()
             return resp
 
