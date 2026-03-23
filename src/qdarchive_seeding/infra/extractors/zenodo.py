@@ -3,8 +3,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 
-from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
+from qdarchive_seeding.core.constants import (
+    DOWNLOAD_METHOD_API,
+    PERSON_ROLE_CONTRIBUTOR,
+    PERSON_ROLE_CREATOR,
+)
+from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord, PersonRole
 from qdarchive_seeding.core.interfaces import AuthProvider, HttpClient, RunContext
 from qdarchive_seeding.infra.http.pagination import PagePagination
 
@@ -25,13 +31,49 @@ class ZenodoExtractor:
     options: ZenodoOptions
 
     def extract(self, ctx: RunContext) -> Iterator[DatasetRecord]:
-        """Yield records page-by-page so the runner can stop when enough pass filters."""
+        """Yield records, iterating over multiple queries if search_strategy is set."""
+        strategy = ctx.config.source.search_strategy
+        if strategy is None:
+            # Legacy single-query mode
+            query = ctx.config.source.params.get("q", "")
+            yield from self._extract_single_query(ctx, str(query), query_string=str(query))
+            return
+
+        seen_ids: set[str] = set()
+        prefix = strategy.base_query_prefix
+
+        # Extension-based queries
+        for ext in strategy.extension_queries:
+            query = f"{prefix} filetype:{ext}".strip() if prefix else f"filetype:{ext}"
+            logger.info("Running extension query: %s", query)
+            yield from self._extract_single_query(
+                ctx, query, seen_ids=seen_ids, query_string=ext
+            )
+
+        # Natural language queries
+        for nl_query in strategy.natural_language_queries:
+            query = f"{prefix} {nl_query}".strip() if prefix else nl_query
+            logger.info("Running NL query: %s", query)
+            yield from self._extract_single_query(
+                ctx, query, seen_ids=seen_ids, query_string=nl_query
+            )
+
+    def _extract_single_query(
+        self,
+        ctx: RunContext,
+        query: str,
+        *,
+        seen_ids: set[str] | None = None,
+        query_string: str = "",
+    ) -> Iterator[DatasetRecord]:
+        """Run a single paginated query against the Zenodo API."""
         endpoint = ctx.config.source.endpoints.get("search", "/records")
         base_url = ctx.config.source.base_url.rstrip("/")
         url = f"{base_url}{endpoint}"
 
         headers: dict[str, str] = {}
         params = dict(ctx.config.source.params)
+        params["q"] = query
         headers, params = self.auth.apply(headers, params)
 
         pagination = ctx.config.source.pagination
@@ -40,8 +82,10 @@ class ZenodoExtractor:
             size_param=(pagination.size_param if pagination and pagination.size_param else "size"),
         )
 
-        total_yielded = 0
+        source_cfg = ctx.config.source
         effective_max_pages = self.options.max_pages or self.options._safety_max_pages
+        total_yielded = 0
+
         for page_count, page_params in enumerate(paginator.iter_params(params)):
             if page_count >= effective_max_pages:
                 logger.warning("Reached max pages limit (%d), stopping", effective_max_pages)
@@ -55,27 +99,69 @@ class ZenodoExtractor:
                 break
             total_yielded += len(hits)
             logger.info(
-                "Page %d: fetched %d hits (%d total)", page_count + 1, len(hits), total_yielded
+                "Query '%s' page %d: fetched %d hits (%d total)",
+                query_string,
+                page_count + 1,
+                len(hits),
+                total_yielded,
             )
             for item in hits:
+                record_id = str(item.get("id")) if item.get("id") is not None else None
+
+                # Deduplicate across queries
+                if seen_ids is not None and record_id:
+                    if record_id in seen_ids:
+                        continue
+                    seen_ids.add(record_id)
+
                 metadata = item.get("metadata", {})
                 files = item.get("files", []) if self.options.include_files else []
                 assets = [
                     AssetRecord(
                         asset_url=f.get("links", {}).get("self", ""),
                         local_filename=f.get("key"),
+                        file_type=PurePosixPath(f.get("key", "")).suffix.lstrip(".")
+                        if f.get("key")
+                        else None,
                     )
                     for f in files
                     if f
                 ]
+
+                # Extract persons from creators + contributors
+                persons: list[PersonRole] = []
+                for creator in metadata.get("creators", []):
+                    if creator.get("name"):
+                        persons.append(
+                            PersonRole(name=creator["name"], role=PERSON_ROLE_CREATOR)
+                        )
+                for contributor in metadata.get("contributors", []):
+                    if contributor.get("name"):
+                        persons.append(
+                            PersonRole(name=contributor["name"], role=PERSON_ROLE_CONTRIBUTOR)
+                        )
+
                 yield DatasetRecord(
-                    source_name=ctx.config.source.name,
-                    source_dataset_id=str(item.get("id")) if item.get("id") is not None else None,
+                    source_name=source_cfg.name,
+                    source_dataset_id=record_id,
                     source_url=item.get("links", {}).get("self", url),
                     title=metadata.get("title"),
                     description=metadata.get("description"),
                     doi=metadata.get("doi"),
                     license=_extract_license(metadata.get("license")),
+                    query_string=query_string,
+                    repository_id=source_cfg.repository_id,
+                    repository_url=source_cfg.repository_url,
+                    version=metadata.get("version"),
+                    language=metadata.get("language"),
+                    upload_date=metadata.get("publication_date"),
+                    download_method=DOWNLOAD_METHOD_API,
+                    download_repository_folder=source_cfg.name,
+                    download_project_folder=record_id,
+                    download_version_folder=metadata.get("version"),
+                    keywords=metadata.get("keywords", []),
+                    persons=persons,
+                    # Deprecated fields (kept for backward compat)
                     year=_extract_year(metadata.get("publication_date")),
                     owner_name=metadata.get("creators", [{}])[0].get("name")
                     if metadata.get("creators")

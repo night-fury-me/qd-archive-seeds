@@ -582,6 +582,136 @@ class TestGenericRestExtractor:
         assert records[0].source_dataset_id == "ok"
 
 
+class TestZenodoMultiQuery:
+    """Tests for ZenodoExtractor multi-query search strategy."""
+
+    def _make_zenodo_config(self, **source_overrides: object) -> PipelineConfig:
+        source: dict[str, Any] = {
+            "name": "zenodo",
+            "type": "rest_api",
+            "base_url": "https://zenodo.org/api",
+            "endpoints": {"search": "/records"},
+            "repository_id": 1,
+            "repository_url": "https://zenodo.org",
+        }
+        source.update(source_overrides)
+        return _make_config({"source": source})
+
+    def test_multi_query_iterates_extension_and_nl_queries(self) -> None:
+        """Each query should produce a separate HTTP call series."""
+        hit_qdpx: dict[str, Any] = {
+            "hits": {"hits": [{"id": "1", "metadata": {"keywords": ["qualitative"]}, "files": []}]}
+        }
+        hit_mqda: dict[str, Any] = {
+            "hits": {"hits": [{"id": "2", "metadata": {}, "files": []}]}
+        }
+        hit_nl: dict[str, Any] = {
+            "hits": {"hits": [{"id": "3", "metadata": {}, "files": []}]}
+        }
+        empty: dict[str, Any] = {"hits": {"hits": []}}
+
+        http_client = FakeHttpClient([hit_qdpx, empty, hit_mqda, empty, hit_nl, empty])
+        config = self._make_zenodo_config(
+            search_strategy={
+                "base_query_prefix": "resource_type.type:dataset AND",
+                "extension_queries": ["qdpx", "mqda"],
+                "natural_language_queries": ["interview study"],
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = ZenodoExtractor(
+            http_client=http_client, auth=NoAuth(), options=ZenodoOptions()
+        )
+
+        records = list(extractor.extract(ctx))
+
+        assert len(records) == 3
+        assert records[0].source_dataset_id == "1"
+        assert records[0].query_string == "qdpx"
+        assert records[0].repository_id == 1
+        assert records[0].keywords == ["qualitative"]
+        assert records[1].query_string == "mqda"
+        assert records[2].query_string == "interview study"
+
+    def test_multi_query_deduplicates_across_queries(self) -> None:
+        """Same dataset ID from different queries should only appear once."""
+        hit_a: dict[str, Any] = {
+            "hits": {"hits": [
+                {"id": "100", "metadata": {}, "files": []},
+                {"id": "200", "metadata": {}, "files": []},
+            ]}
+        }
+        hit_b: dict[str, Any] = {
+            "hits": {"hits": [
+                {"id": "100", "metadata": {}, "files": []},  # duplicate
+                {"id": "300", "metadata": {}, "files": []},
+            ]}
+        }
+        empty: dict[str, Any] = {"hits": {"hits": []}}
+
+        http_client = FakeHttpClient([hit_a, empty, hit_b, empty])
+        config = self._make_zenodo_config(
+            search_strategy={
+                "extension_queries": ["qdpx", "mqda"],
+                "natural_language_queries": [],
+            }
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = ZenodoExtractor(
+            http_client=http_client, auth=NoAuth(), options=ZenodoOptions()
+        )
+
+        records = list(extractor.extract(ctx))
+
+        ids = [r.source_dataset_id for r in records]
+        assert ids == ["100", "200", "300"]
+
+    def test_multi_query_populates_new_fields(self) -> None:
+        """New entity fields should be populated from Zenodo metadata."""
+        hit: dict[str, Any] = {
+            "hits": {"hits": [{
+                "id": "42",
+                "metadata": {
+                    "title": "Test",
+                    "version": "1.0",
+                    "language": "en",
+                    "publication_date": "2024-06-15",
+                    "creators": [{"name": "Alice"}],
+                    "contributors": [{"name": "Bob"}],
+                    "keywords": ["qualitative", "interview"],
+                },
+                "files": [{"key": "data.qdpx", "links": {"self": "https://z.org/f/data.qdpx"}}],
+            }]}
+        }
+        empty: dict[str, Any] = {"hits": {"hits": []}}
+
+        http_client = FakeHttpClient([hit, empty])
+        config = self._make_zenodo_config(
+            search_strategy={"extension_queries": ["qdpx"], "natural_language_queries": []}
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = ZenodoExtractor(
+            http_client=http_client, auth=NoAuth(), options=ZenodoOptions()
+        )
+
+        records = list(extractor.extract(ctx))
+        r = records[0]
+
+        assert r.version == "1.0"
+        assert r.language == "en"
+        assert r.upload_date == "2024-06-15"
+        assert r.download_method == "API-CALL"
+        assert r.download_repository_folder == "zenodo"
+        assert r.download_project_folder == "42"
+        assert r.keywords == ["qualitative", "interview"]
+        assert len(r.persons) == 2
+        assert r.persons[0].name == "Alice"
+        assert r.persons[0].role == "CREATOR"
+        assert r.persons[1].name == "Bob"
+        assert r.persons[1].role == "CONTRIBUTOR"
+        assert r.assets[0].file_type == "qdpx"
+
+
 class TestZenodoExtractorEdges:
     def test_include_files_false(self) -> None:
         payload: dict[str, Any] = {
