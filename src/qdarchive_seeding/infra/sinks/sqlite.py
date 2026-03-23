@@ -209,3 +209,16 @@ class SQLiteSink(BaseSink):
             (status, project_id, file_name),
         )
         self._conn.commit()
+
+    def get_file_statuses(self, dataset_id: str) -> dict[str, str]:
+        """Return a mapping of file_name → status for a project.
+
+        Used by the runner to restore prior download states so that
+        already-downloaded files are skipped on resume.
+        """
+        project_id = int(dataset_id)
+        rows = self._conn.execute(
+            "SELECT file_name, status FROM files WHERE project_id = ?",
+            (project_id,),
+        ).fetchall()
+        return {row[0]: row[1] for row in rows if row[0]}

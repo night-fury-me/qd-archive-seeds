@@ -230,6 +230,15 @@ class ETLRunner:
                     log.warning("Run cancelled during download")
                     break
 
+                # Restore prior download statuses from DB so the policy
+                # can skip already-downloaded files on resume.
+                if hasattr(c.sink, "get_file_statuses"):
+                    prior_statuses = c.sink.get_file_statuses(dataset_id)
+                    for asset in record.assets:
+                        fname = asset.local_filename or asset.asset_url.rsplit("/", 1)[-1]
+                        if fname in prior_statuses:
+                            asset.download_status = prior_statuses[fname]
+
                 c.rate_limiter.wait()
 
                 dataset_slug = (

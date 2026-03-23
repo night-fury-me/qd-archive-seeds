@@ -161,6 +161,26 @@ def test_update_file_status(tmp_path: Path) -> None:
     assert row[0] == "SUCCESS"
 
 
+def test_get_file_statuses(tmp_path: Path) -> None:
+    sink = SQLiteSink(name="test", path=tmp_path / "test.sqlite")
+    record = _make_record()
+    pid = sink.upsert_dataset(record)
+    sink.upsert_asset(
+        pid, AssetRecord(asset_url="u1", local_filename="a.qdpx", download_status="SUCCESS")
+    )
+    sink.upsert_asset(
+        pid, AssetRecord(asset_url="u2", local_filename="b.pdf", download_status="FAILED")
+    )
+    sink.upsert_asset(
+        pid, AssetRecord(asset_url="u3", local_filename="c.csv", download_status="RESUMABLE")
+    )
+
+    statuses = sink.get_file_statuses(pid)
+    sink.close()
+
+    assert statuses == {"a.qdpx": "SUCCESS", "b.pdf": "FAILED", "c.csv": "RESUMABLE"}
+
+
 def test_different_versions_separate_rows(tmp_path: Path) -> None:
     sink = SQLiteSink(name="test", path=tmp_path / "test.sqlite")
     r1 = _make_record(version="v1", download_version_folder="v1")

@@ -3,6 +3,7 @@ from __future__ import annotations
 from qdarchive_seeding.app.policies import IncrementalPolicy, RetryPolicy
 from qdarchive_seeding.core.constants import (
     DOWNLOAD_STATUS_FAILED,
+    DOWNLOAD_STATUS_RESUMABLE,
     DOWNLOAD_STATUS_SUCCESS,
     RUN_MODE_FULL,
     RUN_MODE_INCREMENTAL,
@@ -59,3 +60,13 @@ def test_retry_policy_should_retry_under_max() -> None:
     assert policy.should_retry(RuntimeError(), 1) is True
     assert policy.should_retry(RuntimeError(), 2) is True
     assert policy.should_retry(RuntimeError(), 3) is False
+
+
+def test_incremental_does_not_skip_resumable() -> None:
+    policy = IncrementalPolicy(run_mode=RUN_MODE_INCREMENTAL, force=False)
+    assert policy.should_skip_asset(_asset(DOWNLOAD_STATUS_RESUMABLE)) is False
+
+
+def test_retry_policy_does_not_skip_resumable() -> None:
+    policy = RetryPolicy(retry_failed=False)
+    assert policy.should_skip_asset(_asset(DOWNLOAD_STATUS_RESUMABLE)) is False
