@@ -79,9 +79,9 @@ class HttpxClient(HttpClient):
                 self._rate_limiter.wait()
             combined_headers = {**self._client.headers, **headers}
             resp = self._client.get(url, headers=combined_headers, params=params, timeout=timeout)
-            # Handle 429 inline: wait and re-send (up to 3 times) without
+            # Handle 429 inline: wait and re-send (up to 5 times) without
             # consuming tenacity retries, which are reserved for 5xx/network.
-            for _attempt in range(3):
+            for _attempt in range(5):
                 if resp.status_code != 429:
                     break
                 retry_after = resp.headers.get("retry-after", "")
