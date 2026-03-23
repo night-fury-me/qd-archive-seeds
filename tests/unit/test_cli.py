@@ -70,8 +70,8 @@ def test_run_pipeline_invokes_runner(monkeypatch: object, minimal_config: Any) -
         def __init__(self, _container: Any) -> None:
             captured["runner_init"] = True
 
-        def run(self, *, dry_run: bool = False) -> None:
-            captured["dry_run"] = dry_run
+        def run(self, **kwargs: Any) -> None:
+            captured["dry_run"] = kwargs.get("dry_run", False)
 
     monkeypatch.setattr(seed_module, "load_config", fake_load_config)
     monkeypatch.setattr(seed_module, "build_container", fake_build_container)
@@ -148,13 +148,13 @@ def test_status_command_with_db(tmp_path: Path) -> None:
     try:
         conn.executescript(
             """
-            CREATE TABLE datasets (id TEXT);
-            CREATE TABLE assets (id TEXT, download_status TEXT);
-            INSERT INTO datasets (id) VALUES ('d1'), ('d2');
-            INSERT INTO assets (id, download_status) VALUES
-              ('a1', 'SUCCESS'),
-              ('a2', 'FAILED'),
-              ('a3', 'SKIPPED');
+            CREATE TABLE projects (id INTEGER PRIMARY KEY, project_url TEXT NOT NULL);
+            CREATE TABLE files (id INTEGER PRIMARY KEY, project_id INTEGER, file_name TEXT, status TEXT);
+            INSERT INTO projects (id, project_url) VALUES (1, 'u1'), (2, 'u2');
+            INSERT INTO files (id, project_id, file_name, status) VALUES
+              (1, 1, 'a.qdpx', 'SUCCESS'),
+              (2, 1, 'b.pdf', 'FAILED'),
+              (3, 2, 'c.csv', 'SKIPPED');
             """
         )
         conn.commit()
@@ -164,8 +164,8 @@ def test_status_command_with_db(tmp_path: Path) -> None:
     result = runner.invoke(app, ["seed", "status", "--db", str(db)])
 
     assert result.exit_code == 0
-    assert "Datasets" in result.output
-    assert "Total assets" in result.output
+    assert "Projects" in result.output
+    assert "Total files" in result.output
 
 
 def test_export_csv_and_excel(tmp_path: Path) -> None:
@@ -174,10 +174,10 @@ def test_export_csv_and_excel(tmp_path: Path) -> None:
     try:
         conn.executescript(
             """
-            CREATE TABLE datasets (id TEXT, source_name TEXT);
-            CREATE TABLE assets (id TEXT, asset_url TEXT, download_status TEXT);
-            INSERT INTO datasets (id, source_name) VALUES ('d1', 's');
-            INSERT INTO assets (id, asset_url, download_status) VALUES ('a1', 'u', 'SUCCESS');
+            CREATE TABLE projects (id INTEGER PRIMARY KEY, project_url TEXT NOT NULL);
+            CREATE TABLE files (id INTEGER PRIMARY KEY, project_id INTEGER, file_name TEXT, status TEXT);
+            INSERT INTO projects (id, project_url) VALUES (1, 'u1');
+            INSERT INTO files (id, project_id, file_name, status) VALUES (1, 1, 'a.qdpx', 'SUCCESS');
             """
         )
         conn.commit()
@@ -189,8 +189,8 @@ def test_export_csv_and_excel(tmp_path: Path) -> None:
         app, ["seed", "export", "--db", str(db), "--format", "csv", "--out", str(out)]
     )
     assert result.exit_code == 0
-    assert (tmp_path / "export" / "datasets.csv").exists()
-    assert (tmp_path / "export" / "assets.csv").exists()
+    assert (tmp_path / "export" / "projects.csv").exists()
+    assert (tmp_path / "export" / "files.csv").exists()
 
     excel_out = tmp_path / "export.xlsx"
     result = runner.invoke(
@@ -207,8 +207,8 @@ def test_export_unknown_format(tmp_path: Path) -> None:
     try:
         conn.executescript(
             """
-            CREATE TABLE datasets (id TEXT);
-            CREATE TABLE assets (id TEXT);
+            CREATE TABLE projects (id INTEGER PRIMARY KEY, project_url TEXT NOT NULL);
+            CREATE TABLE files (id INTEGER PRIMARY KEY, project_id INTEGER);
             """
         )
         conn.commit()
