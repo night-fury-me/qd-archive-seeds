@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 from pathlib import Path
 from typing import Annotated
@@ -75,6 +76,7 @@ class CliProgressDisplay:
         label = _STAGE_LABELS.get(event.stage, event.stage)
         if event.stage == "metadata_collection":
             self._stop_progress()
+            self._suppress_console_logs()
             self._progress = Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -83,8 +85,12 @@ class CliProgressDisplay:
                 TimeElapsedColumn(),
                 console=console,
             )
-            self._query_id = self._progress.add_task("Queries", total=None)
-            self._page_id = self._progress.add_task("Pages", total=None)
+            self._query_id = self._progress.add_task(
+                "Queries: starting...", total=0, completed=0
+            )
+            self._page_id = self._progress.add_task(
+                "Pages: waiting...", total=0, completed=0
+            )
             self._progress.start()
         elif event.stage == "download":
             self._start_download_progress(label)
@@ -187,6 +193,20 @@ class CliProgressDisplay:
         self._file_id = self._progress.add_task("Current file", total=None)
         self._progress.start()
 
+    def _suppress_console_logs(self) -> None:
+        """Temporarily suppress console log handlers to avoid corrupting progress bars."""
+        self._saved_levels: list[tuple[logging.Handler, int]] = []
+        for handler in logging.root.handlers:
+            if hasattr(handler, "console") or handler.__class__.__name__ == "RichHandler":
+                self._saved_levels.append((handler, handler.level))
+                handler.setLevel(logging.CRITICAL)
+
+    def _restore_console_logs(self) -> None:
+        """Restore console log handler levels."""
+        for handler, level in getattr(self, "_saved_levels", []):
+            handler.setLevel(level)
+        self._saved_levels = []
+
     def _stop_progress(self) -> None:
         if self._progress is not None:
             self._progress.stop()
@@ -195,6 +215,7 @@ class CliProgressDisplay:
             self._page_id = None
             self._overall_id = None
             self._file_id = None
+        self._restore_console_logs()
 
 
 def _format_size(size_bytes: int) -> str:
