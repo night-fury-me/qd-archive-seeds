@@ -90,7 +90,19 @@ class ZenodoExtractor:
             if page_count >= effective_max_pages:
                 logger.warning("Reached max pages limit (%d), stopping", effective_max_pages)
                 break
-            response = self.http_client.get(url, headers=headers, params=page_params)
+            logger.info(
+                "Fetching page %d for query '%s' ...", page_count + 1, query_string
+            )
+            try:
+                response = self.http_client.get(url, headers=headers, params=page_params)
+            except Exception as exc:
+                logger.error(
+                    "HTTP request failed for query '%s' page %d: %s",
+                    query_string,
+                    page_count + 1,
+                    exc,
+                )
+                break
             payload = response.json()
             hits = payload.get("hits", {}).get("hits", [])
             if not isinstance(hits, list):

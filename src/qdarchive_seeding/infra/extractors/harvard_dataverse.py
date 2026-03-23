@@ -85,7 +85,19 @@ class HarvardDataverseExtractor:
 
         for page_count in range(effective_max_pages):
             page_params = {**params, "start": start, "per_page": per_page}
-            response = self.http_client.get(url, headers=headers, params=page_params)
+            logger.info(
+                "Fetching page %d for query '%s' ...", page_count + 1, query_string
+            )
+            try:
+                response = self.http_client.get(url, headers=headers, params=page_params)
+            except Exception as exc:
+                logger.error(
+                    "HTTP request failed for query '%s' page %d: %s",
+                    query_string,
+                    page_count + 1,
+                    exc,
+                )
+                break
             payload = response.json()
 
             data = payload.get("data", {})

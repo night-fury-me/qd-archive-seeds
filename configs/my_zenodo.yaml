@@ -110,6 +110,11 @@ sink:
   options:
     path: "./metadata/qdarchive.sqlite"
 
+http:
+  timeout_seconds: 15
+  max_retries: 2
+  rate_limit_per_second: 5.0
+
 logging:
   level: "INFO"
   console:
