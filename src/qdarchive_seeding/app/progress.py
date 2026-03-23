@@ -16,6 +16,25 @@ class StageChanged:
 
 
 @dataclass(frozen=True, slots=True)
+class QueryProgress:
+    """Tracks which query is currently running and total query count."""
+
+    current_query: int = 0
+    total_queries: int = 0
+    query_label: str = ""
+    query_type: str = ""  # "extension" | "nl"
+
+
+@dataclass(frozen=True, slots=True)
+class PageProgress:
+    """Tracks pagination progress within a single query."""
+
+    current_page: int = 0
+    total_hits: int = 0  # from API response, 0 if unknown
+    query_label: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class CountersUpdated:
     extracted: int = 0
     transformed: int = 0
@@ -67,6 +86,8 @@ class Completed:
 
 ProgressEvent = (
     StageChanged
+    | QueryProgress
+    | PageProgress
     | CountersUpdated
     | AssetDownloadUpdate
     | AssetDownloadProgress

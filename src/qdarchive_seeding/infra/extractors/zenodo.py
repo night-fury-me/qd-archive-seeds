@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
+from qdarchive_seeding.app.progress import PageProgress, QueryProgress
 from qdarchive_seeding.core.constants import (
     DOWNLOAD_METHOD_API,
     PERSON_ROLE_CONTRIBUTOR,
@@ -42,14 +43,20 @@ class ZenodoExtractor:
         seen_ids: set[str] = set()
         prefix = strategy.base_query_prefix
         facets = strategy.facet_filters
+        bus = ctx.metadata.get("progress_bus")
+
+        total_queries = len(strategy.extension_queries) + len(strategy.natural_language_queries)
+        query_idx = 0
 
         # Extension-based queries: use prefix in query string + facet params
-        for i, ext in enumerate(strategy.extension_queries, 1):
+        for ext in strategy.extension_queries:
+            query_idx += 1
             query = f"{prefix} filetype:{ext}".strip() if prefix else f"filetype:{ext}"
-            logger.info(
-                "Extension query %d/%d: %s",
-                i, len(strategy.extension_queries), ext,
-            )
+            if bus:
+                bus.publish(QueryProgress(
+                    current_query=query_idx, total_queries=total_queries,
+                    query_label=ext, query_type="extension",
+                ))
             yield from self._extract_single_query(
                 ctx, query, seen_ids=seen_ids, query_string=ext, extra_params=facets
             )
@@ -57,11 +64,13 @@ class ZenodoExtractor:
         # NL queries: use only facet params for filtering (not the prefix),
         # because Zenodo's facet param (e.g. type=dataset) returns far more
         # results than embedding resource_type.type:dataset in the q string.
-        for i, nl_query in enumerate(strategy.natural_language_queries, 1):
-            logger.info(
-                "NL query %d/%d: %s",
-                i, len(strategy.natural_language_queries), nl_query,
-            )
+        for nl_query in strategy.natural_language_queries:
+            query_idx += 1
+            if bus:
+                bus.publish(QueryProgress(
+                    current_query=query_idx, total_queries=total_queries,
+                    query_label=nl_query, query_type="nl",
+                ))
             yield from self._extract_single_query(
                 ctx, nl_query, seen_ids=seen_ids, query_string=nl_query, extra_params=facets
             )
@@ -96,14 +105,12 @@ class ZenodoExtractor:
         source_cfg = ctx.config.source
         effective_max_pages = self.options.max_pages or self.options._safety_max_pages
         total_yielded = 0
+        bus = ctx.metadata.get("progress_bus")
 
         for page_count, page_params in enumerate(paginator.iter_params(params)):
             if page_count >= effective_max_pages:
                 logger.warning("Reached max pages limit (%d), stopping", effective_max_pages)
                 break
-            logger.debug(
-                "Fetching page %d for query '%s' ...", page_count + 1, query_string
-            )
             try:
                 response = self.http_client.get(url, headers=headers, params=page_params)
             except Exception as exc:
@@ -115,12 +122,20 @@ class ZenodoExtractor:
                 )
                 break
             payload = response.json()
-            hits = payload.get("hits", {}).get("hits", [])
+            hits_data = payload.get("hits", {})
+            hits = hits_data.get("hits", [])
+            api_total = hits_data.get("total", 0)
             if not isinstance(hits, list):
                 break
             if not hits:
                 break
             total_yielded += len(hits)
+            if bus:
+                bus.publish(PageProgress(
+                    current_page=page_count + 1,
+                    total_hits=api_total,
+                    query_label=query_string,
+                ))
             logger.debug(
                 "Query '%s' page %d: fetched %d hits (%d total)",
                 query_string,

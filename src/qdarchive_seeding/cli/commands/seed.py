@@ -18,7 +18,9 @@ from qdarchive_seeding.app.progress import (
     CountersUpdated,
     ErrorEvent,
     MetadataCollected,
+    PageProgress,
     ProgressEvent,
+    QueryProgress,
     StageChanged,
 )
 from qdarchive_seeding.app.runner import DownloadDecision, ETLRunner
@@ -35,10 +37,14 @@ _STAGE_LABELS: dict[str, str] = {
 
 
 class CliProgressDisplay:
-    """Two-bar progress display: an overall asset bar and a per-file byte bar."""
+    """Progress display with bars for metadata queries, pages, and downloads."""
 
     def __init__(self) -> None:
         self._progress: Progress | None = None
+        # Metadata phase task IDs
+        self._query_id: TaskID | None = None
+        self._page_id: TaskID | None = None
+        # Download phase task IDs
         self._overall_id: TaskID | None = None
         self._file_id: TaskID | None = None
         self._total_assets: int = 0
@@ -47,6 +53,10 @@ class CliProgressDisplay:
     def __call__(self, event: ProgressEvent) -> None:
         if isinstance(event, StageChanged):
             self._on_stage(event)
+        elif isinstance(event, QueryProgress):
+            self._on_query_progress(event)
+        elif isinstance(event, PageProgress):
+            self._on_page_progress(event)
         elif isinstance(event, CountersUpdated):
             self._on_counters(event)
         elif isinstance(event, AssetDownloadProgress):
@@ -56,22 +66,68 @@ class CliProgressDisplay:
         elif isinstance(event, MetadataCollected):
             self._on_metadata_collected(event)
         elif isinstance(event, ErrorEvent):
-            out = self._progress.console if self._progress else console
-            out.print(f"[red]Error ({event.component}):[/red] {event.message}")
+            pass  # errors are logged by the logger, no need to double-print
         elif isinstance(event, Completed):
             self._stop_progress()
             _print_summary(event)
 
     def _on_stage(self, event: StageChanged) -> None:
         label = _STAGE_LABELS.get(event.stage, event.stage)
-        if event.stage == "download":
-            self._start_progress(label)
+        if event.stage == "metadata_collection":
+            self._stop_progress()
+            self._progress = Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("{task.completed}/{task.total}"),
+                TimeElapsedColumn(),
+                console=console,
+            )
+            self._query_id = self._progress.add_task("Queries", total=None)
+            self._page_id = self._progress.add_task("Pages", total=None)
+            self._progress.start()
+        elif event.stage == "download":
+            self._start_download_progress(label)
         elif event.stage == "done":
             self._stop_progress()
             console.print(f"[bold green]{label}[/bold green]")
         else:
             self._stop_progress()
-            console.print(f"[bold blue]{label}[/bold blue]")
+
+    def _on_query_progress(self, event: QueryProgress) -> None:
+        if self._progress is None or self._query_id is None:
+            return
+        label = f"Query {event.current_query}/{event.total_queries}: {event.query_label}"
+        self._progress.update(
+            self._query_id,
+            description=label,
+            completed=event.current_query,
+            total=event.total_queries,
+        )
+        # Reset page bar for new query
+        if self._page_id is not None:
+            self._progress.reset(self._page_id)
+            self._progress.update(self._page_id, description="Pages", total=None)
+
+    def _on_page_progress(self, event: PageProgress) -> None:
+        if self._progress is None or self._page_id is None:
+            return
+        page_size = int(
+            self._progress.tasks[self._query_id].fields.get("page_size", 100)  # type: ignore[union-attr]
+        ) if self._query_id is not None else 100
+        # Estimate total pages from API total_hits
+        if event.total_hits > 0:
+            est_pages = (event.total_hits + page_size - 1) // page_size
+            # Cap display at 100 pages (API limit for Zenodo)
+            est_pages = min(est_pages, 100)
+        else:
+            est_pages = None
+        self._progress.update(
+            self._page_id,
+            description=f"Page {event.current_page}" + (f"/{est_pages}" if est_pages else ""),
+            completed=event.current_page,
+            total=est_pages,
+        )
 
     def _on_counters(self, event: CountersUpdated) -> None:
         if event.total_assets > 0 and self._total_assets == 0:
@@ -114,11 +170,10 @@ class CliProgressDisplay:
                 self._overall_id,
                 completed=self._completed_assets,
             )
-        # Reset file bar for next asset
         if self._progress is not None and self._file_id is not None:
             self._progress.reset(self._file_id)
 
-    def _start_progress(self, label: str) -> None:
+    def _start_download_progress(self, label: str) -> None:
         self._stop_progress()
         self._progress = Progress(
             SpinnerColumn(),
@@ -136,6 +191,8 @@ class CliProgressDisplay:
         if self._progress is not None:
             self._progress.stop()
             self._progress = None
+            self._query_id = None
+            self._page_id = None
             self._overall_id = None
             self._file_id = None
 

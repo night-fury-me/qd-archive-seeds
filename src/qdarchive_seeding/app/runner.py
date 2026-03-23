@@ -70,6 +70,7 @@ class ETLRunner:
             run_id=run_id,
             pipeline_id=c.config.pipeline.id,
             config=c.config,
+            metadata={"progress_bus": bus},
         )
 
         started_at = datetime.now(UTC)

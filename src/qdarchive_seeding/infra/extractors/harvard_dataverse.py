@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
+from qdarchive_seeding.app.progress import PageProgress, QueryProgress
 from qdarchive_seeding.core.constants import (
     DOWNLOAD_METHOD_API,
     PERSON_ROLE_CREATOR,
@@ -46,17 +47,30 @@ class HarvardDataverseExtractor:
 
         seen_ids: set[str] = set()
         prefix = strategy.base_query_prefix
+        bus = ctx.metadata.get("progress_bus")
+        total_queries = len(strategy.extension_queries) + len(strategy.natural_language_queries)
+        query_idx = 0
 
-        for i, ext in enumerate(strategy.extension_queries, 1):
+        for ext in strategy.extension_queries:
+            query_idx += 1
             query = f"{prefix} {ext}".strip() if prefix else ext
-            logger.info("Extension query %d/%d: %s", i, len(strategy.extension_queries), ext)
+            if bus:
+                bus.publish(QueryProgress(
+                    current_query=query_idx, total_queries=total_queries,
+                    query_label=ext, query_type="extension",
+                ))
             yield from self._extract_single_query(
                 ctx, query, seen_ids=seen_ids, query_string=ext
             )
 
-        for i, nl_query in enumerate(strategy.natural_language_queries, 1):
+        for nl_query in strategy.natural_language_queries:
+            query_idx += 1
             query = f"{prefix} {nl_query}".strip() if prefix else nl_query
-            logger.info("NL query %d/%d: %s", i, len(strategy.natural_language_queries), nl_query)
+            if bus:
+                bus.publish(QueryProgress(
+                    current_query=query_idx, total_queries=total_queries,
+                    query_label=nl_query, query_type="nl",
+                ))
             yield from self._extract_single_query(
                 ctx, query, seen_ids=seen_ids, query_string=nl_query
             )
@@ -82,12 +96,10 @@ class HarvardDataverseExtractor:
         per_page = self.options.per_page
         effective_max_pages = self.options.max_pages or self.options._safety_max_pages
         start = 0
+        bus = ctx.metadata.get("progress_bus")
 
         for page_count in range(effective_max_pages):
             page_params = {**params, "start": start, "per_page": per_page}
-            logger.debug(
-                "Fetching page %d for query '%s' ...", page_count + 1, query_string
-            )
             try:
                 response = self.http_client.get(url, headers=headers, params=page_params)
             except Exception as exc:
@@ -102,9 +114,16 @@ class HarvardDataverseExtractor:
 
             data = payload.get("data", {})
             items = data.get("items", [])
+            total_count = data.get("total_count", 0)
             if not isinstance(items, list) or not items:
                 break
 
+            if bus:
+                bus.publish(PageProgress(
+                    current_page=page_count + 1,
+                    total_hits=total_count,
+                    query_label=query_string,
+                ))
             logger.debug(
                 "Query '%s' page %d: fetched %d items (start=%d)",
                 query_string,
