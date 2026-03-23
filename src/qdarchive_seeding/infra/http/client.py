@@ -30,6 +30,14 @@ class HttpClientSettings:
     user_agent: str = "qdarchive-seeding/0.1"
 
 
+class _IPv4Transport(httpx.HTTPTransport):
+    """Force IPv4 connections to avoid IPv6 hangs on dual-stack hosts."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        # httpcore's connection pool accepts local_address to bind to IPv4
+        super().__init__(local_address="0.0.0.0", **kwargs)
+
+
 class HttpxClient(HttpClient):
     def __init__(self, settings: HttpClientSettings) -> None:
         self._settings = settings
@@ -37,6 +45,7 @@ class HttpxClient(HttpClient):
             timeout=settings.timeout_seconds,
             headers={"User-Agent": settings.user_agent},
             follow_redirects=True,
+            transport=_IPv4Transport(),
         )
 
     def get(
