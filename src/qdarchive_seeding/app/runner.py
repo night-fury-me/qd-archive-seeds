@@ -59,7 +59,7 @@ class ETLRunner:
         no_confirm: bool = False,
         metadata_only: bool = False,
         download_decision: DownloadDecision | None = None,
-        confirm_callback: Callable[[int, int], DownloadDecision] | None = None,
+        confirm_callback: Callable[[int, int, int], DownloadDecision] | None = None,
     ) -> RunInfo:
         c = self._c
         run_id = c.run_id
@@ -113,12 +113,12 @@ class ETLRunner:
                     record = result[0]
                     transformed += 1
                     total_assets += len(record.assets)
-                    log.info(
-                        "Dataset %d matched: %s (%d assets)",
-                        transformed,
-                        record.title or record.source_dataset_id,
-                        len(record.assets),
-                    )
+                    if transformed % 500 == 0 or transformed <= 5:
+                        log.info(
+                            "Collected %d datasets so far (%d files)...",
+                            transformed,
+                            total_assets,
+                        )
                     bus.publish(
                         CountersUpdated(
                             extracted=extracted,
@@ -175,16 +175,24 @@ class ETLRunner:
                     )
                 )
 
+            # Compute total estimated size from asset metadata
+            total_size_bytes = sum(
+                asset.size_bytes or 0
+                for record in collected_records
+                for asset in record.assets
+            )
+
             log.info(
-                "Phase 1 complete: extracted %d raw, %d passed filters, %d loaded",
-                extracted,
-                transformed,
+                "Phase 1 complete: %d datasets, %d files, %.1f MB",
                 loaded,
+                total_assets,
+                total_size_bytes / (1024 * 1024),
             )
             bus.publish(
                 MetadataCollected(
                     total_projects=loaded,
                     total_files=total_assets,
+                    total_size_bytes=total_size_bytes,
                 )
             )
 
@@ -192,7 +200,7 @@ class ETLRunner:
         if "download" in phases and not metadata_only and not dry_run:
             # Get download decision: callback (interactive) > explicit > default
             if confirm_callback is not None and not no_confirm and loaded > 0:
-                decision = confirm_callback(loaded, total_assets)
+                decision = confirm_callback(loaded, total_assets, total_size_bytes)
             else:
                 decision = download_decision or DownloadDecision()
 

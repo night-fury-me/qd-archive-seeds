@@ -44,9 +44,12 @@ class ZenodoExtractor:
         facets = strategy.facet_filters
 
         # Extension-based queries: use prefix in query string + facet params
-        for ext in strategy.extension_queries:
+        for i, ext in enumerate(strategy.extension_queries, 1):
             query = f"{prefix} filetype:{ext}".strip() if prefix else f"filetype:{ext}"
-            logger.info("Running extension query: %s", query)
+            logger.info(
+                "Extension query %d/%d: %s",
+                i, len(strategy.extension_queries), ext,
+            )
             yield from self._extract_single_query(
                 ctx, query, seen_ids=seen_ids, query_string=ext, extra_params=facets
             )
@@ -54,8 +57,11 @@ class ZenodoExtractor:
         # NL queries: use only facet params for filtering (not the prefix),
         # because Zenodo's facet param (e.g. type=dataset) returns far more
         # results than embedding resource_type.type:dataset in the q string.
-        for nl_query in strategy.natural_language_queries:
-            logger.info("Running NL query: %s", nl_query)
+        for i, nl_query in enumerate(strategy.natural_language_queries, 1):
+            logger.info(
+                "NL query %d/%d: %s",
+                i, len(strategy.natural_language_queries), nl_query,
+            )
             yield from self._extract_single_query(
                 ctx, nl_query, seen_ids=seen_ids, query_string=nl_query, extra_params=facets
             )
@@ -95,7 +101,7 @@ class ZenodoExtractor:
             if page_count >= effective_max_pages:
                 logger.warning("Reached max pages limit (%d), stopping", effective_max_pages)
                 break
-            logger.info(
+            logger.debug(
                 "Fetching page %d for query '%s' ...", page_count + 1, query_string
             )
             try:
@@ -115,7 +121,7 @@ class ZenodoExtractor:
             if not hits:
                 break
             total_yielded += len(hits)
-            logger.info(
+            logger.debug(
                 "Query '%s' page %d: fetched %d hits (%d total)",
                 query_string,
                 page_count + 1,

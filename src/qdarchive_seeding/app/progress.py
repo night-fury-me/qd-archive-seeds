@@ -56,6 +56,7 @@ class MetadataCollected:
 
     total_projects: int = 0
     total_files: int = 0
+    total_size_bytes: int = 0
     queries_run: int = 0
 
 

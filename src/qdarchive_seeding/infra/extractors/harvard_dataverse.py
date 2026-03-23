@@ -47,16 +47,16 @@ class HarvardDataverseExtractor:
         seen_ids: set[str] = set()
         prefix = strategy.base_query_prefix
 
-        for ext in strategy.extension_queries:
+        for i, ext in enumerate(strategy.extension_queries, 1):
             query = f"{prefix} {ext}".strip() if prefix else ext
-            logger.info("Running extension query: %s", query)
+            logger.info("Extension query %d/%d: %s", i, len(strategy.extension_queries), ext)
             yield from self._extract_single_query(
                 ctx, query, seen_ids=seen_ids, query_string=ext
             )
 
-        for nl_query in strategy.natural_language_queries:
+        for i, nl_query in enumerate(strategy.natural_language_queries, 1):
             query = f"{prefix} {nl_query}".strip() if prefix else nl_query
-            logger.info("Running NL query: %s", query)
+            logger.info("NL query %d/%d: %s", i, len(strategy.natural_language_queries), nl_query)
             yield from self._extract_single_query(
                 ctx, query, seen_ids=seen_ids, query_string=nl_query
             )
@@ -85,7 +85,7 @@ class HarvardDataverseExtractor:
 
         for page_count in range(effective_max_pages):
             page_params = {**params, "start": start, "per_page": per_page}
-            logger.info(
+            logger.debug(
                 "Fetching page %d for query '%s' ...", page_count + 1, query_string
             )
             try:
@@ -105,7 +105,7 @@ class HarvardDataverseExtractor:
             if not isinstance(items, list) or not items:
                 break
 
-            logger.info(
+            logger.debug(
                 "Query '%s' page %d: fetched %d items (start=%d)",
                 query_string,
                 page_count + 1,

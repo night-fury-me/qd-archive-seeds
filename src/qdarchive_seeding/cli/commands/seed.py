@@ -89,6 +89,7 @@ class CliProgressDisplay:
         table.add_column("Value")
         table.add_row("Total unique datasets", str(event.total_projects))
         table.add_row("Total files", str(event.total_files))
+        table.add_row("Estimated total size", _format_size(event.total_size_bytes))
         console.print(table)
 
     def _on_stream_progress(self, event: AssetDownloadProgress) -> None:
@@ -139,14 +140,29 @@ class CliProgressDisplay:
             self._file_id = None
 
 
-def _prompt_download_decision(total_projects: int, total_files: int) -> DownloadDecision:
+def _format_size(size_bytes: int) -> str:
+    """Format byte count as human-readable string."""
+    if size_bytes <= 0:
+        return "unknown"
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size_bytes < 1024:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024  # type: ignore[assignment]
+    return f"{size_bytes:.1f} PB"
+
+
+def _prompt_download_decision(
+    total_projects: int, total_files: int, total_size_bytes: int
+) -> DownloadDecision:
     """Prompt the user for a download decision after metadata collection.
 
     Called synchronously by the runner between Phase 1 and Phase 2.
-    Signature matches ``confirm_callback: Callable[[int, int], DownloadDecision]``.
     """
+    size_str = _format_size(total_size_bytes)
     console.print()
-    console.print(f"[bold]Found {total_projects} datasets with {total_files} files.[/bold]")
+    console.print(
+        f"[bold]Found {total_projects} datasets, {total_files} files, ~{size_str}.[/bold]"
+    )
     console.print("[bold]Download options:[/bold]")
     console.print("  [1] Download all datasets")
     console.print("  [2] Download a percentage of datasets")
