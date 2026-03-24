@@ -45,7 +45,8 @@ class HarvardDataverseExtractor:
             yield from self._extract_single_query(ctx, str(query), query_string=str(query))
             return
 
-        seen_ids: set[str] = set()
+        existing_ids = ctx.metadata.get("existing_dataset_ids")
+        seen_ids: set[str] = set(existing_ids) if existing_ids else set()
         prefix = strategy.base_query_prefix
         bus = ctx.metadata.get("progress_bus")
         total_queries = len(strategy.extension_queries) + len(strategy.natural_language_queries)
@@ -55,22 +56,28 @@ class HarvardDataverseExtractor:
             query_idx += 1
             query = f"{prefix} {ext}".strip() if prefix else ext
             if bus:
-                bus.publish(QueryProgress(
-                    current_query=query_idx, total_queries=total_queries,
-                    query_label=ext, query_type="extension",
-                ))
-            yield from self._extract_single_query(
-                ctx, query, seen_ids=seen_ids, query_string=ext
-            )
+                bus.publish(
+                    QueryProgress(
+                        current_query=query_idx,
+                        total_queries=total_queries,
+                        query_label=ext,
+                        query_type="extension",
+                    )
+                )
+            yield from self._extract_single_query(ctx, query, seen_ids=seen_ids, query_string=ext)
 
         for nl_query in strategy.natural_language_queries:
             query_idx += 1
             query = f"{prefix} {nl_query}".strip() if prefix else nl_query
             if bus:
-                bus.publish(QueryProgress(
-                    current_query=query_idx, total_queries=total_queries,
-                    query_label=nl_query, query_type="nl",
-                ))
+                bus.publish(
+                    QueryProgress(
+                        current_query=query_idx,
+                        total_queries=total_queries,
+                        query_label=nl_query,
+                        query_type="nl",
+                    )
+                )
             yield from self._extract_single_query(
                 ctx, query, seen_ids=seen_ids, query_string=nl_query
             )
@@ -95,21 +102,72 @@ class HarvardDataverseExtractor:
         source_cfg = ctx.config.source
         per_page = self.options.per_page
         effective_max_pages = self.options.max_pages or self.options._safety_max_pages
-        start = 0
         bus = ctx.metadata.get("progress_bus")
+        checkpoint = ctx.metadata.get("checkpoint")
 
-        for page_count in range(effective_max_pages):
+        # Resume support: skip if this query was already completed
+        if checkpoint is not None and checkpoint.is_query_complete(query_string):
+            logger.info("Skipping completed query '%s' (checkpoint)", query_string)
+            return
+
+        # --- Retry previously failed pages before continuing ---
+        if checkpoint is not None:
+            failed_pages = checkpoint.get_failed_pages(query_string)
+            if failed_pages:
+                logger.info(
+                    "Retrying %d failed pages for query '%s'",
+                    len(failed_pages),
+                    query_string,
+                )
+                for failed_page in list(failed_pages):
+                    retry_start = failed_page * per_page
+                    retry_params = {**params, "start": retry_start, "per_page": per_page}
+                    try:
+                        response = self.http_client.get(url, headers=headers, params=retry_params)
+                    except Exception as exc:
+                        logger.error(
+                            "Retry still failing for query '%s' page %d: %s",
+                            query_string,
+                            failed_page + 1,
+                            exc,
+                        )
+                        continue  # Leave in failed_pages for next run
+
+                    payload = response.json()
+                    items = payload.get("data", {}).get("items", [])
+                    checkpoint.clear_failed_page(query_string, failed_page)
+                    if not items:
+                        continue
+                    logger.info(
+                        "Retry succeeded for query '%s' page %d: %d items",
+                        query_string,
+                        failed_page + 1,
+                        len(items),
+                    )
+                    for item in items:
+                        record = self._build_record(ctx, item, source_cfg, query_string, seen_ids)
+                        if record is not None:
+                            yield record
+
+        # Resume support: skip already-fetched pages
+        resume_from = checkpoint.get_start_page(query_string) if checkpoint else 0
+        start = resume_from * per_page
+
+        for page_count in range(resume_from, effective_max_pages):
             page_params = {**params, "start": start, "per_page": per_page}
             try:
                 response = self.http_client.get(url, headers=headers, params=page_params)
             except Exception as exc:
                 logger.error(
-                    "HTTP request failed for query '%s' page %d: %s",
+                    "HTTP request failed for query '%s' page %d: %s, skipping page",
                     query_string,
                     page_count + 1,
                     exc,
                 )
-                break
+                if checkpoint is not None:
+                    checkpoint.mark_page_failed(query_string, page_count)
+                start += per_page
+                continue
             payload = response.json()
 
             data = payload.get("data", {})
@@ -118,12 +176,18 @@ class HarvardDataverseExtractor:
             if not isinstance(items, list) or not items:
                 break
 
+            # Checkpoint after successful page fetch
+            if checkpoint is not None:
+                checkpoint.mark_page(query_string, page_count + 1, len(items))
+
             if bus:
-                bus.publish(PageProgress(
-                    current_page=page_count + 1,
-                    total_hits=total_count,
-                    query_label=query_string,
-                ))
+                bus.publish(
+                    PageProgress(
+                        current_page=page_count + 1,
+                        total_hits=total_count,
+                        query_label=query_string,
+                    )
+                )
             logger.debug(
                 "Query '%s' page %d: fetched %d items (start=%d)",
                 query_string,
@@ -133,57 +197,75 @@ class HarvardDataverseExtractor:
             )
 
             for item in items:
-                global_id = item.get("global_id")
-                if not global_id:
-                    continue
-
-                # Deduplicate across queries
-                if seen_ids is not None:
-                    if global_id in seen_ids:
-                        continue
-                    seen_ids.add(global_id)
-
-                # Fetch files for this dataset
-                assets = self._fetch_files(ctx, global_id) if self.options.include_files else []
-
-                # Extract persons from authors string
-                persons: list[PersonRole] = []
-                for author in item.get("authors", []):
-                    if isinstance(author, str) and author:
-                        persons.append(PersonRole(name=author, role=PERSON_ROLE_CREATOR))
-
-                # Extract version from the dataset URL or metadata
-                dataset_url = item.get("url", "")
-                # Dataverse persistent IDs look like "doi:10.7910/DVN/XXXXX"
-                project_folder = global_id.replace("doi:", "").replace("/", "_")
-
-                yield DatasetRecord(
-                    source_name=source_cfg.name,
-                    source_dataset_id=global_id,
-                    source_url=dataset_url,
-                    title=item.get("name"),
-                    description=item.get("description"),
-                    doi=global_id if global_id.startswith("doi:") else None,
-                    license=None,
-                    query_string=query_string,
-                    repository_id=source_cfg.repository_id,
-                    repository_url=source_cfg.repository_url,
-                    language=None,
-                    upload_date=item.get("published_at"),
-                    download_method=DOWNLOAD_METHOD_API,
-                    download_repository_folder=source_cfg.name,
-                    download_project_folder=project_folder,
-                    keywords=item.get("keywords", []),
-                    persons=persons,
-                    assets=assets,
-                    raw=item,
-                )
+                record = self._build_record(ctx, item, source_cfg, query_string, seen_ids)
+                if record is not None:
+                    yield record
 
             # Advance offset
-            total_count = data.get("total_count", 0)
             start += per_page
             if start >= total_count:
                 break
+
+        # Only mark complete if no failed pages remain
+        if checkpoint is not None:
+            if not checkpoint.get_failed_pages(query_string):
+                checkpoint.mark_query_complete(query_string)
+            else:
+                logger.warning(
+                    "Query '%s' has %d failed pages, not marking complete",
+                    query_string,
+                    len(checkpoint.get_failed_pages(query_string)),
+                )
+
+    def _build_record(
+        self,
+        ctx: RunContext,
+        item: dict[str, Any],
+        source_cfg: Any,
+        query_string: str,
+        seen_ids: set[str] | None,
+    ) -> DatasetRecord | None:
+        """Build a DatasetRecord from a Dataverse search result. Returns None if duplicate."""
+        global_id = item.get("global_id")
+        if not global_id:
+            return None
+
+        if seen_ids is not None:
+            if global_id in seen_ids:
+                return None
+            seen_ids.add(global_id)
+
+        assets = self._fetch_files(ctx, global_id) if self.options.include_files else []
+
+        persons: list[PersonRole] = []
+        for author in item.get("authors", []):
+            if isinstance(author, str) and author:
+                persons.append(PersonRole(name=author, role=PERSON_ROLE_CREATOR))
+
+        dataset_url = item.get("url", "")
+        project_folder = global_id.replace("doi:", "").replace("/", "_")
+
+        return DatasetRecord(
+            source_name=source_cfg.name,
+            source_dataset_id=global_id,
+            source_url=dataset_url,
+            title=item.get("name"),
+            description=item.get("description"),
+            doi=global_id if global_id.startswith("doi:") else None,
+            license=None,
+            query_string=query_string,
+            repository_id=source_cfg.repository_id,
+            repository_url=source_cfg.repository_url,
+            language=None,
+            upload_date=item.get("published_at"),
+            download_method=DOWNLOAD_METHOD_API,
+            download_repository_folder=source_cfg.name,
+            download_project_folder=project_folder,
+            keywords=item.get("keywords", []),
+            persons=persons,
+            assets=assets,
+            raw=item,
+        )
 
     def _fetch_files(self, ctx: RunContext, persistent_id: str) -> list[AssetRecord]:
         """Fetch the file listing for a dataset via the Dataverse Files API."""
