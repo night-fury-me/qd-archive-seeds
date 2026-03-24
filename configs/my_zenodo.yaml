@@ -90,6 +90,9 @@ extractor:
   options:
     include_files: true
     max_pages: 100
+    ext_batch_size: 10
+    nl_batch_size: 4
+    auto_date_split: true
 
 pre_transforms:
   - name: "validate_required_fields"
