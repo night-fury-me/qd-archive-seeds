@@ -65,8 +65,6 @@ source:
       # Quirkos
       - "qpd"
     natural_language_queries:
-      - "qdpx"
-      - "mqda"
       - "interview study"
       - "qualitative research dataset"
       - "qualitative data analysis"
@@ -117,7 +115,7 @@ sink:
 http:
   timeout_seconds: 15
   max_retries: 3
-  rate_limit_per_second: 0.4  # Stay under Zenodo's 30 req/min limit
+  rate_limit_per_second: 0.25  # Conservative rate to avoid 429 during heavy crawling
 
 logging:
   level: "INFO"
