@@ -214,6 +214,7 @@ class CliProgressDisplay:
 
     def _start_download_progress(self, label: str) -> None:
         self._stop_progress()
+        self._suppress_console_logs()
         self._progress = Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),

@@ -90,7 +90,7 @@ class ETLRunner:
         # ===== Phase 1: Metadata Collection =====
         if "metadata" in phases:
             bus.publish(StageChanged("metadata_collection"))
-            log.info("Phase 1: Collecting metadata (source=%s)", c.config.source.name)
+            log.debug("Phase 1: Collecting metadata (source=%s)", c.config.source.name)
 
             max_items = c.config.pipeline.max_items
 
@@ -153,7 +153,7 @@ class ETLRunner:
 
                     # Stop once we have enough filtered datasets
                     if max_items is not None and transformed >= max_items:
-                        log.info(
+                        log.debug(
                             "Reached max_items=%d filtered datasets (extracted %d raw)",
                             max_items,
                             extracted,
@@ -177,7 +177,7 @@ class ETLRunner:
                 for asset in record.assets
             )
 
-            log.info(
+            log.debug(
                 "Phase 1 complete: %d datasets, %d files, %.1f MB",
                 loaded,
                 total_assets,
@@ -201,18 +201,18 @@ class ETLRunner:
 
             # User chose to skip download
             if decision.percentage == 0:
-                log.info("Download skipped by user")
+                log.debug("Download skipped by user")
                 skipped = total_assets
             elif collected_records:
                 bus.publish(StageChanged("download"))
-                log.info("Phase 2: Downloading assets for %d datasets", len(collected_records))
+                log.debug("Phase 2: Downloading assets for %d datasets", len(collected_records))
 
                 downloads_root = Path(c.config.storage.downloads_root)
                 if not decision.download_all and decision.percentage < 100:
                     limit = max(1, len(collected_records) * decision.percentage // 100)
                     records_to_download = collected_records[:limit]
                     dataset_ids_to_download = collected_dataset_ids[:limit]
-                    log.info(
+                    log.debug(
                         "Downloading %d/%d datasets (%d%%)",
                         limit,
                         len(collected_records),
