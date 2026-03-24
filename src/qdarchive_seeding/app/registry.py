@@ -143,6 +143,7 @@ def _build_zenodo_extractor(
             max_pages=options.get("max_pages"),
             ext_batch_size=options.get("ext_batch_size", 10),
             nl_batch_size=options.get("nl_batch_size", 4),
+            auto_date_split=options.get("auto_date_split", True),
         ),
     )
 

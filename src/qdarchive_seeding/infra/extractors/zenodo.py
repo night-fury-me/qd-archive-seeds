@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import PurePosixPath
+from typing import Any
 
 from qdarchive_seeding.app.progress import PageProgress, QueryProgress
 from qdarchive_seeding.core.constants import (
@@ -18,12 +20,17 @@ from qdarchive_seeding.infra.http.pagination import PagePagination
 logger = logging.getLogger(__name__)
 
 
+_DATE_SPLIT_THRESHOLD = 9500
+_ZENODO_EPOCH = date(2013, 1, 1)  # Zenodo launched in 2013
+
+
 @dataclass(slots=True)
 class ZenodoOptions:
     include_files: bool = True
     max_pages: int | None = None
     ext_batch_size: int = 10
     nl_batch_size: int = 4
+    auto_date_split: bool = True
     _safety_max_pages: int = 200
 
 
@@ -64,7 +71,7 @@ class ZenodoExtractor:
                     current_query=query_idx, total_queries=total_queries,
                     query_label=label, query_type="extension",
                 ))
-            yield from self._extract_single_query(
+            yield from self._extract_with_date_splitting(
                 ctx, query, seen_ids=seen_ids, query_string=label, extra_params=facets
             )
 
@@ -82,8 +89,69 @@ class ZenodoExtractor:
                     current_query=query_idx, total_queries=total_queries,
                     query_label=label, query_type="nl",
                 ))
-            yield from self._extract_single_query(
+            yield from self._extract_with_date_splitting(
                 ctx, query, seen_ids=seen_ids, query_string=label, extra_params=facets
+            )
+
+    def _extract_with_date_splitting(
+        self,
+        ctx: RunContext,
+        query: str,
+        *,
+        seen_ids: set[str] | None = None,
+        query_string: str = "",
+        extra_params: dict[str, str] | None = None,
+    ) -> Iterator[DatasetRecord]:
+        """Extract records, splitting by date range if results exceed 10k."""
+        if not self.options.auto_date_split:
+            yield from self._extract_single_query(
+                ctx, query, seen_ids=seen_ids,
+                query_string=query_string, extra_params=extra_params,
+            )
+            return
+
+        endpoint = ctx.config.source.endpoints.get("search", "/records")
+        base_url = ctx.config.source.base_url.rstrip("/")
+        url = f"{base_url}{endpoint}"
+
+        # Build params for probing (same as _extract_single_query)
+        probe_params: dict[str, Any] = dict(ctx.config.source.params)
+        probe_params["q"] = query
+        if extra_params:
+            probe_params.update(extra_params)
+
+        total = _probe_total(self.http_client, self.auth, url, probe_params)
+        logger.info(
+            "Query '%s' has %d total results", query_string, total,
+        )
+
+        if total <= _DATE_SPLIT_THRESHOLD:
+            yield from self._extract_single_query(
+                ctx, query, seen_ids=seen_ids,
+                query_string=query_string, extra_params=extra_params,
+            )
+            return
+
+        # Need date splitting
+        today = date.today()
+        slices = _find_date_slices(
+            self.http_client, self.auth, url, probe_params,
+            _ZENODO_EPOCH, today,
+        )
+        logger.info(
+            "Query '%s' split into %d date slices to stay under %d results each",
+            query_string, len(slices), _DATE_SPLIT_THRESHOLD,
+        )
+
+        for slice_idx, (start, end) in enumerate(slices):
+            date_query = f"{query} AND created:[{start} TO {end}]"
+            slice_label = f"{query_string} [{start}→{end}]"
+            logger.info(
+                "Date slice %d/%d: %s", slice_idx + 1, len(slices), slice_label,
+            )
+            yield from self._extract_single_query(
+                ctx, date_query, seen_ids=seen_ids,
+                query_string=slice_label, extra_params=extra_params,
             )
 
     def _extract_single_query(
@@ -225,6 +293,67 @@ def _batched(items: list[str], size: int) -> list[list[str]]:
     if not items:
         return []
     return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def _probe_total(
+    http_client: HttpClient,
+    auth: AuthProvider,
+    url: str,
+    base_params: dict[str, Any],
+) -> int:
+    """Probe the total hit count for a query using size=1 (cheapest request)."""
+    headers: dict[str, str] = {}
+    params = {**base_params, "size": 1, "page": 1}
+    headers, params = auth.apply(headers, params)
+    try:
+        resp = http_client.get(url, headers=headers, params=params)
+        return resp.json().get("hits", {}).get("total", 0)
+    except Exception as exc:
+        logger.warning("Probe request failed: %s", exc)
+        return 0
+
+
+def _find_date_slices(
+    http_client: HttpClient,
+    auth: AuthProvider,
+    url: str,
+    base_params: dict[str, Any],
+    start: date,
+    end: date,
+    threshold: int = _DATE_SPLIT_THRESHOLD,
+) -> list[tuple[date, date]]:
+    """Recursively split a date range until each slice has ≤ threshold results."""
+    params = {**base_params}
+    base_q = params.get("q", "")
+    params["q"] = f"{base_q} AND created:[{start} TO {end}]"
+
+    total = _probe_total(http_client, auth, url, params)
+
+    if total == 0:
+        return []
+    if total <= threshold:
+        return [(start, end)]
+    if start >= end:
+        # Single day still over threshold — can't split further, accept the cap
+        logger.warning(
+            "Single day %s has %d results (> %d), accepting 10k cap",
+            start, total, threshold,
+        )
+        return [(start, end)]
+
+    # Split in half
+    mid = start + (end - start) // 2
+    logger.debug(
+        "Splitting [%s, %s] (%d results) into [%s, %s] + [%s, %s]",
+        start, end, total, start, mid, mid + timedelta(days=1), end,
+    )
+    left = _find_date_slices(
+        http_client, auth, url, base_params, start, mid, threshold
+    )
+    right = _find_date_slices(
+        http_client, auth, url, base_params, mid + timedelta(days=1), end, threshold
+    )
+    return left + right
 
 
 def _extract_license(value: object) -> str | None:

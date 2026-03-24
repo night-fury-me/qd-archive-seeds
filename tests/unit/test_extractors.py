@@ -13,6 +13,10 @@ from qdarchive_seeding.infra.extractors.generic_rest import (
     GenericRestExtractor,
     GenericRestOptions,
 )
+from qdarchive_seeding.infra.extractors.harvard_dataverse import (
+    HarvardDataverseExtractor,
+    HarvardDataverseOptions,
+)
 from qdarchive_seeding.infra.extractors.html_scraper import (
     HtmlScraperExtractor,
     HtmlScraperOptions,
@@ -25,11 +29,12 @@ from qdarchive_seeding.infra.extractors.syracuse_qdr import (
     SyracuseQdrExtractor,
     SyracuseQdrOptions,
 )
-from qdarchive_seeding.infra.extractors.harvard_dataverse import (
-    HarvardDataverseExtractor,
-    HarvardDataverseOptions,
+from qdarchive_seeding.infra.extractors.zenodo import (
+    ZenodoExtractor,
+    ZenodoOptions,
+    _find_date_slices,
+    _probe_total,
 )
-from qdarchive_seeding.infra.extractors.zenodo import ZenodoExtractor, ZenodoOptions
 from qdarchive_seeding.infra.http.auth import NoAuth
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
@@ -626,7 +631,8 @@ class TestZenodoMultiQuery:
         )
         ctx = FakeRunContext(config=config)
         extractor = ZenodoExtractor(
-            http_client=http_client, auth=NoAuth(), options=ZenodoOptions()
+            http_client=http_client, auth=NoAuth(),
+            options=ZenodoOptions(auto_date_split=False),
         )
 
         records = list(extractor.extract(ctx))
@@ -665,7 +671,8 @@ class TestZenodoMultiQuery:
         )
         ctx = FakeRunContext(config=config)
         extractor = ZenodoExtractor(
-            http_client=http_client, auth=NoAuth(), options=ZenodoOptions()
+            http_client=http_client, auth=NoAuth(),
+            options=ZenodoOptions(auto_date_split=False),
         )
 
         records = list(extractor.extract(ctx))
@@ -698,7 +705,8 @@ class TestZenodoMultiQuery:
         )
         ctx = FakeRunContext(config=config)
         extractor = ZenodoExtractor(
-            http_client=http_client, auth=NoAuth(), options=ZenodoOptions()
+            http_client=http_client, auth=NoAuth(),
+            options=ZenodoOptions(auto_date_split=False),
         )
 
         records = list(extractor.extract(ctx))
@@ -717,6 +725,137 @@ class TestZenodoMultiQuery:
         assert r.persons[1].name == "Bob"
         assert r.persons[1].role == "CONTRIBUTOR"
         assert r.assets[0].file_type == "qdpx"
+
+
+class TestZenodoDateSplitting:
+    """Tests for adaptive date-range splitting when results exceed 10k."""
+
+    def _make_zenodo_config(
+        self, search_strategy: dict[str, Any] | None = None
+    ) -> Any:
+        return _make_config(
+            {
+                "source": {
+                    "name": "zenodo",
+                    "type": "rest_api",
+                    "base_url": "https://zenodo.org/api",
+                    "endpoints": {"search": "/records"},
+                    "params": {"size": 100},
+                    **({"search_strategy": search_strategy} if search_strategy else {}),
+                }
+            }
+        )
+
+    def test_probe_total_returns_hit_count(self) -> None:
+        """_probe_total should return the total from hits."""
+        response_data: dict[str, Any] = {"hits": {"total": 5000, "hits": [{"id": "1"}]}}
+        http_client = FakeHttpClient([response_data])
+        total = _probe_total(http_client, NoAuth(), "https://zenodo.org/api/records", {"q": "test"})
+        assert total == 5000
+
+    def test_probe_total_returns_zero_on_error(self) -> None:
+        """_probe_total should return 0 if the request fails."""
+        http_client = FakeHttpClient([])  # No responses → will raise
+        total = _probe_total(http_client, NoAuth(), "https://zenodo.org/api/records", {"q": "test"})
+        assert total == 0
+
+    def test_find_date_slices_under_threshold(self) -> None:
+        """If total is under threshold, return the full range as one slice."""
+        from datetime import date
+
+        response_data: dict[str, Any] = {"hits": {"total": 500, "hits": [{"id": "1"}]}}
+        http_client = FakeHttpClient([response_data])
+        slices = _find_date_slices(
+            http_client, NoAuth(), "https://zenodo.org/api/records",
+            {"q": "test"}, date(2020, 1, 1), date(2024, 12, 31), threshold=9500,
+        )
+        assert slices == [(date(2020, 1, 1), date(2024, 12, 31))]
+
+    def test_find_date_slices_empty_range(self) -> None:
+        """If total is 0, return empty list."""
+        from datetime import date
+
+        response_data: dict[str, Any] = {"hits": {"total": 0, "hits": []}}
+        http_client = FakeHttpClient([response_data])
+        slices = _find_date_slices(
+            http_client, NoAuth(), "https://zenodo.org/api/records",
+            {"q": "test"}, date(2020, 1, 1), date(2024, 12, 31), threshold=9500,
+        )
+        assert slices == []
+
+    def test_find_date_slices_splits_when_over_threshold(self) -> None:
+        """Should recursively split until each slice is under threshold."""
+        from datetime import date
+
+        # Full range: 15000 (over) → left half: 6000 (under) → right half: 9000 (under)
+        responses: list[dict[str, Any]] = [
+            {"hits": {"total": 15000, "hits": [{"id": "1"}]}},  # full range probe
+            {"hits": {"total": 6000, "hits": [{"id": "1"}]}},   # left half probe
+            {"hits": {"total": 9000, "hits": [{"id": "1"}]}},   # right half probe
+        ]
+        http_client = FakeHttpClient(responses)
+        slices = _find_date_slices(
+            http_client, NoAuth(), "https://zenodo.org/api/records",
+            {"q": "test"}, date(2020, 1, 1), date(2024, 12, 31), threshold=9500,
+        )
+        assert len(slices) == 2
+        # Left half: 2020-01-01 to midpoint
+        assert slices[0][0] == date(2020, 1, 1)
+        # Right half ends at 2024-12-31
+        assert slices[1][1] == date(2024, 12, 31)
+        # Slices are contiguous (right starts day after left ends)
+        assert slices[1][0] == slices[0][1] + __import__("datetime").timedelta(days=1)
+
+    def test_find_date_slices_single_day_floor(self) -> None:
+        """Single day over threshold should return that day (can't split further)."""
+        from datetime import date
+
+        response_data: dict[str, Any] = {"hits": {"total": 12000, "hits": [{"id": "1"}]}}
+        http_client = FakeHttpClient([response_data])
+        slices = _find_date_slices(
+            http_client, NoAuth(), "https://zenodo.org/api/records",
+            {"q": "test"}, date(2024, 6, 15), date(2024, 6, 15), threshold=9500,
+        )
+        assert slices == [(date(2024, 6, 15), date(2024, 6, 15))]
+
+    def test_extract_with_date_split_disabled(self) -> None:
+        """When auto_date_split=False, should go straight to _extract_single_query."""
+        hit: dict[str, Any] = {
+            "hits": {"total": 20000, "hits": [{"id": "1", "metadata": {}, "files": []}]}
+        }
+        empty: dict[str, Any] = {"hits": {"hits": []}}
+        http_client = FakeHttpClient([hit, empty])
+        config = self._make_zenodo_config(
+            search_strategy={"extension_queries": ["qdpx"], "natural_language_queries": []}
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = ZenodoExtractor(
+            http_client=http_client, auth=NoAuth(),
+            options=ZenodoOptions(auto_date_split=False),
+        )
+        records = list(extractor.extract(ctx))
+        assert len(records) == 1
+
+    def test_extract_with_date_split_under_threshold_no_split(self) -> None:
+        """When total is under threshold, should paginate without splitting."""
+        # Probe response (total=500) + actual paginated response + empty
+        probe: dict[str, Any] = {"hits": {"total": 500, "hits": [{"id": "p"}]}}
+        hit: dict[str, Any] = {
+            "hits": {"total": 500, "hits": [{"id": "1", "metadata": {}, "files": []}]}
+        }
+        empty: dict[str, Any] = {"hits": {"hits": []}}
+        http_client = FakeHttpClient([probe, hit, empty])
+        config = self._make_zenodo_config(
+            search_strategy={"extension_queries": ["qdpx"], "natural_language_queries": []}
+        )
+        ctx = FakeRunContext(config=config)
+        extractor = ZenodoExtractor(
+            http_client=http_client, auth=NoAuth(),
+            options=ZenodoOptions(auto_date_split=True),
+        )
+        records = list(extractor.extract(ctx))
+        assert len(records) == 1
+        assert records[0].source_dataset_id == "1"
 
 
 class TestZenodoExtractorEdges:
