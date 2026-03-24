@@ -6,6 +6,24 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from rich.logging import RichHandler
+from rich.text import Text
+
+_LEVEL_STYLES: dict[str, str] = {
+    "DEBUG": "dim",
+    "INFO": "cyan",
+    "WARNING": "yellow",
+    "ERROR": "bold red",
+    "CRITICAL": "bold white on red",
+}
+
+
+class StyledRichHandler(RichHandler):
+    """RichHandler with colored level badges and dimmed metadata."""
+
+    def get_level_text(self, record: logging.LogRecord) -> Text:
+        level = record.levelname
+        style = _LEVEL_STYLES.get(level, "")
+        return Text(f" {level:<8}", style=style)
 
 
 class UILogQueueHandler(logging.Handler):
@@ -22,7 +40,14 @@ class UILogQueueHandler(logging.Handler):
 
 
 def build_console_handler(level: int) -> logging.Handler:
-    handler = RichHandler(rich_tracebacks=True, markup=True, show_time=False, show_level=False)
+    handler = StyledRichHandler(
+        rich_tracebacks=True,
+        markup=True,
+        show_time=True,
+        show_level=True,
+        show_path=False,
+        log_time_format="[%H:%M:%S]",
+    )
     handler.setLevel(level)
     return handler
 

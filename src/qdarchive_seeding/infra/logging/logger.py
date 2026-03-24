@@ -34,7 +34,7 @@ def configure_logger(
     logger.propagate = False
     logger.handlers.clear()
 
-    console_fmt = "%(asctime)s | %(levelname)s | %(component)s | %(message)s"
+    console_fmt = "[dim]%(component)s[/dim] │ %(message)s"
     file_fmt = (
         "%(asctime)s | %(levelname)s | %(component)s"
         " | run=%(run_id)s | pipeline=%(pipeline_id)s | %(message)s"

@@ -145,7 +145,7 @@ class CliProgressDisplay:
         """Print errors through the progress bar's console to avoid corruption."""
         if self._progress is not None:
             self._progress.console.log(
-                f"[red]ERROR[/red] [{event.component}] {event.message}"
+                f"[bold red] ERROR   [/bold red] [dim]{event.component}[/dim] │ {event.message}"
             )
 
     def _on_page_progress(self, event: PageProgress) -> None:
