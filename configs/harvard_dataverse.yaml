@@ -13,38 +13,19 @@ source:
   endpoints:
     search: "/search"
     files: "/datasets/:persistentId/versions/:latest/files"
-  params:
-    per_page: 10
+  params: {}
   search_strategy:
     extension_queries:
       # REFI-QDA Standard
       - "qdpx"
       - "qdc"
-      # MAXQDA
+      # MAXQDA (most formats return 0 on Dataverse, keep for completeness)
       - "mqda"
-      - "mqbac"
-      - "mqtc"
-      - "mqex"
-      - "mqmtr"
       - "mx24"
-      - "mx24bac"
-      - "mc24"
-      - "mex24"
       - "mx22"
-      - "mex22"
       - "mx20"
       - "mx18"
       - "mx12"
-      - "mx11"
-      - "mx5"
-      - "mx4"
-      - "mx3"
-      - "mx2"
-      - "m2k"
-      - "loa"
-      - "sea"
-      - "mtr"
-      - "mod"
       # NVivo
       - "nvp"
       - "nvpx"
@@ -54,30 +35,47 @@ source:
       # QDA Miner
       - "ppj"
       - "pprj"
-      - "qlt"
       # f4analyse
       - "f4p"
       # Quirkos
       - "qpd"
     natural_language_queries:
-      - "qdpx"
-      - "mqda"
-      - "interview study"
-      - "qualitative research dataset"
-      - "qualitative data analysis"
-      - "thematic analysis"
-      - "grounded theory"
-      - "focus group transcript"
-      - "ethnographic data"
-      - "coding framework"
-      - "qualitative coding"
-      - "narrative analysis"
-      - "phenomenological study"
+      # QDA tool names (~280 results, highly relevant)
+      - "NVivo"
+      - "ATLAS.ti"
+      - "MAXQDA"
+      - "Dedoose"
+      - "REFI-QDA"
+      # QDA tool + project files (~7 results, very precise)
+      - '"NVivo project"'
+      - '"ATLAS.ti project"'
+      # Methodology — exact phrases (moderate counts, relevant)
+      - '"qualitative interview"'
+      - '"semi-structured interview"'
+      - '"interview transcript"'
+      - '"focus group transcript"'
+      - '"thematic analysis"'
+      - '"grounded theory"'
+      - '"qualitative coding"'
+      - '"qualitative codebook"'
+      - '"coded transcript"'
+      - '"phenomenological study"'
+      - '"narrative analysis"'
+      - '"discourse analysis"'
+      - '"content analysis"'
+      - '"qualitative data analysis"'
+      - '"qualitative research"'
+      # Data-focused phrases
+      - '"focus group data"'
+      - '"qualitative dataset"'
+      - '"coding scheme"'
+      - '"interview data"'
+      - "ethnographic fieldnotes"
 
 auth:
   type: "api_key"
   env:
-    api_key: "DATAVERSE_API_TOKEN"
+    api_key: "HARVARD_DATAVERSE_TOKEN"
   placement: "header"
   header_name: "X-Dataverse-key"
 

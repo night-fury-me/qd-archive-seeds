@@ -12,7 +12,6 @@ from qdarchive_seeding.infra.extractors.harvard_dataverse import (
 )
 from qdarchive_seeding.infra.http.auth import NoAuth
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -204,11 +203,13 @@ class TestRetryFailedPages:
         cp.mark_page("q1", 1, 2)
         cp.mark_page_failed("q1", 0)
 
-        http = FakeHttpClient([
-            _page("doi:1", "doi:2", total_count=4),  # retry
-            _page("doi:3", "doi:4", total_count=4),  # normal pagination
-            EMPTY_PAGE,
-        ])
+        http = FakeHttpClient(
+            [
+                _page("doi:1", "doi:2", total_count=4),  # retry
+                _page("doi:3", "doi:4", total_count=4),  # normal pagination
+                EMPTY_PAGE,
+            ]
+        )
         config = _make_config()
         ctx = FakeRunContext(config=config, metadata={"checkpoint": cp})
 

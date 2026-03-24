@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
-import pytest
 
 from qdarchive_seeding.app.checkpoint import CheckpointManager
 from qdarchive_seeding.app.config_models import PipelineConfig
 from qdarchive_seeding.infra.extractors.zenodo import ZenodoExtractor, ZenodoOptions
 from qdarchive_seeding.infra.http.auth import NoAuth
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -208,11 +204,13 @@ class TestRetryFailedPages:
         cp.mark_page_failed("q1", 0)  # Page 0 failed
 
         # Call 0: retry of page 0, Call 1: normal pagination page 1, Call 2: empty
-        http = FakeHttpClient([
-            _page(1, 2, total=4),  # retry result
-            _page(3, 4, total=4),  # normal pagination result
-            EMPTY_PAGE,
-        ])
+        http = FakeHttpClient(
+            [
+                _page(1, 2, total=4),  # retry result
+                _page(3, 4, total=4),  # normal pagination result
+                EMPTY_PAGE,
+            ]
+        )
         config = _make_config()
         ctx = FakeRunContext(config=config, metadata={"checkpoint": cp})
 
