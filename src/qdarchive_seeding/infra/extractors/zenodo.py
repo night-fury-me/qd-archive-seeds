@@ -121,7 +121,7 @@ class ZenodoExtractor:
             probe_params.update(extra_params)
 
         total = _probe_total(self.http_client, self.auth, url, probe_params)
-        logger.debug(
+        logger.info(
             "Query '%s' has %d total results", query_string, total,
         )
 
@@ -138,7 +138,7 @@ class ZenodoExtractor:
             self.http_client, self.auth, url, probe_params,
             _ZENODO_EPOCH, today,
         )
-        logger.debug(
+        logger.info(
             "Query '%s' split into %d date slices to stay under %d results each",
             query_string, len(slices), _DATE_SPLIT_THRESHOLD,
         )

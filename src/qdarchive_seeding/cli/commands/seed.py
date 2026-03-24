@@ -230,24 +230,32 @@ class CliProgressDisplay:
         self._progress.start()
 
     def _suppress_console_logs(self) -> None:
-        """Temporarily suppress console log handlers to avoid corrupting progress bars."""
-        self._saved_levels: list[tuple[logging.Handler, int]] = []
-        # Check root logger and all named loggers for console handlers
+        """Redirect console log handlers to print through the progress bar's console.
+
+        Rich's Progress console prints above the bars without corruption,
+        so logs remain visible while progress bars are active.
+        """
+        self._saved_consoles: list[tuple[logging.Handler, object]] = []
+        if self._progress is None:
+            return
+        progress_console = self._progress.console
         all_loggers = [logging.root] + [
             logging.getLogger(name)
             for name in logging.root.manager.loggerDict  # type: ignore[attr-defined]
         ]
         for lgr in all_loggers:
             for handler in getattr(lgr, "handlers", []):
-                if hasattr(handler, "console") or handler.__class__.__name__ == "RichHandler":
-                    self._saved_levels.append((handler, handler.level))
-                    handler.setLevel(logging.CRITICAL)
+                if hasattr(handler, "console") and handler.__class__.__name__ in (
+                    "RichHandler", "StyledRichHandler",
+                ):
+                    self._saved_consoles.append((handler, handler.console))
+                    handler.console = progress_console  # type: ignore[attr-defined]
 
     def _restore_console_logs(self) -> None:
-        """Restore console log handler levels."""
-        for handler, level in getattr(self, "_saved_levels", []):
-            handler.setLevel(level)
-        self._saved_levels = []
+        """Restore original console on log handlers."""
+        for handler, original_console in getattr(self, "_saved_consoles", []):
+            handler.console = original_console  # type: ignore[attr-defined]
+        self._saved_consoles = []
 
     def _stop_progress(self) -> None:
         if self._progress is not None:

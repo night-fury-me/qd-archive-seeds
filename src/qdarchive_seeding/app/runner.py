@@ -90,7 +90,7 @@ class ETLRunner:
         # ===== Phase 1: Metadata Collection =====
         if "metadata" in phases:
             bus.publish(StageChanged("metadata_collection"))
-            log.debug("Phase 1: Collecting metadata (source=%s)", c.config.source.name)
+            log.info("Phase 1: Collecting metadata (source=%s)", c.config.source.name)
 
             max_items = c.config.pipeline.max_items
 
@@ -177,7 +177,7 @@ class ETLRunner:
                 for asset in record.assets
             )
 
-            log.debug(
+            log.info(
                 "Phase 1 complete: %d datasets, %d files, %.1f MB",
                 loaded,
                 total_assets,
@@ -223,7 +223,7 @@ class ETLRunner:
                 download_asset_count = sum(
                     len(r.assets) for r in records_to_download
                 )
-                log.debug(
+                log.info(
                     "Phase 2: Downloading %d assets for %d datasets",
                     download_asset_count,
                     len(records_to_download),
