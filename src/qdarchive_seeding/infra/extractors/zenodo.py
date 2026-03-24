@@ -121,7 +121,7 @@ class ZenodoExtractor:
             probe_params.update(extra_params)
 
         total = _probe_total(self.http_client, self.auth, url, probe_params)
-        logger.info(
+        logger.debug(
             "Query '%s' has %d total results", query_string, total,
         )
 
@@ -138,7 +138,7 @@ class ZenodoExtractor:
             self.http_client, self.auth, url, probe_params,
             _ZENODO_EPOCH, today,
         )
-        logger.info(
+        logger.debug(
             "Query '%s' split into %d date slices to stay under %d results each",
             query_string, len(slices), _DATE_SPLIT_THRESHOLD,
         )
@@ -146,7 +146,7 @@ class ZenodoExtractor:
         for slice_idx, (start, end) in enumerate(slices):
             date_query = f"{query} AND created:[{start} TO {end}]"
             slice_label = f"{query_string} [{start}→{end}]"
-            logger.info(
+            logger.debug(
                 "Date slice %d/%d: %s", slice_idx + 1, len(slices), slice_label,
             )
             yield from self._extract_single_query(
