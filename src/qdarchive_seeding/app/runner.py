@@ -147,9 +147,7 @@ class ETLRunner:
                         collected_records.append(record)
                         collected_dataset_ids.append(dataset_id)
                     except Exception as exc:
-                        log.error(
-                            "Sink error for record %s: %s", record.source_dataset_id, exc
-                        )
+                        log.error("Sink error for record %s: %s", record.source_dataset_id, exc)
                         bus.publish(
                             ErrorEvent(
                                 component="sink",
@@ -179,9 +177,7 @@ class ETLRunner:
 
             # Compute total estimated size from asset metadata
             total_size_bytes = sum(
-                asset.size_bytes or 0
-                for record in collected_records
-                for asset in record.assets
+                asset.size_bytes or 0 for record in collected_records for asset in record.assets
             )
 
             log.info(
@@ -219,17 +215,13 @@ class ETLRunner:
                     records_to_download = collected_records[:limit]
                     dataset_ids_to_download = collected_dataset_ids[:limit]
                     # Count assets from excluded datasets as skipped
-                    skipped += sum(
-                        len(r.assets) for r in collected_records[limit:]
-                    )
+                    skipped += sum(len(r.assets) for r in collected_records[limit:])
                 else:
                     records_to_download = collected_records
                     dataset_ids_to_download = collected_dataset_ids
 
                 # Compute asset count for the download subset
-                download_asset_count = sum(
-                    len(r.assets) for r in records_to_download
-                )
+                download_asset_count = sum(len(r.assets) for r in records_to_download)
                 log.info(
                     "Phase 2: Downloading %d assets for %d datasets",
                     download_asset_count,
@@ -246,9 +238,7 @@ class ETLRunner:
                 # Wire downloader progress callback to the bus
                 _current_asset_url = ""
 
-                def _on_download_progress(
-                    bytes_so_far: int, total_bytes: int | None
-                ) -> None:
+                def _on_download_progress(bytes_so_far: int, total_bytes: int | None) -> None:
                     bus.publish(
                         AssetDownloadProgress(
                             asset_url=_current_asset_url,
@@ -271,19 +261,15 @@ class ETLRunner:
                     if hasattr(c.sink, "get_file_statuses"):
                         prior_statuses = c.sink.get_file_statuses(dataset_id)
                         for asset in record.assets:
-                            fname = (
-                                asset.local_filename
-                                or asset.asset_url.rsplit("/", 1)[-1]
-                            )
+                            fname = asset.local_filename or asset.asset_url.rsplit("/", 1)[-1]
                             if fname in prior_statuses:
                                 asset.download_status = prior_statuses[fname]
 
                     c.rate_limiter.wait()
 
                     dataset_slug = (
-                        (record.raw.get("dataset_slug") if record.raw else None)
-                        or "dataset"
-                    )
+                        record.raw.get("dataset_slug") if record.raw else None
+                    ) or "dataset"
                     target_dir = c.path_strategy.dataset_dir(
                         downloads_root,
                         source_name=record.source_name,
@@ -323,9 +309,7 @@ class ETLRunner:
                             failed += 1
                             asset.download_status = DOWNLOAD_STATUS_FAILED
                             asset.error_message = str(exc)
-                            failures.append(
-                                {"asset_url": asset.asset_url, "error": str(exc)}
-                            )
+                            failures.append({"asset_url": asset.asset_url, "error": str(exc)})
                             bus.publish(
                                 ErrorEvent(
                                     component="downloader",
@@ -334,9 +318,7 @@ class ETLRunner:
                                     asset_url=asset.asset_url,
                                 )
                             )
-                            log.error(
-                                "Download failed for %s: %s", asset.asset_url, exc
-                            )
+                            log.error("Download failed for %s: %s", asset.asset_url, exc)
 
                     # Update sink with download results
                     try:
@@ -383,7 +365,10 @@ class ETLRunner:
             },
         )
         c.manifests.write(run_info)
-        c.checkpoint.clear()  # Successful run — remove checkpoint
+        if c.checkpoint.has_unresolved_failures():
+            log.warning("Checkpoint retained: unresolved extraction page failures remain")
+        else:
+            c.checkpoint.clear()
         bus.publish(StageChanged("done"))
         bus.publish(Completed(run_info=run_info))
         log.info("Run completed: %s", run_info.counts)

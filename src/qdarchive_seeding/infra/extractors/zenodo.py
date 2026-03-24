@@ -69,10 +69,14 @@ class ZenodoExtractor:
             query = f"{prefix} ({ext_clauses})".strip() if prefix else f"({ext_clauses})"
             label = f"ext batch {batch_idx + 1}/{len(ext_batches)} ({len(batch)} types)"
             if bus:
-                bus.publish(QueryProgress(
-                    current_query=query_idx, total_queries=total_queries,
-                    query_label=label, query_type="extension",
-                ))
+                bus.publish(
+                    QueryProgress(
+                        current_query=query_idx,
+                        total_queries=total_queries,
+                        query_label=label,
+                        query_type="extension",
+                    )
+                )
             yield from self._extract_with_date_splitting(
                 ctx, query, seen_ids=seen_ids, query_string=label, extra_params=facets
             )
@@ -87,10 +91,14 @@ class ZenodoExtractor:
             query = f"({nl_clauses})"
             label = f"nl batch {batch_idx + 1}/{len(nl_batches)} ({len(batch)} terms)"
             if bus:
-                bus.publish(QueryProgress(
-                    current_query=query_idx, total_queries=total_queries,
-                    query_label=label, query_type="nl",
-                ))
+                bus.publish(
+                    QueryProgress(
+                        current_query=query_idx,
+                        total_queries=total_queries,
+                        query_label=label,
+                        query_type="nl",
+                    )
+                )
             yield from self._extract_with_date_splitting(
                 ctx, query, seen_ids=seen_ids, query_string=label, extra_params=facets
             )
@@ -107,8 +115,11 @@ class ZenodoExtractor:
         """Extract records, splitting by date range if results exceed 10k."""
         if not self.options.auto_date_split:
             yield from self._extract_single_query(
-                ctx, query, seen_ids=seen_ids,
-                query_string=query_string, extra_params=extra_params,
+                ctx,
+                query,
+                seen_ids=seen_ids,
+                query_string=query_string,
+                extra_params=extra_params,
             )
             return
 
@@ -124,26 +135,52 @@ class ZenodoExtractor:
 
         total = _probe_total(self.http_client, self.auth, url, probe_params)
         logger.info(
-            "Query '%s' has %d total results", query_string, total,
+            "Query '%s' has %d total results",
+            query_string,
+            total,
         )
 
         if total <= _DATE_SPLIT_THRESHOLD:
             yield from self._extract_single_query(
-                ctx, query, seen_ids=seen_ids,
-                query_string=query_string, extra_params=extra_params,
+                ctx,
+                query,
+                seen_ids=seen_ids,
+                query_string=query_string,
+                extra_params=extra_params,
             )
             return
 
-        # Need date splitting
-        today = date.today()
-        slices = _find_date_slices(
-            self.http_client, self.auth, url, probe_params,
-            _ZENODO_EPOCH, today,
-        )
-        logger.info(
-            "Query '%s' split into %d date slices to stay under %d results each",
-            query_string, len(slices), _DATE_SPLIT_THRESHOLD,
-        )
+        # Need date splitting — use cached slices if available
+        checkpoint = ctx.metadata.get("checkpoint")
+        cached = checkpoint.get_date_slices(query_string) if checkpoint else None
+        if cached is not None:
+            slices = [(date.fromisoformat(s), date.fromisoformat(e)) for s, e in cached]
+            logger.info(
+                "Query '%s' using %d cached date slices",
+                query_string,
+                len(slices),
+            )
+        else:
+            today = date.today()
+            slices = _find_date_slices(
+                self.http_client,
+                self.auth,
+                url,
+                probe_params,
+                _ZENODO_EPOCH,
+                today,
+            )
+            logger.info(
+                "Query '%s' split into %d date slices to stay under %d results each",
+                query_string,
+                len(slices),
+                _DATE_SPLIT_THRESHOLD,
+            )
+            if checkpoint and slices:
+                checkpoint.set_date_slices(
+                    query_string,
+                    [(s.isoformat(), e.isoformat()) for s, e in slices],
+                )
 
         bus = ctx.metadata.get("progress_bus")
         for slice_idx, (start, end) in enumerate(slices):
@@ -151,17 +188,24 @@ class ZenodoExtractor:
             slice_label = f"[{start}→{end}]"
             logger.debug(
                 "Date slice %d/%d: %s %s",
-                slice_idx + 1, len(slices), query_string, slice_label,
+                slice_idx + 1,
+                len(slices),
+                query_string,
+                slice_label,
             )
             if bus:
-                bus.publish(DateSliceProgress(
-                    current_slice=slice_idx + 1,
-                    total_slices=len(slices),
-                    query_label=query_string,
-                    slice_label=slice_label,
-                ))
+                bus.publish(
+                    DateSliceProgress(
+                        current_slice=slice_idx + 1,
+                        total_slices=len(slices),
+                        query_label=query_string,
+                        slice_label=slice_label,
+                    )
+                )
             yield from self._extract_single_query(
-                ctx, date_query, seen_ids=seen_ids,
+                ctx,
+                date_query,
+                seen_ids=seen_ids,
                 query_string=f"{query_string} {slice_label}",
                 extra_params=extra_params,
             )
@@ -204,6 +248,58 @@ class ZenodoExtractor:
             logger.info("Skipping completed query '%s' (checkpoint)", query_string)
             return
 
+        # --- Retry previously failed pages before continuing ---
+        if checkpoint is not None:
+            failed_pages = checkpoint.get_failed_pages(query_string)
+            if failed_pages:
+                logger.info(
+                    "Retrying %d failed pages for query '%s'",
+                    len(failed_pages),
+                    query_string,
+                )
+                page_param = (
+                    pagination.page_param if pagination and pagination.page_param else "page"
+                )
+                for failed_page in list(failed_pages):
+                    retry_params = {**params, page_param: failed_page + 1}  # 1-indexed
+                    try:
+                        response = self.http_client.get(
+                            url,
+                            headers=headers,
+                            params=retry_params,
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "Retry still failing for query '%s' page %d: %s",
+                            query_string,
+                            failed_page + 1,
+                            exc,
+                        )
+                        continue  # Leave in failed_pages for next run
+
+                    payload = response.json()
+                    hits = payload.get("hits", {}).get("hits", [])
+                    checkpoint.clear_failed_page(query_string, failed_page)
+                    if not hits:
+                        continue
+                    total_yielded += len(hits)
+                    logger.info(
+                        "Retry succeeded for query '%s' page %d: %d hits",
+                        query_string,
+                        failed_page + 1,
+                        len(hits),
+                    )
+                    for item in hits:
+                        record = self._build_record(
+                            item,
+                            source_cfg,
+                            url,
+                            query_string,
+                            seen_ids,
+                        )
+                        if record is not None:
+                            yield record
+
         # Resume support: skip already-fetched pages
         resume_from = checkpoint.get_start_page(query_string) if checkpoint else 0
 
@@ -222,6 +318,8 @@ class ZenodoExtractor:
                     page_count + 1,
                     exc,
                 )
+                if checkpoint is not None:
+                    checkpoint.mark_page_failed(query_string, page_count)
                 continue
             payload = response.json()
             hits_data = payload.get("hits", {})
@@ -233,11 +331,13 @@ class ZenodoExtractor:
                 break
             total_yielded += len(hits)
             if bus:
-                bus.publish(PageProgress(
-                    current_page=page_count + 1,
-                    total_hits=api_total,
-                    query_label=query_string,
-                ))
+                bus.publish(
+                    PageProgress(
+                        current_page=page_count + 1,
+                        total_hits=api_total,
+                        query_label=query_string,
+                    )
+                )
             # Checkpoint after successful page fetch
             if checkpoint is not None:
                 checkpoint.mark_page(query_string, page_count + 1, len(hits))
@@ -250,74 +350,93 @@ class ZenodoExtractor:
                 total_yielded,
             )
             for item in hits:
-                record_id = str(item.get("id")) if item.get("id") is not None else None
+                record = self._build_record(
+                    item,
+                    source_cfg,
+                    url,
+                    query_string,
+                    seen_ids,
+                )
+                if record is not None:
+                    yield record
 
-                # Deduplicate across queries
-                if seen_ids is not None and record_id:
-                    if record_id in seen_ids:
-                        continue
-                    seen_ids.add(record_id)
-
-                metadata = item.get("metadata", {})
-                files = item.get("files", []) if self.options.include_files else []
-                assets = [
-                    AssetRecord(
-                        asset_url=f.get("links", {}).get("self", ""),
-                        local_filename=f.get("key"),
-                        file_type=PurePosixPath(f.get("key", "")).suffix.lstrip(".")
-                        if f.get("key")
-                        else None,
-                        size_bytes=f.get("size"),
-                    )
-                    for f in files
-                    if f
-                ]
-
-                # Extract persons from creators + contributors
-                persons: list[PersonRole] = []
-                for creator in metadata.get("creators", []):
-                    if creator.get("name"):
-                        persons.append(
-                            PersonRole(name=creator["name"], role=PERSON_ROLE_CREATOR)
-                        )
-                for contributor in metadata.get("contributors", []):
-                    if contributor.get("name"):
-                        persons.append(
-                            PersonRole(name=contributor["name"], role=PERSON_ROLE_CONTRIBUTOR)
-                        )
-
-                yield DatasetRecord(
-                    source_name=source_cfg.name,
-                    source_dataset_id=record_id,
-                    source_url=item.get("links", {}).get("self", url),
-                    title=metadata.get("title"),
-                    description=metadata.get("description"),
-                    doi=metadata.get("doi"),
-                    license=_extract_license(metadata.get("license")),
-                    query_string=query_string,
-                    repository_id=source_cfg.repository_id,
-                    repository_url=source_cfg.repository_url,
-                    version=metadata.get("version"),
-                    language=metadata.get("language"),
-                    upload_date=metadata.get("publication_date"),
-                    download_method=DOWNLOAD_METHOD_API,
-                    download_repository_folder=source_cfg.name,
-                    download_project_folder=record_id,
-                    download_version_folder=metadata.get("version"),
-                    keywords=metadata.get("keywords", []),
-                    persons=persons,
-                    # Deprecated fields (kept for backward compat)
-                    year=_extract_year(metadata.get("publication_date")),
-                    owner_name=metadata.get("creators", [{}])[0].get("name")
-                    if metadata.get("creators")
-                    else None,
-                    assets=assets,
-                    raw=item,
+        # Only mark complete if no failed pages remain
+        if checkpoint is not None:
+            if not checkpoint.get_failed_pages(query_string):
+                checkpoint.mark_query_complete(query_string)
+            else:
+                logger.warning(
+                    "Query '%s' has %d failed pages, not marking complete",
+                    query_string,
+                    len(checkpoint.get_failed_pages(query_string)),
                 )
 
-        # Mark query as complete after all pages fetched
-        if checkpoint is not None:
-            checkpoint.mark_query_complete(query_string)
+    def _build_record(
+        self,
+        item: dict[str, Any],
+        source_cfg: Any,
+        fallback_url: str,
+        query_string: str,
+        seen_ids: set[str] | None,
+    ) -> DatasetRecord | None:
+        """Build a DatasetRecord from a Zenodo API hit. Returns None if duplicate."""
+        record_id = str(item.get("id")) if item.get("id") is not None else None
+
+        if seen_ids is not None and record_id:
+            if record_id in seen_ids:
+                return None
+            seen_ids.add(record_id)
+
+        metadata = item.get("metadata", {})
+        files = item.get("files", []) if self.options.include_files else []
+        assets = [
+            AssetRecord(
+                asset_url=f.get("links", {}).get("self", ""),
+                local_filename=f.get("key"),
+                file_type=PurePosixPath(f.get("key", "")).suffix.lstrip(".")
+                if f.get("key")
+                else None,
+                size_bytes=f.get("size"),
+            )
+            for f in files
+            if f
+        ]
+
+        persons: list[PersonRole] = []
+        for creator in metadata.get("creators", []):
+            if creator.get("name"):
+                persons.append(PersonRole(name=creator["name"], role=PERSON_ROLE_CREATOR))
+        for contributor in metadata.get("contributors", []):
+            if contributor.get("name"):
+                persons.append(PersonRole(name=contributor["name"], role=PERSON_ROLE_CONTRIBUTOR))
+
+        return DatasetRecord(
+            source_name=source_cfg.name,
+            source_dataset_id=record_id,
+            source_url=item.get("links", {}).get("self", fallback_url),
+            title=metadata.get("title"),
+            description=metadata.get("description"),
+            doi=metadata.get("doi"),
+            license=_extract_license(metadata.get("license")),
+            query_string=query_string,
+            repository_id=source_cfg.repository_id,
+            repository_url=source_cfg.repository_url,
+            version=metadata.get("version"),
+            language=metadata.get("language"),
+            upload_date=metadata.get("publication_date"),
+            download_method=DOWNLOAD_METHOD_API,
+            download_repository_folder=source_cfg.name,
+            download_project_folder=record_id,
+            download_version_folder=metadata.get("version"),
+            keywords=metadata.get("keywords", []),
+            persons=persons,
+            year=_extract_year(metadata.get("publication_date")),
+            owner_name=metadata.get("creators", [{}])[0].get("name")
+            if metadata.get("creators")
+            else None,
+            assets=assets,
+            raw=item,
+        )
 
 
 def _batched(items: list[str], size: int) -> list[list[str]]:
@@ -369,7 +488,9 @@ def _find_date_slices(
         # Single day still over threshold — can't split further, accept the cap
         logger.warning(
             "Single day %s has %d results (> %d), accepting 10k cap",
-            start, total, threshold,
+            start,
+            total,
+            threshold,
         )
         return [(start, end)]
 
@@ -377,11 +498,15 @@ def _find_date_slices(
     mid = start + (end - start) // 2
     logger.debug(
         "Splitting [%s, %s] (%d results) into [%s, %s] + [%s, %s]",
-        start, end, total, start, mid, mid + timedelta(days=1), end,
+        start,
+        end,
+        total,
+        start,
+        mid,
+        mid + timedelta(days=1),
+        end,
     )
-    left = _find_date_slices(
-        http_client, auth, url, base_params, start, mid, threshold
-    )
+    left = _find_date_slices(http_client, auth, url, base_params, start, mid, threshold)
     right = _find_date_slices(
         http_client, auth, url, base_params, mid + timedelta(days=1), end, threshold
     )
