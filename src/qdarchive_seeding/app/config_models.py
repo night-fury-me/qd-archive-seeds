@@ -48,6 +48,17 @@ class SearchStrategy(BaseConfig):
     base_query_prefix: str = ""
     facet_filters: dict[str, str] = Field(default_factory=dict)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_nulls(cls, values: dict[str, object]) -> dict[str, object]:  # type: ignore[override]
+        """YAML returns None for keys with no value; coerce to empty list/dict."""
+        for key in ("extension_queries", "natural_language_queries"):
+            if values.get(key) is None:
+                values[key] = []
+        if values.get("facet_filters") is None:
+            values["facet_filters"] = {}
+        return values
+
 
 class SourceSettings(BaseConfig):
     name: str
