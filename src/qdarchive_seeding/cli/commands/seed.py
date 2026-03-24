@@ -38,6 +38,40 @@ _STAGE_LABELS: dict[str, str] = {
 }
 
 
+_LEVEL_STYLES: dict[str, str] = {
+    "DEBUG": "dim",
+    "INFO": "cyan",
+    "WARNING": "yellow",
+    "ERROR": "bold red",
+    "CRITICAL": "bold white on red",
+}
+
+
+class _ProgressConsoleHandler(logging.Handler):
+    """Logging handler that prints above progress bars via progress.console.log().
+
+    Works like tqdm.write — the progress bars stay pinned at the bottom
+    while log messages scroll above them.
+    """
+
+    def __init__(self, progress: Progress, level: int = logging.NOTSET) -> None:
+        super().__init__(level)
+        self._progress = progress
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            style = _LEVEL_STYLES.get(record.levelname, "")
+            component = getattr(record, "component", record.name.rsplit(".", 1)[-1])
+            msg = record.getMessage()
+            self._progress.console.log(
+                f"[{style}]{record.levelname:<8}[/{style}]"
+                f" [dim]{component}[/dim] │ {msg}",
+                markup=True,
+            )
+        except Exception:
+            self.handleError(record)
+
+
 class CliProgressDisplay:
     """Progress display with bars for metadata queries, pages, and downloads."""
 
@@ -230,32 +264,45 @@ class CliProgressDisplay:
         self._progress.start()
 
     def _suppress_console_logs(self) -> None:
-        """Redirect console log handlers to print through the progress bar's console.
+        """Replace RichHandlers with a proxy that prints via progress.console.log().
 
-        Rich's Progress console prints above the bars without corruption,
-        so logs remain visible while progress bars are active.
+        This ensures logs appear above the progress bars (like tqdm.write)
+        instead of corrupting them.
         """
-        self._saved_consoles: list[tuple[logging.Handler, object]] = []
+        self._suppressed: list[tuple[logging.Logger, logging.Handler, int]] = []
+        self._proxy_handlers: list[tuple[logging.Logger, logging.Handler]] = []
         if self._progress is None:
             return
-        progress_console = self._progress.console
+        progress_ref = self._progress
         all_loggers = [logging.root] + [
             logging.getLogger(name)
             for name in logging.root.manager.loggerDict  # type: ignore[attr-defined]
         ]
         for lgr in all_loggers:
-            for handler in getattr(lgr, "handlers", []):
+            for handler in list(getattr(lgr, "handlers", [])):
                 if hasattr(handler, "console") and handler.__class__.__name__ in (
                     "RichHandler", "StyledRichHandler",
                 ):
-                    self._saved_consoles.append((handler, handler.console))
-                    handler.console = progress_console  # type: ignore[attr-defined]
+                    # Suppress original handler
+                    self._suppressed.append((lgr, handler, handler.level))
+                    handler.setLevel(logging.CRITICAL + 1)
+
+                    # Install proxy that routes through progress console
+                    proxy = _ProgressConsoleHandler(progress_ref, handler.level)
+                    proxy.setFormatter(handler.formatter)
+                    for f in handler.filters:
+                        proxy.addFilter(f)
+                    lgr.addHandler(proxy)
+                    self._proxy_handlers.append((lgr, proxy))
 
     def _restore_console_logs(self) -> None:
-        """Restore original console on log handlers."""
-        for handler, original_console in getattr(self, "_saved_consoles", []):
-            handler.console = original_console  # type: ignore[attr-defined]
-        self._saved_consoles = []
+        """Remove proxies and restore original RichHandler levels."""
+        for lgr, proxy in getattr(self, "_proxy_handlers", []):
+            lgr.removeHandler(proxy)
+        self._proxy_handlers = []
+        for _lgr, handler, level in getattr(self, "_suppressed", []):
+            handler.setLevel(level)
+        self._suppressed = []
 
     def _stop_progress(self) -> None:
         if self._progress is not None:
