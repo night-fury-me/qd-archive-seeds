@@ -274,22 +274,25 @@ class CliProgressDisplay:
         if self._progress is None:
             return
         progress_ref = self._progress
-        all_loggers = [logging.root] + [
-            logging.getLogger(name)
-            for name in logging.root.manager.loggerDict  # type: ignore[attr-defined]
-        ]
+
+        # Scan root + all registered loggers (including the app logger)
+        all_loggers: list[logging.Logger] = [logging.root]
+        for name, obj in logging.root.manager.loggerDict.items():  # type: ignore[attr-defined]
+            if isinstance(obj, logging.Logger):
+                all_loggers.append(obj)
+            else:
+                # PlaceHolder — resolve to actual logger
+                all_loggers.append(logging.getLogger(name))
+
         for lgr in all_loggers:
-            for handler in list(getattr(lgr, "handlers", [])):
-                if hasattr(handler, "console") and handler.__class__.__name__ in (
-                    "RichHandler", "StyledRichHandler",
-                ):
+            for handler in list(lgr.handlers):
+                if isinstance(handler, logging.Handler) and hasattr(handler, "console"):
                     # Suppress original handler
                     self._suppressed.append((lgr, handler, handler.level))
                     handler.setLevel(logging.CRITICAL + 1)
 
                     # Install proxy that routes through progress console
                     proxy = _ProgressConsoleHandler(progress_ref, handler.level)
-                    proxy.setFormatter(handler.formatter)
                     for f in handler.filters:
                         proxy.addFilter(f)
                     lgr.addHandler(proxy)
