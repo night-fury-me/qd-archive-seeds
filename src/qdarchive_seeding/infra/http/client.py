@@ -19,11 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 def _is_retryable(exc: BaseException) -> bool:
-    """Retry on connection errors and 5xx server errors (429 handled separately)."""
+    """Retry on connection errors, 5xx server errors, and 429 rate limits."""
     if isinstance(exc, httpx.RequestError):
         return True
     if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code >= 500
+        return exc.response.status_code >= 500 or exc.response.status_code == 429
     return False
 
 
@@ -79,13 +79,13 @@ class HttpxClient(HttpClient):
                 self._rate_limiter.wait()
             combined_headers = {**self._client.headers, **headers}
             resp = self._client.get(url, headers=combined_headers, params=params, timeout=timeout)
-            # Handle 429 inline: wait and re-send (up to 5 times) without
-            # consuming tenacity retries, which are reserved for 5xx/network.
-            for _attempt in range(5):
+            # Handle 429 inline: wait and re-send (up to 8 times) before
+            # falling through to tenacity retries.
+            for _attempt in range(8):
                 if resp.status_code != 429:
                     break
                 retry_after = resp.headers.get("retry-after", "")
-                wait_secs = int(retry_after) if retry_after.isdigit() else 60
+                wait_secs = int(retry_after) if retry_after.isdigit() else 30
                 logger.warning("Rate limited (429), waiting %ds before retry", wait_secs)
                 time.sleep(wait_secs)
                 if self._rate_limiter is not None:
