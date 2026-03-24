@@ -114,7 +114,6 @@ class CliProgressDisplay:
         label = _STAGE_LABELS.get(event.stage, event.stage)
         if event.stage == "metadata_collection":
             self._stop_progress()
-            self._suppress_console_logs()
             self._progress = Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -133,6 +132,7 @@ class CliProgressDisplay:
                 "Pages: waiting...", total=0, completed=0
             )
             self._progress.start()
+            self._suppress_console_logs()
         elif event.stage == "download":
             self._start_download_progress(label)
         elif event.stage == "done":
@@ -250,7 +250,6 @@ class CliProgressDisplay:
 
     def _start_download_progress(self, label: str) -> None:
         self._stop_progress()
-        self._suppress_console_logs()
         self._progress = Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -262,6 +261,7 @@ class CliProgressDisplay:
         self._overall_id = self._progress.add_task(label, total=self._total_assets or None)
         self._file_id = self._progress.add_task("Current file", total=None)
         self._progress.start()
+        self._suppress_console_logs()
 
     def _suppress_console_logs(self) -> None:
         """Replace RichHandlers with a proxy that prints via progress.console.log().
