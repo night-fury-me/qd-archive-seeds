@@ -287,12 +287,13 @@ class CliProgressDisplay:
         for lgr in all_loggers:
             for handler in list(lgr.handlers):
                 if isinstance(handler, logging.Handler) and hasattr(handler, "console"):
-                    # Suppress original handler
-                    self._suppressed.append((lgr, handler, handler.level))
+                    # Save original level before suppressing
+                    orig_level = handler.level
+                    self._suppressed.append((lgr, handler, orig_level))
                     handler.setLevel(logging.CRITICAL + 1)
 
-                    # Install proxy that routes through progress console
-                    proxy = _ProgressConsoleHandler(progress_ref, handler.level)
+                    # Install proxy with the original level
+                    proxy = _ProgressConsoleHandler(progress_ref, orig_level)
                     for f in handler.filters:
                         proxy.addFilter(f)
                     lgr.addHandler(proxy)
