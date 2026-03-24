@@ -250,6 +250,7 @@ class ZenodoExtractor:
                         file_type=PurePosixPath(f.get("key", "")).suffix.lstrip(".")
                         if f.get("key")
                         else None,
+                        size_bytes=f.get("size"),
                     )
                     for f in files
                     if f
