@@ -1,7 +1,7 @@
 pipeline:
   id: "zenodo_seed_v2"
   run_mode: "incremental"
-  max_items: 500000
+  max_items: 10000
   phases: ["metadata", "download"]
 
 source:
@@ -89,7 +89,7 @@ extractor:
   name: "zenodo_extractor"
   options:
     include_files: true
-    max_pages: 10000
+    max_pages: 100
 
 pre_transforms:
   - name: "validate_required_fields"
