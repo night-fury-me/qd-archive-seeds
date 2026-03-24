@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS projects (
   download_repository_folder TEXT,
   download_project_folder TEXT,
   download_version_folder TEXT,
-  download_method TEXT
+  download_method TEXT CHECK(download_method IN ('SCRAPING', 'API-CALL'))
 );
 
 CREATE TABLE IF NOT EXISTS files (
@@ -32,34 +32,42 @@ CREATE TABLE IF NOT EXISTS files (
   project_id INTEGER NOT NULL,
   file_name TEXT,
   file_type TEXT,
-  status TEXT DEFAULT 'UNKNOWN',
+  status TEXT NOT NULL DEFAULT 'UNKNOWN'
+    CHECK(status IN ('UNKNOWN', 'SUCCESS', 'FAILED', 'SKIPPED', 'RESUMABLE')),
   FOREIGN KEY (project_id) REFERENCES projects(id)
 );
 
 CREATE TABLE IF NOT EXISTS keywords (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id INTEGER NOT NULL,
-  keyword TEXT,
+  keyword TEXT NOT NULL,
   FOREIGN KEY (project_id) REFERENCES projects(id)
 );
 
 CREATE TABLE IF NOT EXISTS person_role (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id INTEGER NOT NULL,
-  name TEXT,
-  role TEXT DEFAULT 'UNKNOWN',
+  name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'UNKNOWN'
+    CHECK(role IN ('CREATOR', 'CONTRIBUTOR', 'UNKNOWN')),
   FOREIGN KEY (project_id) REFERENCES projects(id)
 );
 
 CREATE TABLE IF NOT EXISTS licenses (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id INTEGER NOT NULL,
-  license TEXT DEFAULT 'UNKNOWN',
+  license TEXT NOT NULL DEFAULT 'UNKNOWN',
   FOREIGN KEY (project_id) REFERENCES projects(id)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_file_unique
   ON files(project_id, file_name);
+"""
+
+_MIGRATION = """
+-- Drop legacy tables from older schema
+DROP TABLE IF EXISTS assets;
+DROP TABLE IF EXISTS datasets;
 """
 
 
@@ -72,6 +80,7 @@ class SQLiteSink(BaseSink):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self.path)
         self._conn.execute("PRAGMA foreign_keys = ON")
+        self._conn.executescript(_MIGRATION)
         self._conn.executescript(SCHEMA)
 
     def close(self) -> None:
