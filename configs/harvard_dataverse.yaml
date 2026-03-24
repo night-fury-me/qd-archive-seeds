@@ -40,37 +40,110 @@ source:
       # Quirkos
       - "qpd"
     natural_language_queries:
-      # QDA tool names (~280 results, highly relevant)
+      # ── QDA tool names (~280 unique, highest relevance) ──
       - "NVivo"
       - "ATLAS.ti"
       - "MAXQDA"
       - "Dedoose"
       - "REFI-QDA"
-      # QDA tool + project files (~7 results, very precise)
+      - "HyperRESEARCH"
       - '"NVivo project"'
       - '"ATLAS.ti project"'
-      # Methodology — exact phrases (moderate counts, relevant)
+      # ── Core qualitative methodology (~2,200 unique) ──
       - '"qualitative interview"'
       - '"semi-structured interview"'
+      - '"structured interview"'
+      - '"unstructured interview"'
+      - '"in-depth interview"'
+      - '"key informant interview"'
+      - '"key informant"'
+      - '"expert interview"'
+      - '"stakeholder interview"'
+      - '"elite interview"'
+      - '"narrative interview"'
       - '"interview transcript"'
+      - '"interview transcripts"'
+      - '"interview data"'
+      - '"interview guide"'
+      - '"interview schedule"'
+      # ── Focus groups (~1,400 unique) ──
+      - '"focus group"'
       - '"focus group transcript"'
+      - '"focus group transcripts"'
+      - '"focus group data"'
+      - '"focus group discussion"'
+      - '"discussion guide"'
+      - '"topic guide"'
+      # ── Analysis methods (~800 unique) ──
       - '"thematic analysis"'
+      - '"thematic coding"'
       - '"grounded theory"'
+      - '"content analysis"'
+      - '"discourse analysis"'
+      - '"narrative analysis"'
+      - '"conversation analysis"'
+      - '"text analysis"'
+      - '"document analysis"'
+      - '"textual analysis"'
+      - '"framework analysis"'
+      - '"interpretive analysis"'
+      - '"qualitative data analysis"'
+      - '"qualitative analysis"'
       - '"qualitative coding"'
       - '"qualitative codebook"'
       - '"coded transcript"'
-      - '"phenomenological study"'
-      - '"narrative analysis"'
-      - '"discourse analysis"'
-      - '"content analysis"'
-      - '"qualitative data analysis"'
-      - '"qualitative research"'
-      # Data-focused phrases
-      - '"focus group data"'
-      - '"qualitative dataset"'
       - '"coding scheme"'
-      - '"interview data"'
+      - '"code book"'
+      - '"inductive coding"'
+      - '"deductive coding"'
+      - '"hermeneutic"'
+      # ── Ethnography & fieldwork (~1,400 unique) ──
+      - '"ethnographic"'
+      - '"ethnography"'
+      - '"autoethnography"'
       - "ethnographic fieldnotes"
+      - '"field notes"'
+      - '"fieldwork"'
+      - '"field research"'
+      - '"participant observation"'
+      - '"observation notes"'
+      # ── Broader qualitative research (~2,800 unique) ──
+      - '"qualitative research"'
+      - '"qualitative study"'
+      - '"qualitative methods"'
+      - '"qualitative approach"'
+      - '"qualitative evidence"'
+      - '"qualitative findings"'
+      - '"qualitative data"'
+      - '"qualitative dataset"'
+      - '"phenomenological study"'
+      - '"mixed methods"'
+      - '"action research"'
+      - '"participatory research"'
+      - '"case study"'
+      - '"life history"'
+      - '"oral history"'
+      - '"community research"'
+      - '"nursing research"'
+      - '"education research"'
+      - '"reflexive"'
+      # ── Data collection & sampling (~2,500 unique) ──
+      - '"open-ended responses"'
+      - '"survey responses"'
+      - '"audio recording"'
+      - '"video recording"'
+      - '"informed consent"'
+      - '"research journal"'
+      - '"supplementary data"'
+      - '"supplementary material"'
+      - '"purposive sampling"'
+      - '"snowball sampling"'
+      - '"convenience sampling"'
+      - '"saturation"'
+      - '"data saturation"'
+      - '"member checking"'
+      - '"theoretical sampling"'
+      - '"constant comparison"'
 
 auth:
   type: "api_key"
