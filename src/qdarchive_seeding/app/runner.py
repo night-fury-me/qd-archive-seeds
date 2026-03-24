@@ -215,9 +215,21 @@ class ETLRunner:
                     records_to_download = collected_records
                     dataset_ids_to_download = collected_dataset_ids
 
+                # Compute asset count for the download subset
+                download_asset_count = sum(
+                    len(r.assets) for r in records_to_download
+                )
                 log.debug(
-                    "Phase 2: Downloading assets for %d datasets",
+                    "Phase 2: Downloading %d assets for %d datasets",
+                    download_asset_count,
                     len(records_to_download),
+                )
+                bus.publish(
+                    CountersUpdated(
+                        extracted=extracted,
+                        transformed=transformed,
+                        total_assets=download_asset_count,
+                    )
                 )
 
                 # Wire downloader progress callback to the bus
@@ -329,7 +341,7 @@ class ETLRunner:
                             downloaded=downloaded,
                             failed=failed,
                             skipped=skipped,
-                            total_assets=total_assets,
+                            total_assets=download_asset_count,
                         )
                     )
         elif dry_run:

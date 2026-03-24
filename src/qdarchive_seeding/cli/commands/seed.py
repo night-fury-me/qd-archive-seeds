@@ -205,8 +205,10 @@ class CliProgressDisplay:
     def _on_asset_download(self, _event: AssetDownloadUpdate) -> None:
         self._completed_assets += 1
         if self._progress is not None and self._overall_id is not None:
+            total = self._total_assets or 0
             self._progress.update(
                 self._overall_id,
+                description=f"Downloading assets ({self._completed_assets}/{total})",
                 completed=self._completed_assets,
             )
         if self._progress is not None and self._file_id is not None:
