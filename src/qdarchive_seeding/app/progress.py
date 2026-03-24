@@ -35,6 +35,16 @@ class PageProgress:
 
 
 @dataclass(frozen=True, slots=True)
+class DateSliceProgress:
+    """Tracks date-range splitting progress when a query exceeds the 10k limit."""
+
+    current_slice: int = 0
+    total_slices: int = 0
+    query_label: str = ""
+    slice_label: str = ""  # e.g. "[2021-01-01→2021-06-30]"
+
+
+@dataclass(frozen=True, slots=True)
 class CountersUpdated:
     extracted: int = 0
     transformed: int = 0
@@ -88,6 +98,7 @@ ProgressEvent = (
     StageChanged
     | QueryProgress
     | PageProgress
+    | DateSliceProgress
     | CountersUpdated
     | AssetDownloadUpdate
     | AssetDownloadProgress

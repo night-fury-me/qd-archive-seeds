@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from pathlib import PurePosixPath
 from typing import Any
 
-from qdarchive_seeding.app.progress import PageProgress, QueryProgress
+from qdarchive_seeding.app.progress import DateSliceProgress, PageProgress, QueryProgress
 from qdarchive_seeding.core.constants import (
     DOWNLOAD_METHOD_API,
     PERSON_ROLE_CONTRIBUTOR,
@@ -143,15 +143,25 @@ class ZenodoExtractor:
             query_string, len(slices), _DATE_SPLIT_THRESHOLD,
         )
 
+        bus = ctx.metadata.get("progress_bus")
         for slice_idx, (start, end) in enumerate(slices):
             date_query = f"{query} AND created:[{start} TO {end}]"
-            slice_label = f"{query_string} [{start}→{end}]"
+            slice_label = f"[{start}→{end}]"
             logger.debug(
-                "Date slice %d/%d: %s", slice_idx + 1, len(slices), slice_label,
+                "Date slice %d/%d: %s %s",
+                slice_idx + 1, len(slices), query_string, slice_label,
             )
+            if bus:
+                bus.publish(DateSliceProgress(
+                    current_slice=slice_idx + 1,
+                    total_slices=len(slices),
+                    query_label=query_string,
+                    slice_label=slice_label,
+                ))
             yield from self._extract_single_query(
                 ctx, date_query, seen_ids=seen_ids,
-                query_string=slice_label, extra_params=extra_params,
+                query_string=f"{query_string} {slice_label}",
+                extra_params=extra_params,
             )
 
     def _extract_single_query(

@@ -17,6 +17,7 @@ from qdarchive_seeding.app.progress import (
     AssetDownloadUpdate,
     Completed,
     CountersUpdated,
+    DateSliceProgress,
     ErrorEvent,
     MetadataCollected,
     PageProgress,
@@ -44,6 +45,7 @@ class CliProgressDisplay:
         self._progress: Progress | None = None
         # Metadata phase task IDs
         self._query_id: TaskID | None = None
+        self._slice_id: TaskID | None = None
         self._page_id: TaskID | None = None
         # Download phase task IDs
         self._overall_id: TaskID | None = None
@@ -56,6 +58,8 @@ class CliProgressDisplay:
             self._on_stage(event)
         elif isinstance(event, QueryProgress):
             self._on_query_progress(event)
+        elif isinstance(event, DateSliceProgress):
+            self._on_date_slice_progress(event)
         elif isinstance(event, PageProgress):
             self._on_page_progress(event)
         elif isinstance(event, CountersUpdated):
@@ -67,7 +71,7 @@ class CliProgressDisplay:
         elif isinstance(event, MetadataCollected):
             self._on_metadata_collected(event)
         elif isinstance(event, ErrorEvent):
-            pass  # errors are logged by the logger, no need to double-print
+            self._on_error(event)
         elif isinstance(event, Completed):
             self._stop_progress()
             _print_summary(event)
@@ -87,6 +91,9 @@ class CliProgressDisplay:
             )
             self._query_id = self._progress.add_task(
                 "Queries: starting...", total=0, completed=0
+            )
+            self._slice_id = self._progress.add_task(
+                "Date slices: n/a", total=0, completed=0, visible=False
             )
             self._page_id = self._progress.add_task(
                 "Pages: waiting...", total=0, completed=0
@@ -110,10 +117,36 @@ class CliProgressDisplay:
             completed=event.current_query,
             total=event.total_queries,
         )
-        # Reset page bar for new query
+        # Reset slice and page bars for new query
+        if self._slice_id is not None:
+            self._progress.reset(self._slice_id)
+            self._progress.update(self._slice_id, visible=False)
         if self._page_id is not None:
             self._progress.reset(self._page_id)
             self._progress.update(self._page_id, description="Pages", total=None)
+
+    def _on_date_slice_progress(self, event: DateSliceProgress) -> None:
+        if self._progress is None or self._slice_id is None:
+            return
+        label = f"Date slice {event.current_slice}/{event.total_slices}: {event.slice_label}"
+        self._progress.update(
+            self._slice_id,
+            description=label,
+            completed=event.current_slice,
+            total=event.total_slices,
+            visible=True,
+        )
+        # Reset page bar for new slice
+        if self._page_id is not None:
+            self._progress.reset(self._page_id)
+            self._progress.update(self._page_id, description="Pages", total=None)
+
+    def _on_error(self, event: ErrorEvent) -> None:
+        """Print errors through the progress bar's console to avoid corruption."""
+        if self._progress is not None:
+            self._progress.console.log(
+                f"[red]ERROR[/red] [{event.component}] {event.message}"
+            )
 
     def _on_page_progress(self, event: PageProgress) -> None:
         if self._progress is None or self._page_id is None:
@@ -218,6 +251,7 @@ class CliProgressDisplay:
             self._progress.stop()
             self._progress = None
             self._query_id = None
+            self._slice_id = None
             self._page_id = None
             self._overall_id = None
             self._file_id = None
