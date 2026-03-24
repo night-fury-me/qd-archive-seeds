@@ -49,7 +49,9 @@ class ZenodoExtractor:
             yield from self._extract_single_query(ctx, str(query), query_string=str(query))
             return
 
-        seen_ids: set[str] = set()
+        # Pre-populate seen_ids from existing records for resume support
+        existing_ids = ctx.metadata.get("existing_dataset_ids")
+        seen_ids: set[str] = set(existing_ids) if existing_ids else set()
         prefix = strategy.base_query_prefix
         facets = strategy.facet_filters
         bus = ctx.metadata.get("progress_bus")
@@ -195,11 +197,22 @@ class ZenodoExtractor:
         effective_max_pages = self.options.max_pages or self.options._safety_max_pages
         total_yielded = 0
         bus = ctx.metadata.get("progress_bus")
+        checkpoint = ctx.metadata.get("checkpoint")
+
+        # Resume support: skip if this query was already completed
+        if checkpoint is not None and checkpoint.is_query_complete(query_string):
+            logger.info("Skipping completed query '%s' (checkpoint)", query_string)
+            return
+
+        # Resume support: skip already-fetched pages
+        resume_from = checkpoint.get_start_page(query_string) if checkpoint else 0
 
         for page_count, page_params in enumerate(paginator.iter_params(params)):
             if page_count >= effective_max_pages:
                 logger.warning("Reached max pages limit (%d), stopping", effective_max_pages)
                 break
+            if page_count < resume_from:
+                continue  # Skip pages already checkpointed
             try:
                 response = self.http_client.get(url, headers=headers, params=page_params)
             except Exception as exc:
@@ -225,6 +238,10 @@ class ZenodoExtractor:
                     total_hits=api_total,
                     query_label=query_string,
                 ))
+            # Checkpoint after successful page fetch
+            if checkpoint is not None:
+                checkpoint.mark_page(query_string, page_count + 1, len(hits))
+
             logger.debug(
                 "Query '%s' page %d: fetched %d hits (%d total)",
                 query_string,
@@ -297,6 +314,10 @@ class ZenodoExtractor:
                     assets=assets,
                     raw=item,
                 )
+
+        # Mark query as complete after all pages fetched
+        if checkpoint is not None:
+            checkpoint.mark_query_complete(query_string)
 
 
 def _batched(items: list[str], size: int) -> list[list[str]]:

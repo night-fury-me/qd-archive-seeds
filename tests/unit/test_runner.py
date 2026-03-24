@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from qdarchive_seeding.app.checkpoint import CheckpointManager
 from qdarchive_seeding.app.config_models import LoggingSettings, PipelineConfig
 from qdarchive_seeding.app.container import Container, build_container
 from qdarchive_seeding.app.progress import (
@@ -190,6 +191,7 @@ def _make_container(
         path_strategy=PathStrategy(layout_template="{source_name}/{dataset_slug}/"),
         filesystem=FileSystem(root=tmp_path),
         config_hash="hash",
+        checkpoint=CheckpointManager(_path=tmp_path, _pipeline_id="test"),
     )
 
 
@@ -217,7 +219,7 @@ def test_runner_download_and_sink_errors(tmp_path: Path, minimal_config: Pipelin
     container.progress_bus.subscribe(events.append)
 
     runner = ETLRunner(container)
-    info = runner.run(dry_run=False)
+    runner.run(dry_run=False)
 
     # Sink error in Phase 1 means record not collected for Phase 2
     assert any(isinstance(e, ErrorEvent) and e.component == "sink" for e in events)

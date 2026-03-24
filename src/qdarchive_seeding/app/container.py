@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import httpx
 
+from qdarchive_seeding.app.checkpoint import CheckpointManager
 from qdarchive_seeding.app.config_loader import config_hash
 from qdarchive_seeding.app.config_models import PipelineConfig, TransformSettings
 from qdarchive_seeding.app.registry import ComponentRegistries, create_default_registries
@@ -45,6 +46,7 @@ class Container:
     path_strategy: PathStrategy
     filesystem: FileSystem
     config_hash: str
+    checkpoint: CheckpointManager
 
 
 def _load_dotenv(path: Path = Path(".env")) -> None:
@@ -150,6 +152,11 @@ def build_container(
     filesystem_factory = registries.filesystems.get("default")
     filesystem = filesystem_factory(Path(config.storage.downloads_root))
 
+    checkpoint = CheckpointManager(
+        _path=runs_dir,
+        _pipeline_id=config.pipeline.id,
+    )
+
     return Container(
         config=config,
         run_id=run_id,
@@ -168,6 +175,7 @@ def build_container(
         path_strategy=path_strategy,
         filesystem=filesystem,
         config_hash=config_hash(config),
+        checkpoint=checkpoint,
     )
 
 

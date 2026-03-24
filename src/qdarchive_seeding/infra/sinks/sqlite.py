@@ -222,3 +222,15 @@ class SQLiteSink(BaseSink):
             (project_id,),
         ).fetchall()
         return {row[0]: row[1] for row in rows if row[0]}
+
+    def get_existing_dataset_ids(self, repository_id: int) -> set[str]:
+        """Return all download_project_folder values for a repository.
+
+        Used to pre-populate seen_ids on resume so already-stored records
+        are skipped without re-processing.
+        """
+        rows = self._conn.execute(
+            "SELECT download_project_folder FROM projects WHERE repository_id = ?",
+            (repository_id,),
+        ).fetchall()
+        return {row[0] for row in rows if row[0]}

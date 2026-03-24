@@ -70,7 +70,7 @@ class ETLRunner:
             run_id=run_id,
             pipeline_id=c.config.pipeline.id,
             config=c.config,
-            metadata={"progress_bus": bus},
+            metadata={"progress_bus": bus, "checkpoint": c.checkpoint},
         )
 
         started_at = datetime.now(UTC)
@@ -91,6 +91,13 @@ class ETLRunner:
         if "metadata" in phases:
             bus.publish(StageChanged("metadata_collection"))
             log.info("Phase 1: Collecting metadata (source=%s)", c.config.source.name)
+
+            # Pre-populate seen_ids from sink for resume support
+            if hasattr(c.sink, "get_existing_dataset_ids") and c.config.source.repository_id:
+                existing_ids = c.sink.get_existing_dataset_ids(c.config.source.repository_id)
+                if existing_ids:
+                    log.info("Resume: loaded %d existing dataset IDs from sink", len(existing_ids))
+                    ctx.metadata["existing_dataset_ids"] = existing_ids
 
             max_items = c.config.pipeline.max_items
 
@@ -376,6 +383,7 @@ class ETLRunner:
             },
         )
         c.manifests.write(run_info)
+        c.checkpoint.clear()  # Successful run — remove checkpoint
         bus.publish(StageChanged("done"))
         bus.publish(Completed(run_info=run_info))
         log.info("Run completed: %s", run_info.counts)
