@@ -211,6 +211,10 @@ class ETLRunner:
                     limit = max(1, len(collected_records) * decision.percentage // 100)
                     records_to_download = collected_records[:limit]
                     dataset_ids_to_download = collected_dataset_ids[:limit]
+                    # Count assets from excluded datasets as skipped
+                    skipped += sum(
+                        len(r.assets) for r in collected_records[limit:]
+                    )
                 else:
                     records_to_download = collected_records
                     dataset_ids_to_download = collected_dataset_ids
