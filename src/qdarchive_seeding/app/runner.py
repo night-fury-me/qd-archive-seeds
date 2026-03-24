@@ -205,22 +205,20 @@ class ETLRunner:
                 skipped = total_assets
             elif collected_records:
                 bus.publish(StageChanged("download"))
-                log.debug("Phase 2: Downloading assets for %d datasets", len(collected_records))
 
                 downloads_root = Path(c.config.storage.downloads_root)
                 if not decision.download_all and decision.percentage < 100:
                     limit = max(1, len(collected_records) * decision.percentage // 100)
                     records_to_download = collected_records[:limit]
                     dataset_ids_to_download = collected_dataset_ids[:limit]
-                    log.debug(
-                        "Downloading %d/%d datasets (%d%%)",
-                        limit,
-                        len(collected_records),
-                        decision.percentage,
-                    )
                 else:
                     records_to_download = collected_records
                     dataset_ids_to_download = collected_dataset_ids
+
+                log.debug(
+                    "Phase 2: Downloading assets for %d datasets",
+                    len(records_to_download),
+                )
 
                 # Wire downloader progress callback to the bus
                 _current_asset_url = ""
