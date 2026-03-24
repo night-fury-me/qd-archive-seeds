@@ -204,12 +204,12 @@ class ZenodoExtractor:
                 response = self.http_client.get(url, headers=headers, params=page_params)
             except Exception as exc:
                 logger.error(
-                    "HTTP request failed for query '%s' page %d: %s",
+                    "HTTP request failed for query '%s' page %d: %s, skipping page",
                     query_string,
                     page_count + 1,
                     exc,
                 )
-                break
+                continue
             payload = response.json()
             hits_data = payload.get("hits", {})
             hits = hits_data.get("hits", [])
