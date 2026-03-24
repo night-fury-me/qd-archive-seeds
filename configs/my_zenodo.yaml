@@ -114,7 +114,7 @@ sink:
 
 http:
   timeout_seconds: 15
-  max_retries: 3
+  max_retries: 5
   rate_limit_per_second: 0.25  # Conservative rate to avoid 429 during heavy crawling
 
 logging:
