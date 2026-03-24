@@ -153,7 +153,7 @@ class ETLRunner:
 
                     # Stop once we have enough filtered datasets
                     if max_items is not None and transformed >= max_items:
-                        log.debug(
+                        log.info(
                             "Reached max_items=%d filtered datasets (extracted %d raw)",
                             max_items,
                             extracted,
@@ -201,7 +201,7 @@ class ETLRunner:
 
             # User chose to skip download
             if decision.percentage == 0:
-                log.debug("Download skipped by user")
+                log.info("Download skipped by user")
                 skipped = total_assets
             elif collected_records:
                 bus.publish(StageChanged("download"))
