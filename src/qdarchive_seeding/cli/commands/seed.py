@@ -196,10 +196,16 @@ class CliProgressDisplay:
     def _suppress_console_logs(self) -> None:
         """Temporarily suppress console log handlers to avoid corrupting progress bars."""
         self._saved_levels: list[tuple[logging.Handler, int]] = []
-        for handler in logging.root.handlers:
-            if hasattr(handler, "console") or handler.__class__.__name__ == "RichHandler":
-                self._saved_levels.append((handler, handler.level))
-                handler.setLevel(logging.CRITICAL)
+        # Check root logger and all named loggers for console handlers
+        all_loggers = [logging.root] + [
+            logging.getLogger(name)
+            for name in logging.root.manager.loggerDict  # type: ignore[attr-defined]
+        ]
+        for lgr in all_loggers:
+            for handler in getattr(lgr, "handlers", []):
+                if hasattr(handler, "console") or handler.__class__.__name__ == "RichHandler":
+                    self._saved_levels.append((handler, handler.level))
+                    handler.setLevel(logging.CRITICAL)
 
     def _restore_console_logs(self) -> None:
         """Restore console log handler levels."""
