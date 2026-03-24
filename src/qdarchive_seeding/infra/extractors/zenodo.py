@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 class ZenodoOptions:
     include_files: bool = True
     max_pages: int | None = None
+    ext_batch_size: int = 10
+    nl_batch_size: int = 4
     _safety_max_pages: int = 200
 
 
@@ -45,34 +47,43 @@ class ZenodoExtractor:
         facets = strategy.facet_filters
         bus = ctx.metadata.get("progress_bus")
 
-        total_queries = len(strategy.extension_queries) + len(strategy.natural_language_queries)
+        # Batch both extension and NL queries to avoid Zenodo API timeouts
+        ext_batches = _batched(strategy.extension_queries, self.options.ext_batch_size)
+        nl_batches = _batched(strategy.natural_language_queries, self.options.nl_batch_size)
+        total_queries = len(ext_batches) + len(nl_batches)
         query_idx = 0
 
-        # Extension-based queries: use prefix in query string + facet params
-        for ext in strategy.extension_queries:
+        # Extension-based queries: batched OR queries with prefix
+        for batch_idx, batch in enumerate(ext_batches):
             query_idx += 1
-            query = f"{prefix} filetype:{ext}".strip() if prefix else f"filetype:{ext}"
+            ext_clauses = " OR ".join(f"filetype:{ext}" for ext in batch)
+            query = f"{prefix} ({ext_clauses})".strip() if prefix else f"({ext_clauses})"
+            label = f"ext batch {batch_idx + 1}/{len(ext_batches)} ({len(batch)} types)"
             if bus:
                 bus.publish(QueryProgress(
                     current_query=query_idx, total_queries=total_queries,
-                    query_label=ext, query_type="extension",
+                    query_label=label, query_type="extension",
                 ))
             yield from self._extract_single_query(
-                ctx, query, seen_ids=seen_ids, query_string=ext, extra_params=facets
+                ctx, query, seen_ids=seen_ids, query_string=label, extra_params=facets
             )
 
-        # NL queries: use only facet params for filtering (not the prefix),
-        # because Zenodo's facet param (e.g. type=dataset) returns far more
-        # results than embedding resource_type.type:dataset in the q string.
-        for nl_query in strategy.natural_language_queries:
+        # NL queries: combine into batched OR queries to avoid Zenodo timeouts.
+        # Only facet params are used for filtering (not the prefix), because
+        # Zenodo's facet param (e.g. type=dataset) returns far more results
+        # than embedding resource_type.type:dataset in the q string.
+        for batch_idx, batch in enumerate(nl_batches):
             query_idx += 1
+            nl_clauses = " OR ".join(f"({nlq})" for nlq in batch)
+            query = f"({nl_clauses})"
+            label = f"nl batch {batch_idx + 1}/{len(nl_batches)} ({len(batch)} terms)"
             if bus:
                 bus.publish(QueryProgress(
                     current_query=query_idx, total_queries=total_queries,
-                    query_label=nl_query, query_type="nl",
+                    query_label=label, query_type="nl",
                 ))
             yield from self._extract_single_query(
-                ctx, nl_query, seen_ids=seen_ids, query_string=nl_query, extra_params=facets
+                ctx, query, seen_ids=seen_ids, query_string=label, extra_params=facets
             )
 
     def _extract_single_query(
@@ -207,6 +218,13 @@ class ZenodoExtractor:
                     assets=assets,
                     raw=item,
                 )
+
+
+def _batched(items: list[str], size: int) -> list[list[str]]:
+    """Split *items* into sub-lists of at most *size* elements."""
+    if not items:
+        return []
+    return [items[i : i + size] for i in range(0, len(items), size)]
 
 
 def _extract_license(value: object) -> str | None:

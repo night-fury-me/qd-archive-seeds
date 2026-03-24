@@ -602,19 +602,21 @@ class TestZenodoMultiQuery:
         return _make_config({"source": source})
 
     def test_multi_query_iterates_extension_and_nl_queries(self) -> None:
-        """Each query should produce a separate HTTP call series."""
-        hit_qdpx: dict[str, Any] = {
-            "hits": {"hits": [{"id": "1", "metadata": {"keywords": ["qualitative"]}, "files": []}]}
-        }
-        hit_mqda: dict[str, Any] = {
-            "hits": {"hits": [{"id": "2", "metadata": {}, "files": []}]}
+        """Extensions are combined into one OR query; NL queries run separately."""
+        # Combined extension query returns two hits in one page
+        hit_ext: dict[str, Any] = {
+            "hits": {"hits": [
+                {"id": "1", "metadata": {"keywords": ["qualitative"]}, "files": []},
+                {"id": "2", "metadata": {}, "files": []},
+            ]}
         }
         hit_nl: dict[str, Any] = {
             "hits": {"hits": [{"id": "3", "metadata": {}, "files": []}]}
         }
         empty: dict[str, Any] = {"hits": {"hits": []}}
 
-        http_client = FakeHttpClient([hit_qdpx, empty, hit_mqda, empty, hit_nl, empty])
+        # 1 combined ext query (hit_ext, empty) + 1 NL query (hit_nl, empty)
+        http_client = FakeHttpClient([hit_ext, empty, hit_nl, empty])
         config = self._make_zenodo_config(
             search_strategy={
                 "base_query_prefix": "resource_type.type:dataset AND",
@@ -631,21 +633,21 @@ class TestZenodoMultiQuery:
 
         assert len(records) == 3
         assert records[0].source_dataset_id == "1"
-        assert records[0].query_string == "qdpx"
+        assert records[0].query_string == "ext batch 1/1 (2 types)"
         assert records[0].repository_id == 1
         assert records[0].keywords == ["qualitative"]
-        assert records[1].query_string == "mqda"
-        assert records[2].query_string == "interview study"
+        assert records[1].query_string == "ext batch 1/1 (2 types)"
+        assert records[2].query_string == "nl batch 1/1 (1 terms)"
 
     def test_multi_query_deduplicates_across_queries(self) -> None:
-        """Same dataset ID from different queries should only appear once."""
-        hit_a: dict[str, Any] = {
+        """Same dataset ID from extension and NL queries should only appear once."""
+        hit_ext: dict[str, Any] = {
             "hits": {"hits": [
                 {"id": "100", "metadata": {}, "files": []},
                 {"id": "200", "metadata": {}, "files": []},
             ]}
         }
-        hit_b: dict[str, Any] = {
+        hit_nl: dict[str, Any] = {
             "hits": {"hits": [
                 {"id": "100", "metadata": {}, "files": []},  # duplicate
                 {"id": "300", "metadata": {}, "files": []},
@@ -653,11 +655,12 @@ class TestZenodoMultiQuery:
         }
         empty: dict[str, Any] = {"hits": {"hits": []}}
 
-        http_client = FakeHttpClient([hit_a, empty, hit_b, empty])
+        # 1 combined ext query (hit_ext, empty) + 1 NL query (hit_nl, empty)
+        http_client = FakeHttpClient([hit_ext, empty, hit_nl, empty])
         config = self._make_zenodo_config(
             search_strategy={
                 "extension_queries": ["qdpx", "mqda"],
-                "natural_language_queries": [],
+                "natural_language_queries": ["interview study"],
             }
         )
         ctx = FakeRunContext(config=config)
