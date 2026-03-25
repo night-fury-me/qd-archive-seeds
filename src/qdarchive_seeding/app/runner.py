@@ -306,22 +306,22 @@ class ETLRunner:
                     ]
                     results = await asyncio.gather(*tasks)
 
-                    for asset, dl_result, exc in results:
+                    for asset, dl_result, dl_error in results:
                         if asset.download_status == DOWNLOAD_STATUS_SKIPPED:
                             skipped += 1
                             continue
-                        if exc is not None:
+                        if dl_error is not None:
                             failed += 1
-                            failures.append({"asset_url": asset.asset_url, "error": str(exc)})
+                            failures.append({"asset_url": asset.asset_url, "error": str(dl_error)})
                             bus.publish(
                                 ErrorEvent(
                                     component="downloader",
-                                    error_type=type(exc).__name__,
-                                    message=str(exc),
+                                    error_type=type(dl_error).__name__,
+                                    message=str(dl_error),
                                     asset_url=asset.asset_url,
                                 )
                             )
-                            log.error("Download failed for %s: %s", asset.asset_url, exc)
+                            log.error("Download failed for %s: %s", asset.asset_url, dl_error)
                         elif dl_result is not None:
                             bus.publish(
                                 AssetDownloadUpdate(

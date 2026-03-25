@@ -116,9 +116,16 @@ class _Downloader:
         self.should_fail = should_fail
         self.on_progress = None
 
-    async def download(self, asset: AssetRecord, _target_dir: Path):
-        if self.on_progress is not None:
-            self.on_progress(1, 1)
+    async def download(
+        self,
+        asset: AssetRecord,
+        _target_dir: Path,
+        *,
+        progress_callback: object = None,
+    ):
+        cb = progress_callback or self.on_progress
+        if cb is not None:
+            cb(1, 1)
         if self.should_fail:
             raise RuntimeError("download failed")
         asset.download_status = "SUCCESS"
@@ -508,7 +515,7 @@ async def test_runner_non_success_download_status(tmp_path: Path, minimal_config
     )
 
     class NonSuccessDownloader(_Downloader):
-        async def download(self, asset: AssetRecord, _target_dir: Path):  # type: ignore[override]
+        async def download(self, asset: AssetRecord, _target_dir: Path, *, progress_callback: object = None):  # type: ignore[override]
             asset.download_status = "FAILED"
             return type(
                 "Result",
