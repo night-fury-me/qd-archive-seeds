@@ -48,6 +48,11 @@ class Container:
     config_hash: str
     checkpoint: CheckpointManager
 
+    async def close(self) -> None:
+        """Close async clients to prevent resource leaks."""
+        await self.http_client.close()
+        await self.downloader.client.aclose()
+
 
 def _load_dotenv(path: Path = Path(".env")) -> None:
     if not path.exists():

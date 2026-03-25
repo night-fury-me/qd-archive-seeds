@@ -236,22 +236,41 @@ class ETLRunner:
                     )
                 )
 
-                # Wire downloader progress callback to the bus
-                _current_asset_url = ""
-
-                def _on_download_progress(bytes_so_far: int, total_bytes: int | None) -> None:
-                    bus.publish(
-                        AssetDownloadProgress(
-                            asset_url=_current_asset_url,
-                            bytes_downloaded=bytes_so_far,
-                            total_bytes=total_bytes,
-                        )
-                    )
-
-                c.downloader.on_progress = _on_download_progress
-
                 # Use semaphore for concurrent downloads within each record
                 download_sem = asyncio.Semaphore(5)
+
+                async def _download_one(
+                    asset_ref: Any,
+                    target: Path,
+                    sem: asyncio.Semaphore,
+                ) -> tuple[Any, Any | None, Exception | None]:
+                    async with sem:
+                        if ctx.cancelled:
+                            return asset_ref, None, None
+                        if c.policy.should_skip_asset(asset_ref):
+                            asset_ref.download_status = DOWNLOAD_STATUS_SKIPPED
+                            return asset_ref, None, None
+                        try:
+                            # Per-asset progress callback avoids shared state
+                            def _on_progress(
+                                bytes_so_far: int, total_bytes: int | None
+                            ) -> None:
+                                bus.publish(
+                                    AssetDownloadProgress(
+                                        asset_url=asset_ref.asset_url,
+                                        bytes_downloaded=bytes_so_far,
+                                        total_bytes=total_bytes,
+                                    )
+                                )
+
+                            dl_result = await c.downloader.download(
+                                asset_ref, target, progress_callback=_on_progress
+                            )
+                            return asset_ref, dl_result, None
+                        except Exception as dl_exc:
+                            asset_ref.download_status = DOWNLOAD_STATUS_FAILED
+                            asset_ref.error_message = str(dl_exc)
+                            return asset_ref, None, dl_exc
 
                 for record, dataset_id in zip(
                     records_to_download, dataset_ids_to_download, strict=True
@@ -281,28 +300,9 @@ class ETLRunner:
                     )
                     c.filesystem.ensure_dir(target_dir)
 
-                    # Download assets for this record concurrently
-                    async def _download_one(
-                        asset_ref: Any, target: Path
-                    ) -> tuple[Any, Any | None, Exception | None]:
-                        async with download_sem:
-                            if ctx.cancelled:
-                                return asset_ref, None, None
-                            if c.policy.should_skip_asset(asset_ref):
-                                asset_ref.download_status = DOWNLOAD_STATUS_SKIPPED
-                                return asset_ref, None, None
-                            try:
-                                nonlocal _current_asset_url
-                                _current_asset_url = asset_ref.asset_url
-                                dl_result = await c.downloader.download(asset_ref, target)
-                                return asset_ref, dl_result, None
-                            except Exception as exc:
-                                asset_ref.download_status = DOWNLOAD_STATUS_FAILED
-                                asset_ref.error_message = str(exc)
-                                return asset_ref, None, exc
-
                     tasks = [
-                        _download_one(asset, target_dir) for asset in record.assets
+                        _download_one(asset, target_dir, download_sem)
+                        for asset in record.assets
                     ]
                     results = await asyncio.gather(*tasks)
 
@@ -362,9 +362,13 @@ class ETLRunner:
         elif dry_run:
             skipped = total_assets
 
-        c.sink.close()
+        # --- Cleanup & Complete ---
+        try:
+            c.sink.close()
+            await c.close()
+        except Exception as cleanup_exc:
+            log.warning("Cleanup error: %s", cleanup_exc)
 
-        # --- Complete ---
         ended_at = datetime.now(UTC)
         run_info = RunInfo(
             run_id=ctx.run_id,

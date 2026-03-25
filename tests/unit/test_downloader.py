@@ -155,12 +155,12 @@ async def test_atomic_write_uses_part_file(tmp_path: Path) -> None:
             yield resp
 
     class SpyDownloader(Downloader):
-        async def _stream_to_file(self, response, fh, asset_url, total_bytes):  # type: ignore[override]
+        async def _stream_to_file(self, response, fh, asset_url, total_bytes, progress_cb=None):  # type: ignore[override]
             nonlocal part_seen, final_absent
             # At this point the .part file should be open and the final should not exist
             part_seen = part_path.exists()
             final_absent = not final_path.exists()
-            return await super()._stream_to_file(response, fh, asset_url, total_bytes)
+            return await super()._stream_to_file(response, fh, asset_url, total_bytes, progress_cb)
 
     dl = SpyDownloader(
         client=SpyClient(),  # type: ignore[arg-type]

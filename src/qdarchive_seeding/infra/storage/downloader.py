@@ -37,7 +37,13 @@ class Downloader:
     chunk_size_bytes: int = DEFAULT_CHUNK_SIZE_BYTES
     on_progress: ProgressCallback | None = field(default=None, repr=False)
 
-    async def download(self, asset: AssetRecord, target_dir: Path) -> DownloadResult:
+    async def download(
+        self,
+        asset: AssetRecord,
+        target_dir: Path,
+        *,
+        progress_callback: ProgressCallback | None = None,
+    ) -> DownloadResult:
         target_dir.mkdir(parents=True, exist_ok=True)
         filename = safe_filename(asset.local_filename or Path(asset.asset_url).name or "file")
         temp_path = target_dir / f"{filename}.part"
@@ -51,14 +57,18 @@ class Downloader:
             headers["Range"] = f"bytes={downloaded}-"
             mode = "a+b"
 
+        cb = progress_callback or self.on_progress
+
         try:
-            return await self._do_stream(asset, headers, mode, temp_path, final_path, target_dir)
+            return await self._do_stream(
+                asset, headers, mode, temp_path, final_path, target_dir, cb
+            )
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 416 and temp_path.exists():
                 # Range not satisfiable — stale .part file; restart from scratch
                 temp_path.unlink()
                 return await self._do_stream(
-                    asset, {}, "w+b", temp_path, final_path, target_dir
+                    asset, {}, "w+b", temp_path, final_path, target_dir, cb
                 )
             asset.download_status = (
                 DOWNLOAD_STATUS_RESUMABLE if temp_path.exists() else DOWNLOAD_STATUS_FAILED
@@ -78,6 +88,7 @@ class Downloader:
         temp_path: Path,
         final_path: Path,
         target_dir: Path,
+        progress_cb: ProgressCallback | None = None,
     ) -> DownloadResult:
         async with self.client.stream("GET", asset.asset_url, headers=headers) as response:
             response.raise_for_status()
@@ -85,7 +96,9 @@ class Downloader:
             total_bytes = int(content_length) if content_length else None
             with open(temp_path, mode) as raw_fh:
                 fh = cast(BinaryIO, raw_fh)
-                checksum = await self._stream_to_file(response, fh, asset.asset_url, total_bytes)
+                checksum = await self._stream_to_file(
+                    response, fh, asset.asset_url, total_bytes, progress_cb
+                )
         os.replace(temp_path, final_path)
         asset.local_dir = str(target_dir)
         asset.local_filename = final_path.name
@@ -103,10 +116,11 @@ class Downloader:
         fh: BinaryIO,
         asset_url: str,
         total_bytes: int | None,
+        progress_cb: ProgressCallback | None = None,
     ) -> str:
         hasher = self.checksum.create_hasher()
         written = 0
-        cb = self.on_progress
+        cb = progress_cb
         async for chunk in response.aiter_bytes(self.chunk_size_bytes):
             fh.write(chunk)
             hasher.update(chunk)
