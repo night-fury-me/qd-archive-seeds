@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import PurePosixPath
@@ -40,13 +41,16 @@ class ZenodoExtractor:
     auth: AuthProvider
     options: ZenodoOptions
 
-    def extract(self, ctx: RunContext) -> Iterator[DatasetRecord]:
+    async def extract(self, ctx: RunContext) -> AsyncIterator[DatasetRecord]:
         """Yield records, iterating over multiple queries if search_strategy is set."""
         strategy = ctx.config.source.search_strategy
         if strategy is None:
             # Legacy single-query mode
             query = ctx.config.source.params.get("q", "")
-            yield from self._extract_single_query(ctx, str(query), query_string=str(query))
+            async for record in self._extract_single_query(
+                ctx, str(query), query_string=str(query)
+            ):
+                yield record
             return
 
         # Pre-populate seen_ids from existing records for resume support
@@ -77,14 +81,12 @@ class ZenodoExtractor:
                         query_type="extension",
                     )
                 )
-            yield from self._extract_with_date_splitting(
+            async for record in self._extract_with_date_splitting(
                 ctx, query, seen_ids=seen_ids, query_string=label, extra_params=facets
-            )
+            ):
+                yield record
 
         # NL queries: combine into batched OR queries to avoid Zenodo timeouts.
-        # Only facet params are used for filtering (not the prefix), because
-        # Zenodo's facet param (e.g. type=dataset) returns far more results
-        # than embedding resource_type.type:dataset in the q string.
         for batch_idx, batch in enumerate(nl_batches):
             query_idx += 1
             nl_clauses = " OR ".join(f"({nlq})" for nlq in batch)
@@ -99,11 +101,12 @@ class ZenodoExtractor:
                         query_type="nl",
                     )
                 )
-            yield from self._extract_with_date_splitting(
+            async for record in self._extract_with_date_splitting(
                 ctx, query, seen_ids=seen_ids, query_string=label, extra_params=facets
-            )
+            ):
+                yield record
 
-    def _extract_with_date_splitting(
+    async def _extract_with_date_splitting(
         self,
         ctx: RunContext,
         query: str,
@@ -111,16 +114,17 @@ class ZenodoExtractor:
         seen_ids: set[str] | None = None,
         query_string: str = "",
         extra_params: dict[str, str] | None = None,
-    ) -> Iterator[DatasetRecord]:
+    ) -> AsyncIterator[DatasetRecord]:
         """Extract records, splitting by date range if results exceed 10k."""
         if not self.options.auto_date_split:
-            yield from self._extract_single_query(
+            async for record in self._extract_single_query(
                 ctx,
                 query,
                 seen_ids=seen_ids,
                 query_string=query_string,
                 extra_params=extra_params,
-            )
+            ):
+                yield record
             return
 
         endpoint = ctx.config.source.endpoints.get("search", "/records")
@@ -133,7 +137,7 @@ class ZenodoExtractor:
         if extra_params:
             probe_params.update(extra_params)
 
-        total = _probe_total(self.http_client, self.auth, url, probe_params)
+        total = await _probe_total(self.http_client, self.auth, url, probe_params)
         logger.info(
             "Query '%s' has %d total results",
             query_string,
@@ -141,13 +145,14 @@ class ZenodoExtractor:
         )
 
         if total <= _DATE_SPLIT_THRESHOLD:
-            yield from self._extract_single_query(
+            async for record in self._extract_single_query(
                 ctx,
                 query,
                 seen_ids=seen_ids,
                 query_string=query_string,
                 extra_params=extra_params,
-            )
+            ):
+                yield record
             return
 
         # Need date splitting — use cached slices if available
@@ -162,7 +167,7 @@ class ZenodoExtractor:
             )
         else:
             today = date.today()
-            slices = _find_date_slices(
+            slices = await _find_date_slices(
                 self.http_client,
                 self.auth,
                 url,
@@ -202,15 +207,16 @@ class ZenodoExtractor:
                         slice_label=slice_label,
                     )
                 )
-            yield from self._extract_single_query(
+            async for record in self._extract_single_query(
                 ctx,
                 date_query,
                 seen_ids=seen_ids,
                 query_string=f"{query_string} {slice_label}",
                 extra_params=extra_params,
-            )
+            ):
+                yield record
 
-    def _extract_single_query(
+    async def _extract_single_query(
         self,
         ctx: RunContext,
         query: str,
@@ -218,7 +224,7 @@ class ZenodoExtractor:
         seen_ids: set[str] | None = None,
         query_string: str = "",
         extra_params: dict[str, str] | None = None,
-    ) -> Iterator[DatasetRecord]:
+    ) -> AsyncIterator[DatasetRecord]:
         """Run a single paginated query against the Zenodo API."""
         endpoint = ctx.config.source.endpoints.get("search", "/records")
         base_url = ctx.config.source.base_url.rstrip("/")
@@ -263,7 +269,7 @@ class ZenodoExtractor:
                 for failed_page in list(failed_pages):
                     retry_params = {**params, page_param: failed_page + 1}  # 1-indexed
                     try:
-                        response = self.http_client.get(
+                        response = await self.http_client.get(
                             url,
                             headers=headers,
                             params=retry_params,
@@ -310,7 +316,7 @@ class ZenodoExtractor:
             if page_count < resume_from:
                 continue  # Skip pages already checkpointed
             try:
-                response = self.http_client.get(url, headers=headers, params=page_params)
+                response = await self.http_client.get(url, headers=headers, params=page_params)
             except Exception as exc:
                 logger.error(
                     "HTTP request failed for query '%s' page %d: %s, skipping page",
@@ -446,7 +452,7 @@ def _batched(items: list[str], size: int) -> list[list[str]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
-def _probe_total(
+async def _probe_total(
     http_client: HttpClient,
     auth: AuthProvider,
     url: str,
@@ -457,14 +463,14 @@ def _probe_total(
     params = {**base_params, "size": 1, "page": 1}
     headers, params = auth.apply(headers, params)
     try:
-        resp = http_client.get(url, headers=headers, params=params)
+        resp = await http_client.get(url, headers=headers, params=params)
         return resp.json().get("hits", {}).get("total", 0)
     except Exception as exc:
         logger.warning("Probe request failed: %s", exc)
         return 0
 
 
-def _find_date_slices(
+async def _find_date_slices(
     http_client: HttpClient,
     auth: AuthProvider,
     url: str,
@@ -478,7 +484,7 @@ def _find_date_slices(
     base_q = params.get("q", "")
     params["q"] = f"{base_q} AND created:[{start} TO {end}]"
 
-    total = _probe_total(http_client, auth, url, params)
+    total = await _probe_total(http_client, auth, url, params)
 
     if total == 0:
         return []
@@ -494,7 +500,7 @@ def _find_date_slices(
         )
         return [(start, end)]
 
-    # Split in half
+    # Split in half — probe both halves concurrently
     mid = start + (end - start) // 2
     logger.debug(
         "Splitting [%s, %s] (%d results) into [%s, %s] + [%s, %s]",
@@ -506,9 +512,11 @@ def _find_date_slices(
         mid + timedelta(days=1),
         end,
     )
-    left = _find_date_slices(http_client, auth, url, base_params, start, mid, threshold)
-    right = _find_date_slices(
-        http_client, auth, url, base_params, mid + timedelta(days=1), end, threshold
+    left, right = await asyncio.gather(
+        _find_date_slices(http_client, auth, url, base_params, start, mid, threshold),
+        _find_date_slices(
+            http_client, auth, url, base_params, mid + timedelta(days=1), end, threshold
+        ),
     )
     return left + right
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import platform
 import sys
@@ -52,7 +53,7 @@ class ETLRunner:
     def __init__(self, container: Container) -> None:
         self._c = container
 
-    def run(
+    async def run(
         self,
         *,
         dry_run: bool = False,
@@ -102,7 +103,7 @@ class ETLRunner:
             max_items = c.config.pipeline.max_items
 
             try:
-                for raw_record in c.extractor.extract(ctx):
+                async for raw_record in c.extractor.extract(ctx):
                     if ctx.cancelled:
                         log.warning("Run cancelled")
                         break
@@ -249,6 +250,9 @@ class ETLRunner:
 
                 c.downloader.on_progress = _on_download_progress
 
+                # Use semaphore for concurrent downloads within each record
+                download_sem = asyncio.Semaphore(5)
+
                 for record, dataset_id in zip(
                     records_to_download, dataset_ids_to_download, strict=True
                 ):
@@ -265,7 +269,7 @@ class ETLRunner:
                             if fname in prior_statuses:
                                 asset.download_status = prior_statuses[fname]
 
-                    c.rate_limiter.wait()
+                    await c.rate_limiter.async_wait()
 
                     dataset_slug = (
                         record.raw.get("dataset_slug") if record.raw else None
@@ -277,16 +281,48 @@ class ETLRunner:
                     )
                     c.filesystem.ensure_dir(target_dir)
 
-                    for asset in record.assets:
-                        if ctx.cancelled:
-                            break
-                        if c.policy.should_skip_asset(asset):
+                    # Download assets for this record concurrently
+                    async def _download_one(
+                        asset_ref: Any, target: Path
+                    ) -> tuple[Any, Any | None, Exception | None]:
+                        async with download_sem:
+                            if ctx.cancelled:
+                                return asset_ref, None, None
+                            if c.policy.should_skip_asset(asset_ref):
+                                asset_ref.download_status = DOWNLOAD_STATUS_SKIPPED
+                                return asset_ref, None, None
+                            try:
+                                nonlocal _current_asset_url
+                                _current_asset_url = asset_ref.asset_url
+                                dl_result = await c.downloader.download(asset_ref, target)
+                                return asset_ref, dl_result, None
+                            except Exception as exc:
+                                asset_ref.download_status = DOWNLOAD_STATUS_FAILED
+                                asset_ref.error_message = str(exc)
+                                return asset_ref, None, exc
+
+                    tasks = [
+                        _download_one(asset, target_dir) for asset in record.assets
+                    ]
+                    results = await asyncio.gather(*tasks)
+
+                    for asset, dl_result, exc in results:
+                        if asset.download_status == DOWNLOAD_STATUS_SKIPPED:
                             skipped += 1
-                            asset.download_status = DOWNLOAD_STATUS_SKIPPED
                             continue
-                        try:
-                            _current_asset_url = asset.asset_url
-                            dl_result = c.downloader.download(asset, target_dir)
+                        if exc is not None:
+                            failed += 1
+                            failures.append({"asset_url": asset.asset_url, "error": str(exc)})
+                            bus.publish(
+                                ErrorEvent(
+                                    component="downloader",
+                                    error_type=type(exc).__name__,
+                                    message=str(exc),
+                                    asset_url=asset.asset_url,
+                                )
+                            )
+                            log.error("Download failed for %s: %s", asset.asset_url, exc)
+                        elif dl_result is not None:
                             bus.publish(
                                 AssetDownloadUpdate(
                                     asset_url=asset.asset_url,
@@ -305,20 +341,6 @@ class ETLRunner:
                                         "error": "non-success status",
                                     }
                                 )
-                        except Exception as exc:
-                            failed += 1
-                            asset.download_status = DOWNLOAD_STATUS_FAILED
-                            asset.error_message = str(exc)
-                            failures.append({"asset_url": asset.asset_url, "error": str(exc)})
-                            bus.publish(
-                                ErrorEvent(
-                                    component="downloader",
-                                    error_type=type(exc).__name__,
-                                    message=str(exc),
-                                    asset_url=asset.asset_url,
-                                )
-                            )
-                            log.error("Download failed for %s: %s", asset.asset_url, exc)
 
                     # Update sink with download results
                     try:

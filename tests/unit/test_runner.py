@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+import pytest
+
+from collections.abc import AsyncIterator, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +33,8 @@ def _build_test_container(tmp_path: Path, config: PipelineConfig) -> Any:
     )
 
 
-def test_dry_run_no_downloads(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+@pytest.mark.asyncio
+async def test_dry_run_no_downloads(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     # Override sink path to use tmp
     minimal_config.sink.options["path"] = str(tmp_path / "test.sqlite")
     container = _build_test_container(tmp_path, minimal_config)
@@ -40,14 +43,15 @@ def test_dry_run_no_downloads(tmp_path: Path, minimal_config: PipelineConfig) ->
     container.progress_bus.subscribe(events.append)
 
     runner = ETLRunner(container)
-    info = runner.run(dry_run=True)
+    info = await runner.run(dry_run=True)
 
     assert info.counts["downloaded"] == 0
     assert any(isinstance(e, Completed) for e in events)
     assert any(isinstance(e, StageChanged) and e.stage == "done" for e in events)
 
 
-def test_run_with_static_records(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+@pytest.mark.asyncio
+async def test_run_with_static_records(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     minimal_config.sink.options["path"] = str(tmp_path / "test.sqlite")
     minimal_config.extractor.options = {
         "records": [
@@ -65,14 +69,15 @@ def test_run_with_static_records(tmp_path: Path, minimal_config: PipelineConfig)
     container.progress_bus.subscribe(events.append)
 
     runner = ETLRunner(container)
-    info = runner.run(dry_run=False)
+    info = await runner.run(dry_run=False)
 
     assert info.counts["extracted"] == 1
     counter_events = [e for e in events if isinstance(e, CountersUpdated)]
     assert len(counter_events) > 0
 
 
-def test_completed_event_is_last(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+@pytest.mark.asyncio
+async def test_completed_event_is_last(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     minimal_config.sink.options["path"] = str(tmp_path / "test.sqlite")
     container = _build_test_container(tmp_path, minimal_config)
 
@@ -80,7 +85,7 @@ def test_completed_event_is_last(tmp_path: Path, minimal_config: PipelineConfig)
     container.progress_bus.subscribe(events.append)
 
     runner = ETLRunner(container)
-    runner.run(dry_run=True)
+    await runner.run(dry_run=True)
 
     assert isinstance(events[-1], Completed)
 
@@ -89,21 +94,21 @@ class _ListExtractor:
     def __init__(self, records: Iterable[DatasetRecord]) -> None:
         self._records = list(records)
 
-    def extract(self, _ctx: Any) -> Iterable[DatasetRecord]:
-        return list(self._records)
+    async def extract(self, _ctx: Any) -> AsyncIterator[DatasetRecord]:
+        for record in self._records:
+            yield record
 
 
 class _ExplodingExtractor:
-    def extract(self, _ctx: Any) -> Iterable[DatasetRecord]:
+    async def extract(self, _ctx: Any) -> AsyncIterator[DatasetRecord]:
         raise RuntimeError("boom")
+        yield  # pragma: no cover
 
 
 class _CancelExtractor:
-    def extract(self, ctx: Any) -> Iterable[DatasetRecord]:
+    async def extract(self, ctx: Any) -> AsyncIterator[DatasetRecord]:
         ctx.cancelled = True
-        return [
-            DatasetRecord(source_name="s", source_dataset_id="1", source_url="u"),
-        ]
+        yield DatasetRecord(source_name="s", source_dataset_id="1", source_url="u")
 
 
 class _Downloader:
@@ -111,7 +116,7 @@ class _Downloader:
         self.should_fail = should_fail
         self.on_progress = None
 
-    def download(self, asset: AssetRecord, _target_dir: Path):
+    async def download(self, asset: AssetRecord, _target_dir: Path):
         if self.on_progress is not None:
             self.on_progress(1, 1)
         if self.should_fail:
@@ -179,7 +184,7 @@ def _make_container(
         logger_bundle=logger_bundle,
         auth=None,  # type: ignore[arg-type]
         http_client=None,  # type: ignore[arg-type]
-        rate_limiter=type("Limiter", (), {"wait": lambda self: None})(),
+        rate_limiter=type("Limiter", (), {"wait": lambda self: None, "async_wait": lambda self: __import__("asyncio").sleep(0)})(),
         extractor=extractor,
         pre_transform_chain=TransformChain(transforms=pre_transforms),
         post_transform_chain=TransformChain(transforms=post_transforms),
@@ -195,7 +200,8 @@ def _make_container(
     )
 
 
-def test_runner_download_and_sink_errors(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+@pytest.mark.asyncio
+async def test_runner_download_and_sink_errors(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     record = DatasetRecord(
         source_name="s",
         source_dataset_id="1",
@@ -219,13 +225,14 @@ def test_runner_download_and_sink_errors(tmp_path: Path, minimal_config: Pipelin
     container.progress_bus.subscribe(events.append)
 
     runner = ETLRunner(container)
-    runner.run(dry_run=False)
+    await runner.run(dry_run=False)
 
     # Sink error in Phase 1 means record not collected for Phase 2
     assert any(isinstance(e, ErrorEvent) and e.component == "sink" for e in events)
 
 
-def test_runner_download_errors(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+@pytest.mark.asyncio
+async def test_runner_download_errors(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     """Download failure in Phase 2 is reported correctly."""
     record = DatasetRecord(
         source_name="s",
@@ -248,13 +255,14 @@ def test_runner_download_errors(tmp_path: Path, minimal_config: PipelineConfig) 
     container.progress_bus.subscribe(events.append)
 
     runner = ETLRunner(container)
-    info = runner.run(dry_run=False)
+    info = await runner.run(dry_run=False)
 
     assert info.counts["failed"] == 1
     assert any(isinstance(e, ErrorEvent) and e.component == "downloader" for e in events)
 
 
-def test_runner_respects_policy_skip_and_max_items(
+@pytest.mark.asyncio
+async def test_runner_respects_policy_skip_and_max_items(
     tmp_path: Path, minimal_config: PipelineConfig
 ) -> None:
     minimal_config.pipeline.max_items = 1
@@ -285,14 +293,15 @@ def test_runner_respects_policy_skip_and_max_items(
     )
 
     runner = ETLRunner(container)
-    info = runner.run(dry_run=False)
+    info = await runner.run(dry_run=False)
 
     assert info.counts["skipped"] == 1
     assert record1.assets[0].download_status == DOWNLOAD_STATUS_SKIPPED
     assert info.counts["transformed"] == 1
 
 
-def test_runner_extractor_error_publishes_event(
+@pytest.mark.asyncio
+async def test_runner_extractor_error_publishes_event(
     tmp_path: Path, minimal_config: PipelineConfig
 ) -> None:
     container = _make_container(
@@ -309,13 +318,14 @@ def test_runner_extractor_error_publishes_event(
     container.progress_bus.subscribe(events.append)
 
     runner = ETLRunner(container)
-    info = runner.run(dry_run=False)
+    info = await runner.run(dry_run=False)
 
     assert info.counts["extracted"] == 0
     assert any(isinstance(e, ErrorEvent) and e.component == "extractor" for e in events)
 
 
-def test_runner_pre_and_post_transform_filter(
+@pytest.mark.asyncio
+async def test_runner_pre_and_post_transform_filter(
     tmp_path: Path, minimal_config: PipelineConfig
 ) -> None:
     record = DatasetRecord(
@@ -337,12 +347,13 @@ def test_runner_pre_and_post_transform_filter(
     )
 
     runner = ETLRunner(container)
-    info = runner.run(dry_run=False)
+    info = await runner.run(dry_run=False)
 
     assert info.counts["transformed"] == 0
 
 
-def test_runner_post_transform_drop(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+@pytest.mark.asyncio
+async def test_runner_post_transform_drop(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     record = DatasetRecord(
         source_name="s",
         source_dataset_id="1",
@@ -362,12 +373,13 @@ def test_runner_post_transform_drop(tmp_path: Path, minimal_config: PipelineConf
     )
 
     runner = ETLRunner(container)
-    info = runner.run(dry_run=False)
+    info = await runner.run(dry_run=False)
 
     assert info.counts["loaded"] == 0
 
 
-def test_runner_cancelled_breaks_loop(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+@pytest.mark.asyncio
+async def test_runner_cancelled_breaks_loop(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     container = _make_container(
         tmp_path,
         minimal_config,
@@ -380,12 +392,13 @@ def test_runner_cancelled_breaks_loop(tmp_path: Path, minimal_config: PipelineCo
     )
 
     runner = ETLRunner(container)
-    info = runner.run(dry_run=False)
+    info = await runner.run(dry_run=False)
 
     assert info.counts["extracted"] == 0
 
 
-def test_runner_filters_every_50_items(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+@pytest.mark.asyncio
+async def test_runner_filters_every_50_items(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     records = [
         DatasetRecord(source_name="s", source_dataset_id=str(i), source_url="u") for i in range(50)
     ]
@@ -403,12 +416,13 @@ def test_runner_filters_every_50_items(tmp_path: Path, minimal_config: PipelineC
     container.progress_bus.subscribe(events.append)
 
     runner = ETLRunner(container)
-    runner.run(dry_run=False)
+    await runner.run(dry_run=False)
 
     assert any(isinstance(e, CountersUpdated) and e.extracted == 50 for e in events)
 
 
-def test_runner_dry_run_skips_assets(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+@pytest.mark.asyncio
+async def test_runner_dry_run_skips_assets(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     record = DatasetRecord(
         source_name="s",
         source_dataset_id="1",
@@ -427,14 +441,15 @@ def test_runner_dry_run_skips_assets(tmp_path: Path, minimal_config: PipelineCon
     )
 
     runner = ETLRunner(container)
-    info = runner.run(dry_run=True)
+    info = await runner.run(dry_run=True)
 
     # In two-phase mode, dry_run skips Phase 2 entirely; assets stay UNKNOWN
     assert info.counts["skipped"] == 1
     assert info.counts["downloaded"] == 0
 
 
-def test_runner_cancelled_during_assets_breaks(
+@pytest.mark.asyncio
+async def test_runner_cancelled_during_assets_breaks(
     tmp_path: Path, minimal_config: PipelineConfig
 ) -> None:
     class CancelAssets(list[AssetRecord]):
@@ -456,7 +471,7 @@ def test_runner_cancelled_during_assets_breaks(
                 yield asset
 
     class CancelExtractor:
-        def extract(self, ctx: Any) -> Iterable[DatasetRecord]:
+        async def extract(self, ctx: Any) -> AsyncIterator[DatasetRecord]:
             record = DatasetRecord(
                 source_name="s",
                 source_dataset_id="1",
@@ -464,7 +479,7 @@ def test_runner_cancelled_during_assets_breaks(
             )
             record.assets = CancelAssets(ctx)
             record.raw = {"dataset_slug": "ds"}
-            return [record]
+            yield record
 
     container = _make_container(
         tmp_path,
@@ -478,12 +493,13 @@ def test_runner_cancelled_during_assets_breaks(
     )
 
     runner = ETLRunner(container)
-    info = runner.run(dry_run=False)
+    info = await runner.run(dry_run=False)
 
     assert info.counts["downloaded"] <= 1
 
 
-def test_runner_non_success_download_status(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+@pytest.mark.asyncio
+async def test_runner_non_success_download_status(tmp_path: Path, minimal_config: PipelineConfig) -> None:
     record = DatasetRecord(
         source_name="s",
         source_dataset_id="1",
@@ -492,7 +508,7 @@ def test_runner_non_success_download_status(tmp_path: Path, minimal_config: Pipe
     )
 
     class NonSuccessDownloader(_Downloader):
-        def download(self, asset: AssetRecord, _target_dir: Path):  # type: ignore[override]
+        async def download(self, asset: AssetRecord, _target_dir: Path):  # type: ignore[override]
             asset.download_status = "FAILED"
             return type(
                 "Result",
@@ -512,6 +528,6 @@ def test_runner_non_success_download_status(tmp_path: Path, minimal_config: Pipe
     )
 
     runner = ETLRunner(container)
-    info = runner.run(dry_run=False)
+    info = await runner.run(dry_run=False)
 
     assert info.counts["failed"] == 1

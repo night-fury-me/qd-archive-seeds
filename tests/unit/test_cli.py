@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import runpy
 import sqlite3
 from datetime import UTC, datetime
@@ -25,25 +27,41 @@ from qdarchive_seeding.core.exceptions import ConfigError
 runner = CliRunner()
 
 
-def test_validate_config_valid(config_yaml_path: Path) -> None:
+@pytest.mark.asyncio
+
+
+
+async def test_validate_config_valid(config_yaml_path: Path) -> None:
     result = runner.invoke(app, ["seed", "validate-config", "--config", str(config_yaml_path)])
     assert result.exit_code == 0
     assert "Valid" in result.output
 
 
-def test_validate_config_invalid(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+
+
+
+async def test_validate_config_invalid(tmp_path: Path) -> None:
     bad = tmp_path / "bad.yaml"
     bad.write_text("not: valid: config")
     result = runner.invoke(app, ["seed", "validate-config", "--config", str(bad)])
     assert result.exit_code == 1
 
 
-def test_validate_config_missing() -> None:
+@pytest.mark.asyncio
+
+
+
+async def test_validate_config_missing() -> None:
     result = runner.invoke(app, ["seed", "validate-config", "--config", "/nonexistent.yaml"])
     assert result.exit_code == 1
 
 
-def test_status_missing_db() -> None:
+@pytest.mark.asyncio
+
+
+
+async def test_status_missing_db() -> None:
     result = runner.invoke(app, ["seed", "status", "--db", "/nonexistent.sqlite"])
     assert result.exit_code == 1
 
@@ -70,7 +88,7 @@ def test_run_pipeline_invokes_runner(monkeypatch: object, minimal_config: Any) -
         def __init__(self, _container: Any) -> None:
             captured["runner_init"] = True
 
-        def run(self, **kwargs: Any) -> None:
+        async def run(self, **kwargs: Any) -> None:
             captured["dry_run"] = kwargs.get("dry_run", False)
 
     monkeypatch.setattr(seed_module, "load_config", fake_load_config)
@@ -99,7 +117,11 @@ def test_run_pipeline_invokes_runner(monkeypatch: object, minimal_config: Any) -
     assert captured["config"].pipeline.max_items == 5
 
 
-def test_run_pipeline_config_error(monkeypatch: object) -> None:
+@pytest.mark.asyncio
+
+
+
+async def test_run_pipeline_config_error(monkeypatch: object) -> None:
     def fake_load_config(_path: Path) -> Any:
         raise ConfigError("bad config")
 
@@ -111,7 +133,11 @@ def test_run_pipeline_config_error(monkeypatch: object) -> None:
     assert "Config error" in result.output
 
 
-def test_cli_progress_display_events() -> None:
+@pytest.mark.asyncio
+
+
+
+async def test_cli_progress_display_events() -> None:
     console = Console(record=True)
     seed_module.console = console
     display = seed_module.CliProgressDisplay()
@@ -142,7 +168,11 @@ def test_cli_progress_display_events() -> None:
     assert "failures" in output
 
 
-def test_status_command_with_db(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+
+
+
+async def test_status_command_with_db(tmp_path: Path) -> None:
     db = tmp_path / "qdarchive.sqlite"
     conn = sqlite3.connect(db)
     try:
@@ -168,7 +198,11 @@ def test_status_command_with_db(tmp_path: Path) -> None:
     assert "Total files" in result.output
 
 
-def test_export_csv_and_excel(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+
+
+
+async def test_export_csv_and_excel(tmp_path: Path) -> None:
     db = tmp_path / "qdarchive.sqlite"
     conn = sqlite3.connect(db)
     try:
@@ -201,7 +235,11 @@ def test_export_csv_and_excel(tmp_path: Path) -> None:
     assert excel_out.exists()
 
 
-def test_export_unknown_format(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+
+
+
+async def test_export_unknown_format(tmp_path: Path) -> None:
     db = tmp_path / "qdarchive.sqlite"
     conn = sqlite3.connect(db)
     try:
@@ -224,7 +262,11 @@ def test_export_unknown_format(tmp_path: Path) -> None:
     assert "Unknown format" in result.output
 
 
-def test_export_missing_db() -> None:
+@pytest.mark.asyncio
+
+
+
+async def test_export_missing_db() -> None:
     result = runner.invoke(
         app,
         ["seed", "export", "--db", "/nonexistent.sqlite", "--format", "csv", "--out", "./x"],
@@ -234,7 +276,11 @@ def test_export_missing_db() -> None:
     assert "Database not found" in result.output
 
 
-def test_cli_main_module_executes(monkeypatch: object) -> None:
+@pytest.mark.asyncio
+
+
+
+async def test_cli_main_module_executes(monkeypatch: object) -> None:
     monkeypatch.setattr("sys.argv", ["qdarchive", "--help"])  # type: ignore[attr-defined]
     import sys
 

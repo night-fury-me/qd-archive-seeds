@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -40,7 +40,7 @@ class FakeResponse:
                 response=response,
             )
 
-    def iter_bytes(self, chunk_size: int = 4096) -> Iterator[bytes]:
+    async def aiter_bytes(self, chunk_size: int = 4096) -> AsyncIterator[bytes]:
         offset = 0
         while offset < len(self.data):
             yield self.data[offset : offset + chunk_size]
@@ -48,19 +48,19 @@ class FakeResponse:
 
 
 class FakeClient:
-    """Fake httpx.Client whose .stream() yields a FakeResponse."""
+    """Fake httpx.AsyncClient whose .stream() yields a FakeResponse."""
 
     def __init__(self, response: FakeResponse) -> None:
         self._response = response
 
-    @contextmanager
-    def stream(
+    @asynccontextmanager
+    async def stream(
         self,
         method: str,
         url: str,
         *,
         headers: dict[str, str] | None = None,
-    ) -> Iterator[FakeResponse]:
+    ) -> AsyncIterator[FakeResponse]:
         yield self._response
 
 
@@ -91,11 +91,12 @@ def _make_downloader(
 # ---------- 1. Successful download ----------
 
 
-def test_successful_download_writes_file(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_successful_download_writes_file(tmp_path: Path) -> None:
     dl = _make_downloader()
     asset = _make_asset()
 
-    result = dl.download(asset, tmp_path)
+    result = await dl.download(asset, tmp_path)
 
     final_path = tmp_path / "data.csv"
     assert final_path.exists()
@@ -108,22 +109,24 @@ def test_successful_download_writes_file(tmp_path: Path) -> None:
     assert asset.downloaded_at is not None
 
 
-def test_successful_download_computes_sha256(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_successful_download_computes_sha256(tmp_path: Path) -> None:
     dl = _make_downloader()
     asset = _make_asset()
 
-    result = dl.download(asset, tmp_path)
+    result = await dl.download(asset, tmp_path)
 
     expected_hash = hashlib.sha256(SAMPLE_CONTENT).hexdigest()
     assert result.checksum == expected_hash
     assert asset.checksum_sha256 == expected_hash
 
 
-def test_part_file_removed_after_success(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_part_file_removed_after_success(tmp_path: Path) -> None:
     dl = _make_downloader()
     asset = _make_asset()
 
-    dl.download(asset, tmp_path)
+    await dl.download(asset, tmp_path)
 
     part_file = tmp_path / "data.csv.part"
     assert not part_file.exists()
@@ -132,7 +135,8 @@ def test_part_file_removed_after_success(tmp_path: Path) -> None:
 # ---------- 2. Atomic write (.part -> final) ----------
 
 
-def test_atomic_write_uses_part_file(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_atomic_write_uses_part_file(tmp_path: Path) -> None:
     """Verify that during streaming the .part file exists and the final file does not."""
     part_seen = False
     final_absent = True
@@ -142,21 +146,21 @@ def test_atomic_write_uses_part_file(tmp_path: Path) -> None:
     part_path = target_dir / "data.csv.part"
 
     class SpyClient:
-        @contextmanager
-        def stream(
+        @asynccontextmanager
+        async def stream(
             self, method: str, url: str, *, headers: dict[str, str] | None = None
-        ) -> Iterator[FakeResponse]:
+        ) -> AsyncIterator[FakeResponse]:
             headers_dict = {"content-length": str(len(SAMPLE_CONTENT))}
             resp = FakeResponse(data=SAMPLE_CONTENT, headers=headers_dict)
             yield resp
 
     class SpyDownloader(Downloader):
-        def _stream_to_file(self, response, fh, asset_url, total_bytes):  # type: ignore[override]
+        async def _stream_to_file(self, response, fh, asset_url, total_bytes):  # type: ignore[override]
             nonlocal part_seen, final_absent
             # At this point the .part file should be open and the final should not exist
             part_seen = part_path.exists()
             final_absent = not final_path.exists()
-            return super()._stream_to_file(response, fh, asset_url, total_bytes)
+            return await super()._stream_to_file(response, fh, asset_url, total_bytes)
 
     dl = SpyDownloader(
         client=SpyClient(),  # type: ignore[arg-type]
@@ -164,7 +168,7 @@ def test_atomic_write_uses_part_file(tmp_path: Path) -> None:
         chunk_size_bytes=16,
     )
     asset = _make_asset()
-    dl.download(asset, target_dir)
+    await dl.download(asset, target_dir)
 
     assert part_seen, ".part file should exist during streaming"
     assert final_absent, "final file should NOT exist during streaming"
@@ -175,7 +179,8 @@ def test_atomic_write_uses_part_file(tmp_path: Path) -> None:
 # ---------- 3. Progress callback ----------
 
 
-def test_progress_callback_called(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_progress_callback_called(tmp_path: Path) -> None:
     calls: list[tuple[int, int | None]] = []
 
     def on_progress(downloaded: int, total: int | None) -> None:
@@ -184,7 +189,7 @@ def test_progress_callback_called(tmp_path: Path) -> None:
     dl = _make_downloader(chunk_size=10, on_progress=on_progress)
     asset = _make_asset()
 
-    dl.download(asset, tmp_path)
+    await dl.download(asset, tmp_path)
 
     assert len(calls) > 0, "progress callback should have been called at least once"
     # Last call should report the full size downloaded
@@ -199,23 +204,25 @@ def test_progress_callback_called(tmp_path: Path) -> None:
 # ---------- 4. Download failure sets FAILED status ----------
 
 
-def test_download_failure_sets_failed_status(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_download_failure_sets_failed_status(tmp_path: Path) -> None:
     dl = _make_downloader(status_code=500)
     asset = _make_asset()
 
     with pytest.raises(httpx.HTTPStatusError):
-        dl.download(asset, tmp_path)
+        await dl.download(asset, tmp_path)
 
     assert asset.download_status == DOWNLOAD_STATUS_FAILED
 
 
-def test_download_failure_no_part_file_left(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_download_failure_no_part_file_left(tmp_path: Path) -> None:
     """When the server returns an error before any bytes are written, no .part file remains."""
     dl = _make_downloader(status_code=500)
     asset = _make_asset()
 
     with pytest.raises(httpx.HTTPStatusError):
-        dl.download(asset, tmp_path)
+        await dl.download(asset, tmp_path)
 
     # The key assertion is the status — the .part file may or may not exist
     # depending on whether open() ran before raise_for_status().
@@ -225,30 +232,33 @@ def test_download_failure_no_part_file_left(tmp_path: Path) -> None:
 # ---------- 5. Checksum algo="none" ----------
 
 
-def test_checksum_none_algo_stores_none(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_checksum_none_algo_stores_none(tmp_path: Path) -> None:
     dl = _make_downloader(checksum_algo="none")
     asset = _make_asset()
 
-    result = dl.download(asset, tmp_path)
+    result = await dl.download(asset, tmp_path)
 
     # _NullHasher.hexdigest() returns "", which is falsy, so checksum_sha256 should be None
     assert asset.checksum_sha256 is None
     assert result.checksum == ""
 
 
-def test_creates_target_directory(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_creates_target_directory(tmp_path: Path) -> None:
     """download() should create the target directory if it does not exist."""
     dl = _make_downloader()
     asset = _make_asset()
     nested = tmp_path / "a" / "b" / "c"
 
-    dl.download(asset, nested)
+    await dl.download(asset, nested)
 
     assert nested.exists()
     assert (nested / "data.csv").exists()
 
 
-def test_resume_with_range_and_416_retries(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_resume_with_range_and_416_retries(tmp_path: Path) -> None:
     target_dir = tmp_path / "downloads"
     target_dir.mkdir(parents=True, exist_ok=True)
     part_path = target_dir / "data.csv.part"
@@ -268,10 +278,10 @@ def test_resume_with_range_and_416_retries(tmp_path: Path) -> None:
             self._seq = list(seq)
             self.headers: list[dict[str, str]] = []
 
-        @contextmanager
-        def stream(
+        @asynccontextmanager
+        async def stream(
             self, method: str, url: str, *, headers: dict[str, str] | None = None
-        ) -> Iterator[FakeResponse]:
+        ) -> AsyncIterator[FakeResponse]:
             self.headers.append(headers or {})
             yield self._seq.pop(0)
 
@@ -279,14 +289,15 @@ def test_resume_with_range_and_416_retries(tmp_path: Path) -> None:
     dl = Downloader(client=client, checksum=ChecksumComputer(), chunk_size_bytes=16)
     asset = _make_asset()
 
-    result = dl.download(asset, target_dir)
+    result = await dl.download(asset, target_dir)
 
     assert "Range" in client.headers[0]
     assert (target_dir / "data.csv").exists()
     assert result.bytes_downloaded == len(SAMPLE_CONTENT)
 
 
-def test_failure_with_partial_file_sets_resumable(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_failure_with_partial_file_sets_resumable(tmp_path: Path) -> None:
     target_dir = tmp_path / "downloads"
     target_dir.mkdir(parents=True, exist_ok=True)
     (target_dir / "data.csv.part").write_bytes(b"partial")
@@ -294,25 +305,27 @@ def test_failure_with_partial_file_sets_resumable(tmp_path: Path) -> None:
     asset = _make_asset()
 
     with pytest.raises(httpx.HTTPStatusError):
-        dl.download(asset, target_dir)
+        await dl.download(asset, target_dir)
 
     assert asset.download_status == DOWNLOAD_STATUS_RESUMABLE
 
 
-def test_non_http_error_sets_resumable(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_non_http_error_sets_resumable(tmp_path: Path) -> None:
     target_dir = tmp_path / "downloads"
     target_dir.mkdir(parents=True, exist_ok=True)
     (target_dir / "data.csv.part").write_bytes(b"partial")
 
     class BoomClient:
-        @contextmanager
-        def stream(self, _method: str, _url: str, *, headers: dict[str, str] | None = None):
+        @asynccontextmanager
+        async def stream(self, _method: str, _url: str, *, headers: dict[str, str] | None = None):
             raise RuntimeError("boom")
+            yield  # pragma: no cover — required by asynccontextmanager
 
     dl = Downloader(client=BoomClient(), checksum=ChecksumComputer(), chunk_size_bytes=16)
     asset = _make_asset()
 
     with pytest.raises(RuntimeError):
-        dl.download(asset, target_dir)
+        await dl.download(asset, target_dir)
 
     assert asset.download_status == DOWNLOAD_STATUS_RESUMABLE

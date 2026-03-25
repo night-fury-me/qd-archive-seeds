@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -46,7 +46,7 @@ class GenericRestExtractor:
             size_param=(pagination.size_param if pagination else None) or "size",
         )
 
-    def extract(self, ctx: RunContext) -> Iterator[DatasetRecord]:
+    async def extract(self, ctx: RunContext) -> AsyncIterator[DatasetRecord]:
         """Yield records page-by-page so the runner can stop when enough pass filters."""
         endpoint = ctx.config.source.endpoints.get("search", "")
         base_url = ctx.config.source.base_url.rstrip("/")
@@ -67,7 +67,7 @@ class GenericRestExtractor:
             if page_count >= effective_max_pages:
                 logger.warning("Reached max pages limit (%d), stopping", effective_max_pages)
                 break
-            response = self.http_client.get(url, headers=headers, params=page_params)
+            response = await self.http_client.get(url, headers=headers, params=page_params)
             response.raise_for_status()
             payload = response.json()
             items = payload

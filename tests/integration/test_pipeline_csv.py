@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import csv
 from pathlib import Path
 from typing import Any
@@ -11,7 +13,11 @@ from qdarchive_seeding.app.container import build_container
 from qdarchive_seeding.app.runner import ETLRunner
 
 
-def test_static_list_to_csv(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+
+
+
+async def test_static_list_to_csv(tmp_path: Path) -> None:
     config_dict: dict[str, Any] = {
         "pipeline": {"id": "csv_test", "run_mode": "full"},
         "source": {
@@ -54,7 +60,7 @@ def test_static_list_to_csv(tmp_path: Path) -> None:
 
     container = build_container(config, runs_dir=tmp_path / "runs")
     runner = ETLRunner(container)
-    info = runner.run(dry_run=False)
+    info = await runner.run(dry_run=False)
 
     assert info.counts["extracted"] == 1
     with (tmp_path / "datasets.csv").open() as f:

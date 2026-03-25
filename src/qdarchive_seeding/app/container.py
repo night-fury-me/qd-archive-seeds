@@ -129,7 +129,7 @@ def build_container(
     # Apply auth headers to download client so authenticated file access works
     auth_headers, _ = auth.apply({}, {})
     download_headers.update(auth_headers)
-    download_client = httpx.Client(
+    download_client = httpx.AsyncClient(
         timeout=60.0,
         headers=download_headers,
         follow_redirects=True,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -41,7 +43,7 @@ class FakeHttpClient:
         self.call_count = 0
         self.calls: list[dict[str, Any]] = []
 
-    def get(
+    async def get(
         self,
         url: str,
         *,
@@ -118,7 +120,9 @@ EMPTY_PAGE: dict[str, Any] = {"data": {"items": [], "total_count": 0}}
 
 
 class TestFailedPageRecording:
-    def test_failed_page_recorded_in_checkpoint(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+
+    async def test_failed_page_recorded_in_checkpoint(self, tmp_path: Path) -> None:
         # per_page=2, total_count=6: pages 0,1,2. Page 1 fails.
         http = FakeHttpClient(
             [
@@ -136,12 +140,15 @@ class TestFailedPageRecording:
             auth=NoAuth(),
             options=HarvardDataverseOptions(include_files=False, per_page=2),
         )
-        records = list(extractor._extract_single_query(ctx, "test", query_string="q1"))
+        records = [r async for r in extractor._extract_single_query(ctx, "test", query_string="q1")]
 
         assert len(records) == 4  # Page 0 + page 2
         assert cp.get_failed_pages("q1") == [1]
 
-    def test_query_not_marked_complete_with_failures(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+
+
+    async def test_query_not_marked_complete_with_failures(self, tmp_path: Path) -> None:
         # per_page=2, total_count=4: pages 0,1. Page 1 fails.
         http = FakeHttpClient(
             [_page("doi:1", "doi:2", total_count=4)],
@@ -156,14 +163,16 @@ class TestFailedPageRecording:
             auth=NoAuth(),
             options=HarvardDataverseOptions(include_files=False, per_page=2),
         )
-        list(extractor._extract_single_query(ctx, "test", query_string="q1"))
+        [r async for r in extractor._extract_single_query(ctx, "test", query_string="q1")]
 
         assert not cp.is_query_complete("q1")
         assert cp.get_failed_pages("q1") == [1]
 
 
 class TestRetryFailedPages:
-    def test_retry_succeeds_yields_records(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+
+    async def test_retry_succeeds_yields_records(self, tmp_path: Path) -> None:
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
         cp.mark_page("q1", 2, 4)
         cp.mark_page_failed("q1", 1)
@@ -175,13 +184,16 @@ class TestRetryFailedPages:
         extractor = HarvardDataverseExtractor(
             http_client=http, auth=NoAuth(), options=HarvardDataverseOptions(include_files=False)
         )
-        records = list(extractor._extract_single_query(ctx, "test", query_string="q1"))
+        records = [r async for r in extractor._extract_single_query(ctx, "test", query_string="q1")]
 
         assert len(records) == 2
         assert records[0].source_dataset_id == "doi:10"
         assert cp.get_failed_pages("q1") == []
 
-    def test_retry_still_failing_stays_in_checkpoint(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+
+
+    async def test_retry_still_failing_stays_in_checkpoint(self, tmp_path: Path) -> None:
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
         cp.mark_page("q1", 2, 4)
         cp.mark_page_failed("q1", 1)
@@ -193,12 +205,15 @@ class TestRetryFailedPages:
         extractor = HarvardDataverseExtractor(
             http_client=http, auth=NoAuth(), options=HarvardDataverseOptions(include_files=False)
         )
-        records = list(extractor._extract_single_query(ctx, "test", query_string="q1"))
+        records = [r async for r in extractor._extract_single_query(ctx, "test", query_string="q1")]
 
         assert len(records) == 0
         assert cp.get_failed_pages("q1") == [1]
 
-    def test_retry_happens_before_normal_pagination(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+
+
+    async def test_retry_happens_before_normal_pagination(self, tmp_path: Path) -> None:
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
         cp.mark_page("q1", 1, 2)
         cp.mark_page_failed("q1", 0)
@@ -216,7 +231,7 @@ class TestRetryFailedPages:
         extractor = HarvardDataverseExtractor(
             http_client=http, auth=NoAuth(), options=HarvardDataverseOptions(include_files=False)
         )
-        records = list(extractor._extract_single_query(ctx, "test", query_string="q1"))
+        records = [r async for r in extractor._extract_single_query(ctx, "test", query_string="q1")]
 
         assert len(records) == 4
         assert records[0].source_dataset_id == "doi:1"
@@ -226,7 +241,9 @@ class TestRetryFailedPages:
 
 
 class TestResumeSkipsCompletedQueries:
-    def test_completed_query_is_skipped(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+
+    async def test_completed_query_is_skipped(self, tmp_path: Path) -> None:
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
         cp.mark_query_complete("q1")
 
@@ -237,7 +254,7 @@ class TestResumeSkipsCompletedQueries:
         extractor = HarvardDataverseExtractor(
             http_client=http, auth=NoAuth(), options=HarvardDataverseOptions(include_files=False)
         )
-        records = list(extractor._extract_single_query(ctx, "test", query_string="q1"))
+        records = [r async for r in extractor._extract_single_query(ctx, "test", query_string="q1")]
 
         assert len(records) == 0
         assert http.call_count == 0  # No HTTP calls made

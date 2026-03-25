@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
 from pathlib import Path
@@ -397,11 +398,13 @@ def run_pipeline(
     container.progress_bus.subscribe(display)
 
     runner = ETLRunner(container)
-    runner.run(
-        dry_run=dry_run,
-        no_confirm=no_confirm,
-        metadata_only=metadata_only,
-        confirm_callback=_prompt_download_decision if not no_confirm else None,
+    asyncio.run(
+        runner.run(
+            dry_run=dry_run,
+            no_confirm=no_confirm,
+            metadata_only=metadata_only,
+            confirm_callback=_prompt_download_decision if not no_confirm else None,
+        )
     )
 
 

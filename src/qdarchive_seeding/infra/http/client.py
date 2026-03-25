@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -59,7 +58,7 @@ class HttpxClient(HttpClient):
             transport=_AsyncIPv4Transport(),
         )
 
-    async def _async_get(
+    async def get(
         self,
         url: str,
         *,
@@ -98,41 +97,21 @@ class HttpxClient(HttpClient):
 
         return await _request()
 
-    def get(
-        self,
-        url: str,
-        *,
-        headers: dict[str, str],
-        params: dict[str, Any],
-        timeout: float | None = None,
-    ) -> httpx.Response:
-        return asyncio.run(
-            self._async_get(url, headers=headers, params=params, timeout=timeout)
-        )
-
-    def get_many(
+    async def get_many(
         self,
         requests: list[dict[str, Any]],
     ) -> list[httpx.Response]:
-        """Fetch multiple URLs concurrently, respecting rate limits.
+        """Fetch multiple URLs concurrently, respecting rate limits."""
+        tasks = [
+            self.get(
+                r["url"],
+                headers=r.get("headers", {}),
+                params=r.get("params", {}),
+                timeout=r.get("timeout"),
+            )
+            for r in requests
+        ]
+        return await asyncio.gather(*tasks)
 
-        Each item in *requests* is a dict with keys: url, headers, params,
-        and optionally timeout.
-        """
-
-        async def _gather() -> list[httpx.Response]:
-            tasks = [
-                self._async_get(
-                    r["url"],
-                    headers=r.get("headers", {}),
-                    params=r.get("params", {}),
-                    timeout=r.get("timeout"),
-                )
-                for r in requests
-            ]
-            return await asyncio.gather(*tasks)
-
-        return asyncio.run(_gather())
-
-    def close(self) -> None:
-        asyncio.run(self._client.aclose())
+    async def close(self) -> None:
+        await self._client.aclose()

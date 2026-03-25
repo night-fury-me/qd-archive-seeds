@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
@@ -37,12 +37,15 @@ class HarvardDataverseExtractor:
     auth: AuthProvider
     options: HarvardDataverseOptions
 
-    def extract(self, ctx: RunContext) -> Iterator[DatasetRecord]:
+    async def extract(self, ctx: RunContext) -> AsyncIterator[DatasetRecord]:
         """Yield records, iterating over multiple queries if search_strategy is set."""
         strategy = ctx.config.source.search_strategy
         if strategy is None:
             query = ctx.config.source.params.get("q", "")
-            yield from self._extract_single_query(ctx, str(query), query_string=str(query))
+            async for record in self._extract_single_query(
+                ctx, str(query), query_string=str(query)
+            ):
+                yield record
             return
 
         existing_ids = ctx.metadata.get("existing_dataset_ids")
@@ -64,7 +67,10 @@ class HarvardDataverseExtractor:
                         query_type="extension",
                     )
                 )
-            yield from self._extract_single_query(ctx, query, seen_ids=seen_ids, query_string=ext)
+            async for record in self._extract_single_query(
+                ctx, query, seen_ids=seen_ids, query_string=ext
+            ):
+                yield record
 
         for nl_query in strategy.natural_language_queries:
             query_idx += 1
@@ -78,18 +84,19 @@ class HarvardDataverseExtractor:
                         query_type="nl",
                     )
                 )
-            yield from self._extract_single_query(
+            async for record in self._extract_single_query(
                 ctx, query, seen_ids=seen_ids, query_string=nl_query
-            )
+            ):
+                yield record
 
-    def _extract_single_query(
+    async def _extract_single_query(
         self,
         ctx: RunContext,
         query: str,
         *,
         seen_ids: set[str] | None = None,
         query_string: str = "",
-    ) -> Iterator[DatasetRecord]:
+    ) -> AsyncIterator[DatasetRecord]:
         """Run a single paginated query against the Dataverse Search API."""
         base_url = ctx.config.source.base_url.rstrip("/")
         search_endpoint = ctx.config.source.endpoints.get("search", "/search")
@@ -123,7 +130,9 @@ class HarvardDataverseExtractor:
                     retry_start = failed_page * per_page
                     retry_params = {**params, "start": retry_start, "per_page": per_page}
                     try:
-                        response = self.http_client.get(url, headers=headers, params=retry_params)
+                        response = await self.http_client.get(
+                            url, headers=headers, params=retry_params
+                        )
                     except Exception as exc:
                         logger.error(
                             "Retry still failing for query '%s' page %d: %s",
@@ -145,7 +154,9 @@ class HarvardDataverseExtractor:
                         len(items),
                     )
                     for item in items:
-                        record = self._build_record(ctx, item, source_cfg, query_string, seen_ids)
+                        record = await self._build_record(
+                            ctx, item, source_cfg, query_string, seen_ids
+                        )
                         if record is not None:
                             yield record
 
@@ -156,7 +167,7 @@ class HarvardDataverseExtractor:
         for page_count in range(resume_from, effective_max_pages):
             page_params = {**params, "start": start, "per_page": per_page}
             try:
-                response = self.http_client.get(url, headers=headers, params=page_params)
+                response = await self.http_client.get(url, headers=headers, params=page_params)
             except Exception as exc:
                 logger.error(
                     "HTTP request failed for query '%s' page %d: %s, skipping page",
@@ -197,7 +208,9 @@ class HarvardDataverseExtractor:
             )
 
             for item in items:
-                record = self._build_record(ctx, item, source_cfg, query_string, seen_ids)
+                record = await self._build_record(
+                    ctx, item, source_cfg, query_string, seen_ids
+                )
                 if record is not None:
                     yield record
 
@@ -217,7 +230,7 @@ class HarvardDataverseExtractor:
                     len(checkpoint.get_failed_pages(query_string)),
                 )
 
-    def _build_record(
+    async def _build_record(
         self,
         ctx: RunContext,
         item: dict[str, Any],
@@ -235,7 +248,7 @@ class HarvardDataverseExtractor:
                 return None
             seen_ids.add(global_id)
 
-        assets = self._fetch_files(ctx, global_id) if self.options.include_files else []
+        assets = await self._fetch_files(ctx, global_id) if self.options.include_files else []
 
         persons: list[PersonRole] = []
         for author in item.get("authors", []):
@@ -267,7 +280,7 @@ class HarvardDataverseExtractor:
             raw=item,
         )
 
-    def _fetch_files(self, ctx: RunContext, persistent_id: str) -> list[AssetRecord]:
+    async def _fetch_files(self, ctx: RunContext, persistent_id: str) -> list[AssetRecord]:
         """Fetch the file listing for a dataset via the Dataverse Files API."""
         base_url = ctx.config.source.base_url.rstrip("/")
         files_endpoint = ctx.config.source.endpoints.get(
@@ -281,7 +294,7 @@ class HarvardDataverseExtractor:
         headers, params = self.auth.apply(headers, params)
 
         try:
-            response = self.http_client.get(url, headers=headers, params=params)
+            response = await self.http_client.get(url, headers=headers, params=params)
             payload = response.json()
         except Exception:
             logger.warning("Failed to fetch files for %s", persistent_id, exc_info=True)

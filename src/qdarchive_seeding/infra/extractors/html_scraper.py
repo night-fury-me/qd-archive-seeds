@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from bs4 import BeautifulSoup
@@ -23,17 +24,17 @@ class HtmlScraperExtractor:
     http_client: HttpClient
     options: HtmlScraperOptions
 
-    def extract(self, ctx: RunContext) -> list[DatasetRecord]:
+    async def extract(self, ctx: RunContext) -> AsyncIterator[DatasetRecord]:
         endpoint = ctx.config.source.endpoints.get("search", "")
         base_url = ctx.config.source.base_url.rstrip("/")
         url = f"{base_url}{endpoint}"
 
-        response = self.http_client.get(url, headers={}, params={})
+        response = await self.http_client.get(url, headers={}, params={})
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
 
         items = soup.select(self.options.list_selector)
-        records: list[DatasetRecord] = []
+        count = 0
         for item in items:
             title_node = item.select_one(self.options.title_selector)
             link_node = item.select_one(self.options.link_selector)
@@ -53,7 +54,7 @@ class HtmlScraperExtractor:
 
             link_href = link_node.get("href")
             source_url = link_href if isinstance(link_href, str) else url
-            record = DatasetRecord(
+            yield DatasetRecord(
                 source_name=ctx.config.source.name,
                 source_dataset_id=None,
                 source_url=source_url,
@@ -62,7 +63,6 @@ class HtmlScraperExtractor:
                 assets=[AssetRecord(asset_url=link) for link in asset_links],
                 raw={"html": str(item)},
             )
-            records.append(record)
-            if self.options.max_items and len(records) >= self.options.max_items:
+            count += 1
+            if self.options.max_items and count >= self.options.max_items:
                 break
-        return records

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 class Extractor(Protocol):
-    def extract(self, ctx: RunContext) -> Iterable[DatasetRecord]: ...
+    def extract(self, ctx: RunContext) -> AsyncIterator[DatasetRecord]: ...
 
 
 class Transform(Protocol):
@@ -30,7 +30,7 @@ class Sink(Protocol):
 
 
 class Downloader(Protocol):
-    def download(self, asset: AssetRecord, target_dir: str) -> AssetRecord: ...
+    async def download(self, asset: AssetRecord, target_dir: Any) -> Any: ...
 
 
 class AuthProvider(Protocol):
@@ -40,7 +40,7 @@ class AuthProvider(Protocol):
 
 
 class HttpClient(Protocol):
-    def get(
+    async def get(
         self,
         url: str,
         *,
@@ -49,7 +49,7 @@ class HttpClient(Protocol):
         timeout: float | None = None,
     ) -> Any: ...
 
-    def get_many(
+    async def get_many(
         self,
         requests: list[dict[str, Any]],
     ) -> list[Any]: ...

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,5 +18,6 @@ class ExtractorResult:
 class BaseExtractor(Extractor):
     name: str
 
-    def extract(self, ctx: RunContext) -> list[DatasetRecord]:
+    async def extract(self, ctx: RunContext) -> AsyncIterator[DatasetRecord]:
         raise NotImplementedError
+        yield  # pragma: no cover — make it an async generator

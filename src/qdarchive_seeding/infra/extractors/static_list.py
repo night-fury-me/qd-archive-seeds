@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,10 +17,9 @@ class StaticListOptions:
 class StaticListExtractor:
     options: StaticListOptions
 
-    def extract(self, ctx: RunContext) -> list[DatasetRecord]:
-        records: list[DatasetRecord] = []
+    async def extract(self, ctx: RunContext) -> AsyncIterator[DatasetRecord]:
         for item in self.options.records:
-            record = DatasetRecord(
+            yield DatasetRecord(
                 source_name=ctx.config.source.name,
                 source_dataset_id=str(item.get("id")) if item.get("id") is not None else None,
                 source_url=str(item.get("source_url") or ""),
@@ -32,5 +32,3 @@ class StaticListExtractor:
                 ],
                 raw=item,
             )
-            records.append(record)
-        return records

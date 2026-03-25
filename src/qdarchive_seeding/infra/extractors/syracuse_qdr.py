@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -31,7 +31,7 @@ class SyracuseQdrExtractor:
     auth: AuthProvider
     options: SyracuseQdrOptions
 
-    def extract(self, ctx: RunContext) -> Iterator[DatasetRecord]:
+    async def extract(self, ctx: RunContext) -> AsyncIterator[DatasetRecord]:
         base_url = ctx.config.source.base_url.rstrip("/")
         search_endpoint = ctx.config.source.endpoints.get("search", "/search")
         dataset_endpoint = ctx.config.source.endpoints.get("dataset", "/datasets/:persistentId/")
@@ -60,7 +60,7 @@ class SyracuseQdrExtractor:
                 logger.warning("Reached max datasets limit (%d), stopping", effective_max)
                 break
 
-            response = self.http_client.get(
+            response = await self.http_client.get(
                 search_url, headers=headers, params=page_params, timeout=90.0
             )
             payload = response.json()
@@ -89,7 +89,9 @@ class SyracuseQdrExtractor:
                     logger.debug("Skipping dataset without global_id: %s", item.get("name"))
                     continue
 
-                files = self._fetch_dataset_files(base_url, dataset_endpoint, global_id, headers)
+                files = await self._fetch_dataset_files(
+                    base_url, dataset_endpoint, global_id, headers
+                )
                 if files is None:
                     continue
 
@@ -126,7 +128,7 @@ class SyracuseQdrExtractor:
                 logger.info("All %d datasets fetched", total_count)
                 break
 
-    def _fetch_dataset_files(
+    async def _fetch_dataset_files(
         self,
         base_url: str,
         dataset_endpoint: str,
@@ -141,7 +143,7 @@ class SyracuseQdrExtractor:
         params: dict[str, Any] = {"persistentId": persistent_id}
 
         try:
-            response = self.http_client.get(url, headers=headers, params=params, timeout=90.0)
+            response = await self.http_client.get(url, headers=headers, params=params, timeout=90.0)
             payload = response.json()
         except Exception:
             logger.warning("Failed to fetch files for dataset %s", persistent_id, exc_info=True)

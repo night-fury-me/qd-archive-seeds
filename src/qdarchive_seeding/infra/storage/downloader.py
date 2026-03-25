@@ -32,12 +32,12 @@ class DownloadResult:
 
 @dataclass(slots=True)
 class Downloader:
-    client: httpx.Client
+    client: httpx.AsyncClient
     checksum: ChecksumComputer
     chunk_size_bytes: int = DEFAULT_CHUNK_SIZE_BYTES
     on_progress: ProgressCallback | None = field(default=None, repr=False)
 
-    def download(self, asset: AssetRecord, target_dir: Path) -> DownloadResult:
+    async def download(self, asset: AssetRecord, target_dir: Path) -> DownloadResult:
         target_dir.mkdir(parents=True, exist_ok=True)
         filename = safe_filename(asset.local_filename or Path(asset.asset_url).name or "file")
         temp_path = target_dir / f"{filename}.part"
@@ -52,12 +52,14 @@ class Downloader:
             mode = "a+b"
 
         try:
-            return self._do_stream(asset, headers, mode, temp_path, final_path, target_dir)
+            return await self._do_stream(asset, headers, mode, temp_path, final_path, target_dir)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 416 and temp_path.exists():
                 # Range not satisfiable — stale .part file; restart from scratch
                 temp_path.unlink()
-                return self._do_stream(asset, {}, "w+b", temp_path, final_path, target_dir)
+                return await self._do_stream(
+                    asset, {}, "w+b", temp_path, final_path, target_dir
+                )
             asset.download_status = (
                 DOWNLOAD_STATUS_RESUMABLE if temp_path.exists() else DOWNLOAD_STATUS_FAILED
             )
@@ -68,7 +70,7 @@ class Downloader:
             )
             raise
 
-    def _do_stream(
+    async def _do_stream(
         self,
         asset: AssetRecord,
         headers: dict[str, str],
@@ -77,13 +79,13 @@ class Downloader:
         final_path: Path,
         target_dir: Path,
     ) -> DownloadResult:
-        with self.client.stream("GET", asset.asset_url, headers=headers) as response:
+        async with self.client.stream("GET", asset.asset_url, headers=headers) as response:
             response.raise_for_status()
             content_length = response.headers.get("content-length")
             total_bytes = int(content_length) if content_length else None
             with open(temp_path, mode) as raw_fh:
                 fh = cast(BinaryIO, raw_fh)
-                checksum = self._stream_to_file(response, fh, asset.asset_url, total_bytes)
+                checksum = await self._stream_to_file(response, fh, asset.asset_url, total_bytes)
         os.replace(temp_path, final_path)
         asset.local_dir = str(target_dir)
         asset.local_filename = final_path.name
@@ -95,7 +97,7 @@ class Downloader:
             asset=asset, bytes_downloaded=asset.size_bytes or 0, checksum=checksum
         )
 
-    def _stream_to_file(
+    async def _stream_to_file(
         self,
         response: httpx.Response,
         fh: BinaryIO,
@@ -105,7 +107,7 @@ class Downloader:
         hasher = self.checksum.create_hasher()
         written = 0
         cb = self.on_progress
-        for chunk in response.iter_bytes(self.chunk_size_bytes):
+        async for chunk in response.aiter_bytes(self.chunk_size_bytes):
             fh.write(chunk)
             hasher.update(chunk)
             written += len(chunk)
