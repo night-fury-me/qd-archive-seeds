@@ -49,6 +49,11 @@ class HttpClient(Protocol):
         timeout: float | None = None,
     ) -> Any: ...
 
+    def get_many(
+        self,
+        requests: list[dict[str, Any]],
+    ) -> list[Any]: ...
+
 
 class RunContext(Protocol):
     run_id: str

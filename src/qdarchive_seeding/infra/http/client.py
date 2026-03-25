@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -36,11 +37,10 @@ class HttpClientSettings:
     user_agent: str = "qdarchive-seeding/0.1"
 
 
-class _IPv4Transport(httpx.HTTPTransport):
+class _AsyncIPv4Transport(httpx.AsyncHTTPTransport):
     """Force IPv4 connections to avoid IPv6 hangs on dual-stack hosts."""
 
     def __init__(self, **kwargs: Any) -> None:
-        # httpcore's connection pool accepts local_address to bind to IPv4
         super().__init__(local_address="0.0.0.0", **kwargs)
 
 
@@ -52,14 +52,14 @@ class HttpxClient(HttpClient):
     ) -> None:
         self._settings = settings
         self._rate_limiter = rate_limiter
-        self._client = httpx.Client(
+        self._client = httpx.AsyncClient(
             timeout=settings.timeout_seconds,
             headers={"User-Agent": settings.user_agent},
             follow_redirects=True,
-            transport=_IPv4Transport(),
+            transport=_AsyncIPv4Transport(),
         )
 
-    def get(
+    async def _async_get(
         self,
         url: str,
         *,
@@ -74,29 +74,65 @@ class HttpxClient(HttpClient):
                 initial=self._settings.backoff_min, max=self._settings.backoff_max
             ),
         )
-        def _request() -> httpx.Response:
+        async def _request() -> httpx.Response:
             if self._rate_limiter is not None:
-                self._rate_limiter.wait()
+                await self._rate_limiter.async_wait()
             combined_headers = {**self._client.headers, **headers}
-            resp = self._client.get(url, headers=combined_headers, params=params, timeout=timeout)
-            # Handle 429 inline: wait and re-send (up to 8 times) before
-            # falling through to tenacity retries.
+            resp = await self._client.get(
+                url, headers=combined_headers, params=params, timeout=timeout
+            )
             for _attempt in range(8):
                 if resp.status_code != 429:
                     break
                 retry_after = resp.headers.get("retry-after", "")
                 wait_secs = int(retry_after) if retry_after.isdigit() else 30
                 logger.warning("Rate limited (429), waiting %ds before retry", wait_secs)
-                time.sleep(wait_secs)
+                await asyncio.sleep(wait_secs)
                 if self._rate_limiter is not None:
-                    self._rate_limiter.wait()
-                resp = self._client.get(
+                    await self._rate_limiter.async_wait()
+                resp = await self._client.get(
                     url, headers=combined_headers, params=params, timeout=timeout
                 )
             resp.raise_for_status()
             return resp
 
-        return _request()
+        return await _request()
+
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        params: dict[str, Any],
+        timeout: float | None = None,
+    ) -> httpx.Response:
+        return asyncio.run(
+            self._async_get(url, headers=headers, params=params, timeout=timeout)
+        )
+
+    def get_many(
+        self,
+        requests: list[dict[str, Any]],
+    ) -> list[httpx.Response]:
+        """Fetch multiple URLs concurrently, respecting rate limits.
+
+        Each item in *requests* is a dict with keys: url, headers, params,
+        and optionally timeout.
+        """
+
+        async def _gather() -> list[httpx.Response]:
+            tasks = [
+                self._async_get(
+                    r["url"],
+                    headers=r.get("headers", {}),
+                    params=r.get("params", {}),
+                    timeout=r.get("timeout"),
+                )
+                for r in requests
+            ]
+            return await asyncio.gather(*tasks)
+
+        return asyncio.run(_gather())
 
     def close(self) -> None:
-        self._client.close()
+        asyncio.run(self._client.aclose())
