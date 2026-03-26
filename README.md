@@ -16,26 +16,18 @@ Researchers publish these datasets on open repositories like Zenodo, Syracuse QD
 
 ---
 
-## Current Dataset Statistics
-
-### Overview
-
-| Metric | Value |
-|---|---|
-| Total datasets catalogued | **62** |
-| Total assets tracked | **788** |
-| Successfully downloaded | **717** (91.0%) |
-| Failed downloads | **71** (9.0%) |
-| Total download size | **~4.9 GB** |
+## Supported Data Sources
 
 ### Datasets by Source
 
-| Source | Datasets | Assets | Successful | Failed | Success Rate |
-|---|---|---|---|---|---|
-| Zenodo | 56 | 500 | 430 | 70 | 86.0% |
-| Syracuse QDR | 5 | 286 | 285 | 1 | 99.7% |
-| Uni Hannover (CKAN) | 1 | 2 | 2 | 0 | 100.0% |
-| **Total** | **62** | **788** | **717** | **71** | **91.0%** |
+| Source | Datasets | Status |
+|---|---|---|
+| Zenodo | Multi-query pipeline (extension + NL queries, auto date-splitting) | Active |
+| Harvard Dataverse | Multi-query pipeline (146 queries: extension + NL) | Active |
+| Syracuse QDR | Multi-query pipeline (extension + NL queries) | Active |
+| Uni Hannover (CKAN) | Single dataset with MAXQDA `.mx24` file | Static |
+
+*Note: Exact counts change as pipelines run incrementally. Use `seed status` to see current counts.*
 
 ### Asset Classification
 
@@ -85,8 +77,9 @@ We investigated multiple qualitative data repositories. Here is the status of ea
 
 | Repository | URL | Status | Notes |
 |---|---|---|---|
-| **Zenodo** | https://zenodo.org/ | Working | REST API; Boolean search (`"MaxQDA OR NVivo OR ATLAS.ti"`); 56 datasets found |
-| **Syracuse QDR** | https://qdr.syr.edu/ | Working | Dataverse API; specialized QDA repository; 5 datasets, 286 assets |
+| **Zenodo** | https://zenodo.org/ | Working | REST API; multi-query with auto date-splitting for large result sets; extension + NL queries |
+| **Harvard Dataverse** | https://dataverse.harvard.edu/ | Working | Dataverse API; 146 queries (extension + NL); per-dataset file fetching |
+| **Syracuse QDR** | https://qdr.syr.edu/ | Working | Dataverse API; specialized QDA repository; extension + NL queries |
 | **Uni Hannover (CKAN)** | https://data.uni-hannover.de/ | Working | CKAN API; 1 dataset with MAXQDA `.mx24` file found |
 | **Dryad** | http://datadryad.org/ | Not Useful | Datasets *mention* QDA software in descriptions but contain only CSV/Excel/images — no actual QDA files |
 | **DataverseNO** | https://dataverse.no/ | Not Working | API consistently times out (>90 seconds), preventing search completion |
@@ -118,6 +111,7 @@ The search strategy combines:
 flowchart LR
   subgraph Input[Data Sources]
     Z[Zenodo API]
+    HD[Harvard Dataverse API]
     Q[Syracuse QDR / Dataverse API]
     C[CKAN / Generic REST API]
     H[HTML pages / static lists]
@@ -147,6 +141,7 @@ flowchart LR
   end
 
   Z --> EXT
+  HD --> EXT
   Q --> EXT
   C --> EXT
   H --> EXT
@@ -183,7 +178,7 @@ app/          Orchestration and configuration
   └── manifests.py       Run manifest writer (JSON per run)
 
 infra/        Concrete implementations
-  ├── extractors/        GenericREST, Zenodo, Syracuse QDR, HTML scraper, static list
+  ├── extractors/        GenericREST, Zenodo, Harvard Dataverse, Syracuse QDR, HTML scraper, static list
   ├── transforms/        validate, normalize, deduplicate, slugify, classify_qda_files
   ├── sinks/             SQLite, MySQL, MongoDB, CSV, Excel
   ├── storage/           Downloader (streaming, atomic, resume, checksum), PathStrategy
@@ -204,44 +199,44 @@ The pipeline persists metadata in three durable places:
 2. **Run-level metadata** in run manifests (`runs/<run_id>.json`)
 3. **Downloaded file metadata** on disk paths in `downloads/` (plus checksums/status in sink rows)
 
-#### 1) Dataset metadata (`datasets` table in SQLite)
+#### 1) Project metadata (`projects` table in SQLite)
 
-Unique key: `source_name + source_dataset_id` (idempotent upsert)
-
-| Field | Type | Meaning |
-|---|---|---|
-| `id` | TEXT | Internal dataset id (`source_dataset_id` fallback to `source_url`) |
-| `source_name` | TEXT | Repository name (e.g., `zenodo`, `syracuse_qdr`) |
-| `source_dataset_id` | TEXT \| NULL | Repository-native dataset id |
-| `source_url` | TEXT | Canonical dataset landing/API URL |
-| `title` | TEXT \| NULL | Dataset title |
-| `description` | TEXT \| NULL | Dataset description/abstract |
-| `doi` | TEXT \| NULL | DOI if available |
-| `license` | TEXT \| NULL | License label |
-| `year` | INTEGER \| NULL | Publication year |
-| `owner_name` | TEXT \| NULL | Owner/creator name |
-| `owner_email` | TEXT \| NULL | Owner contact email |
-| `created_at` | TEXT | First insert timestamp |
-| `updated_at` | TEXT | Last upsert timestamp |
-
-#### 2) Asset metadata (`assets` table in SQLite)
-
-Unique key: `asset_url` (idempotent upsert)
+Unique key: `(repository_id, download_project_folder, version)` (idempotent upsert)
 
 | Field | Type | Meaning |
 |---|---|---|
-| `id` | TEXT | Internal asset id (`asset_url`) |
-| `dataset_id` | TEXT | Parent dataset id |
-| `asset_url` | TEXT | Source file URL |
-| `asset_type` | TEXT \| NULL | Classified type (`ANALYSIS_DATA`, `PRIMARY_DATA`, `ADDITIONAL_DATA`) |
-| `local_dir` | TEXT \| NULL | Local dataset directory path |
-| `local_filename` | TEXT \| NULL | Saved filename |
-| `downloaded_at` | TEXT \| NULL | Download completion time (ISO 8601) |
-| `checksum_sha256` | TEXT \| NULL | SHA-256 checksum |
-| `size_bytes` | INTEGER \| NULL | File size in bytes |
-| `download_status` | TEXT \| NULL | `SUCCESS`, `FAILED`, `SKIPPED`, `RESUMABLE` |
-| `error_message` | TEXT \| NULL | Failure detail when download fails |
-| `updated_at` | TEXT | Last upsert timestamp |
+| `id` | INTEGER | Auto-increment primary key |
+| `query_string` | TEXT | Search query that found this dataset |
+| `repository_id` | INTEGER | Source repository identifier (1=Zenodo, 10=Harvard, 20=QDR) |
+| `repository_url` | TEXT | Source repository URL |
+| `project_url` | TEXT | Dataset landing page URL |
+| `version` | TEXT | Dataset version |
+| `title` | TEXT | Dataset title |
+| `description` | TEXT | Dataset description/abstract |
+| `language` | TEXT | Dataset language |
+| `doi` | TEXT | DOI if available |
+| `upload_date` | TEXT | Publication date |
+| `download_date` | TEXT | Download timestamp |
+| `download_repository_folder` | TEXT | Source name for local storage |
+| `download_project_folder` | TEXT | Dataset identifier for local storage |
+| `download_version_folder` | TEXT | Version folder for local storage |
+| `download_method` | TEXT | `SCRAPING` or `API-CALL` |
+
+Related tables: `keywords` (project_id, keyword), `person_role` (project_id, name, role), `licenses` (project_id, license)
+
+#### 2) File metadata (`files` table in SQLite)
+
+Unique key: `(project_id, file_name)` (idempotent upsert)
+
+| Field | Type | Meaning |
+|---|---|---|
+| `id` | INTEGER | Auto-increment primary key |
+| `project_id` | INTEGER | Parent project id (FK) |
+| `file_name` | TEXT | Filename |
+| `file_type` | TEXT | File extension |
+| `asset_url` | TEXT | Source download URL |
+| `size_bytes` | INTEGER | File size in bytes |
+| `status` | TEXT | `UNKNOWN`, `SUCCESS`, `FAILED`, `SKIPPED`, `RESUMABLE` |
 
 #### 3) Run manifest metadata (`runs/*.json`)
 
@@ -262,17 +257,18 @@ Each pipeline run writes one manifest file with:
 ```
 qdarchive-seeding/
 ├── pyproject.toml              Project config (uv, ruff, mypy, pytest)
-├── CLAUDE.md                   AI assistant instructions
 ├── README.md                   This file
 ├── configs/
 │   ├── examples/
-│   │   ├── zenodo.yaml         Example Zenodo pipeline config
-│   │   ├── syracuse_qdr.yaml   Example Syracuse QDR config
-│   │   └── auth_api.yaml       Example authenticated API config
-│   ├── my_zenodo.yaml          Production Zenodo config
-│   ├── syracuse_qdr.yaml       Production Syracuse QDR config
-│   ├── hannover_transens.yaml  Uni Hannover CKAN config
-│   └── logging.yaml            Logging configuration
+│   │   ├── zenodo.yaml              Example Zenodo pipeline config
+│   │   ├── harvard_dataverse.yaml   Example Harvard Dataverse config
+│   │   ├── syracuse_qdr.yaml        Example Syracuse QDR config
+│   │   └── auth_api.yaml            Example authenticated API config
+│   ├── my_zenodo.yaml               Production Zenodo config
+│   ├── harvard_dataverse.yaml       Production Harvard Dataverse config
+│   ├── syracuse_qdr.yaml            Production Syracuse QDR config
+│   ├── hannover_transens.yaml       Uni Hannover CKAN config
+│   └── logging.yaml                 Logging configuration
 ├── src/qdarchive_seeding/      Source code (see Architecture above)
 ├── tests/
 │   ├── unit/                   17 test modules
@@ -310,29 +306,47 @@ Everything is driven by YAML config files. Secrets are **never stored in YAML** 
 ```yaml
 # configs/examples/zenodo.yaml (simplified)
 pipeline:
-  id: "zenodo_seed_v1"
+  id: "zenodo_seed_v2"
   run_mode: "incremental"
-  max_items: 500
+  phases: ["metadata", "download"]
 
 source:
   name: "zenodo"
   type: "rest_api"
   base_url: "https://zenodo.org/api"
+  repository_id: 1
+  repository_url: "https://zenodo.org"
   endpoints:
     search: "/records"
   params:
-    q: "MaxQDA OR NVivo OR ATLAS.ti OR QDPX"
-    size: 50
+    size: 100
+  search_strategy:
+    base_query_prefix: "resource_type.type:dataset AND"
+    extension_queries:
+      - "qdpx"
+      - "nvp"
+      - "mx24"
+      # ... more QDA file extensions
+    natural_language_queries:
+      - "interview study"
+      - "qualitative research dataset"
+      # ... more NL queries
+
+auth:
+  type: "bearer"
+  env:
+    token: "ZENODO_TOKEN"
 
 extractor:
   name: "zenodo_extractor"
   options:
     include_files: true
+    auto_date_split: true   # Split large queries by date range
 
 pre_transforms:
   - name: "validate_required_fields"
     options:
-      required_fields: ["source_url", "has_assets"]
+      required_fields: ["source_url"]
   - name: "normalize_fields"
   - name: "deduplicate_assets"
   - name: "slugify_dataset"
@@ -342,44 +356,75 @@ post_transforms:
 
 storage:
   downloads_root: "./downloads"
-  layout: "{source_name}/{dataset_slug}/"
+  layout: "{source_name}/{dataset_slug}/{version}/"
   checksum: "sha256"
 
 sink:
   type: "sqlite"
   options:
     path: "./metadata/qdarchive.sqlite"
+
+http:
+  timeout_seconds: 15
+  max_retries: 5
+  rate_limit_per_second: 0.5
 ```
 
 ### Running a Pipeline
 
 ```bash
 # Dry run (no downloads, just extract + transform)
-uv run python -m qdarchive_seeding.cli seed run \
+uv run python -m qdarchive_seeding.cli.main seed run \
   --config configs/examples/zenodo.yaml --dry-run
 
+# Metadata only (collect metadata, skip downloads)
+uv run python -m qdarchive_seeding.cli.main seed run \
+  --config configs/my_zenodo.yaml --metadata-only
+
 # Full run with download limit
-uv run python -m qdarchive_seeding.cli seed run \
+uv run python -m qdarchive_seeding.cli.main seed run \
   --config configs/examples/zenodo.yaml --max-items 10
 
-# Production Zenodo run
-uv run python -m qdarchive_seeding.cli seed run \
-  --config configs/my_zenodo.yaml
+# Production runs (each source)
+uv run python -m qdarchive_seeding.cli.main seed run --config configs/my_zenodo.yaml
+uv run python -m qdarchive_seeding.cli.main seed run --config configs/harvard_dataverse.yaml
+uv run python -m qdarchive_seeding.cli.main seed run --config configs/syracuse_qdr.yaml
 
-# Syracuse QDR run
-uv run python -m qdarchive_seeding.cli seed run \
-  --config configs/syracuse_qdr.yaml
+# Re-extract everything from scratch (clears checkpoint)
+uv run python -m qdarchive_seeding.cli.main seed run \
+  --config configs/my_zenodo.yaml --fresh-extract
+
+# Re-download all files (ignores prior SUCCESS status)
+uv run python -m qdarchive_seeding.cli.main seed run \
+  --config configs/my_zenodo.yaml --fresh-download
+
+# Retry only failed downloads
+uv run python -m qdarchive_seeding.cli.main seed run \
+  --config configs/my_zenodo.yaml --retry-failed
 
 # Validate a config file
-uv run python -m qdarchive_seeding.cli seed validate-config \
+uv run python -m qdarchive_seeding.cli.main seed validate-config \
   --config configs/examples/zenodo.yaml
 
 # Check database status
-uv run python -m qdarchive_seeding.cli seed status
+uv run python -m qdarchive_seeding.cli.main seed status
 
 # Export to CSV or Excel
-uv run python -m qdarchive_seeding.cli seed export --format csv --out export.csv
+uv run python -m qdarchive_seeding.cli.main seed export --format csv --out export.csv
 ```
+
+#### CLI Flags Reference
+
+| Flag | Description |
+|---|---|
+| `--config PATH` | Path to YAML config file (required) |
+| `--dry-run` | Extract and transform only, no downloads |
+| `--metadata-only` | Collect metadata only, skip download phase |
+| `--fresh-extract` | Clear checkpoint, re-extract all queries from scratch |
+| `--fresh-download` | Re-download all files, ignoring prior SUCCESS status |
+| `--retry-failed` | Retry only previously failed downloads |
+| `--max-items N` | Override max items from config |
+| `--no-confirm` | Skip the interactive download confirmation prompt |
 
 ---
 
@@ -422,10 +467,11 @@ uv run pytest --cov=qdarchive_seeding --cov-report=term-missing
 
 ### Adding a New Data Source
 
-1. **Create an extractor** in `src/qdarchive_seeding/infra/extractors/` implementing the `Extractor` protocol
-2. **Register it** in `app/container.py` under `_build_extractor()`
-3. **Create a YAML config** in `configs/` referencing the new extractor by name
-4. Run the pipeline — no core code changes needed
+1. **Create an extractor** in `src/qdarchive_seeding/infra/extractors/` implementing the `Extractor` protocol (async `extract(ctx) -> AsyncIterator[DatasetRecord]`)
+2. **Add a factory function** in `app/registry.py` and register it in `create_default_registries()`
+3. **Create a YAML config** in `configs/` with a unique `pipeline.id` and `source.repository_id`
+4. Include checkpoint/resume support, progress bus reporting, and `search_strategy` for consistency with existing extractors
+5. Run the pipeline — no core code changes needed
 
 ### Test Suite
 
@@ -490,16 +536,13 @@ The following file extensions are recognized as QDA analysis data by the `classi
 | M1 | Done | Core domain + config models (entities, interfaces, Pydantic) |
 | M2 | Done | Logging module (Rich console, rotating file, UILogQueueHandler) |
 | M3 | Done | HTTP infrastructure (retries, auth, rate limiting, pagination) |
-| M4 | Done | Extractors (GenericREST, Zenodo, HTML scraper, static list, Syracuse QDR) |
-| M5 | Done | Transform pipeline (chain-of-responsibility, built-in transforms) |
-| M6 | Done | Storage + downloader (atomic writes, resume, checksums) |
-| M7 | Done | Sinks (SQLite, MySQL, MongoDB, CSV, Excel) |
-| M8 | Done | App orchestration: runner, container, progress, policies, manifests |
-| M9 | Done | CLI (Typer: `seed run`, `validate-config`, `status`, `export`) |
+| M4 | Done | Extractors (Zenodo, Harvard Dataverse, Syracuse QDR, GenericREST, HTML scraper, static list) |
+| M5 | Done | Transform pipeline (chain-of-responsibility, 7 built-in transforms incl. QDA classification) |
+| M6 | Done | Storage + async downloader (atomic writes, resume, checksums) |
+| M7 | Done | Sinks (SQLite, CSV, Excel; MySQL/MongoDB stubs) |
+| M8 | Done | App orchestration: async runner, DI container, checkpoint/resume, progress bus, policies, manifests |
+| M9 | Done | CLI (Typer: `seed run`, `validate-config`, `status`, `export` + Rich progress display) |
 | M10 | Pending | Complete stub implementations (MySQL, MongoDB, OAuth2) |
-| M11 | Pending | TUI v1 — core screens: Home, RunSelect, RunMonitor, live log viewer |
-| M12 | Pending | TUI v2 — Config Wizard, Config Editor, Config Validate |
-| M13 | Pending | TUI v3 — Run History, Browse Downloads, Settings, reactive state |
 
 ---
 
@@ -520,7 +563,7 @@ The biggest challenge is **precision vs. recall**: broad keyword searches return
 ## Dependencies
 
 ### Runtime
-`pydantic>=2.6` | `pyyaml>=6` | `httpx>=0.27` | `tenacity>=8.2` | `rich>=13.7` | `textual>=0.63` | `typer[all]>=0.12` | `beautifulsoup4>=4.12` | `pandas>=2.2` | `openpyxl>=3.1` | `pymysql>=1.1` | `pymongo>=4.7`
+`pydantic>=2.6` | `pyyaml>=6` | `httpx>=0.27` | `tenacity>=8.2` | `rich>=13.7` | `typer[all]>=0.12` | `anyio>=4.3` | `orjson>=3.9` | `beautifulsoup4>=4.12` | `pandas>=2.2` | `openpyxl>=3.1` | `pymysql>=1.1` | `pymongo>=4.7`
 
 ### Development
 `pytest>=8.1` | `pytest-cov>=5.0` | `ruff>=0.5` | `mypy>=1.10` | `respx>=0.21` | `pytest-asyncio>=0.23`
