@@ -32,3 +32,7 @@ downloads/
 # Large downloaded datasets (keep out of the repo)
 # downloads/zenodo/ contains many large files; ignore to avoid pushing
 
+
+# Claude Code
+.claude/
+CLAUDE.md
