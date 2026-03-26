@@ -208,9 +208,7 @@ class HarvardDataverseExtractor:
             )
 
             for item in items:
-                record = await self._build_record(
-                    ctx, item, source_cfg, query_string, seen_ids
-                )
+                record = await self._build_record(ctx, item, source_cfg, query_string, seen_ids)
                 if record is not None:
                     yield record
 

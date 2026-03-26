@@ -65,8 +65,7 @@ class _ProgressConsoleHandler(logging.Handler):
             component = getattr(record, "component", record.name.rsplit(".", 1)[-1])
             msg = record.getMessage()
             self._progress.console.log(
-                f"[{style}]{record.levelname:<8}[/{style}]"
-                f" [dim]{component}[/dim] │ {msg}",
+                f"[{style}]{record.levelname:<8}[/{style}] [dim]{component}[/dim] │ {msg}",
                 markup=True,
             )
         except Exception:
@@ -123,15 +122,11 @@ class CliProgressDisplay:
                 TimeElapsedColumn(),
                 console=console,
             )
-            self._query_id = self._progress.add_task(
-                "Queries: starting...", total=0, completed=0
-            )
+            self._query_id = self._progress.add_task("Queries: starting...", total=0, completed=0)
             self._slice_id = self._progress.add_task(
                 "Date slices: n/a", total=0, completed=0, visible=False
             )
-            self._page_id = self._progress.add_task(
-                "Pages: waiting...", total=0, completed=0
-            )
+            self._page_id = self._progress.add_task("Pages: waiting...", total=0, completed=0)
             self._progress.start()
             self._suppress_console_logs()
         elif event.stage == "download":
@@ -186,9 +181,11 @@ class CliProgressDisplay:
     def _on_page_progress(self, event: PageProgress) -> None:
         if self._progress is None or self._page_id is None:
             return
-        page_size = int(
-            self._progress.tasks[self._query_id].fields.get("page_size", 100)  # type: ignore[union-attr]
-        ) if self._query_id is not None else 100
+        page_size = (
+            int(self._progress.tasks[self._query_id].fields.get("page_size", 100))
+            if self._query_id is not None
+            else 100
+        )
         # Estimate total pages from API total_hits
         if event.total_hits > 0:
             est_pages = (event.total_hits + page_size - 1) // page_size
@@ -278,7 +275,7 @@ class CliProgressDisplay:
 
         # Scan root + all registered loggers (including the app logger)
         all_loggers: list[logging.Logger] = [logging.root]
-        for name, obj in logging.root.manager.loggerDict.items():  # type: ignore[attr-defined]
+        for name, obj in logging.root.manager.loggerDict.items():
             if isinstance(obj, logging.Logger):
                 all_loggers.append(obj)
             else:

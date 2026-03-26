@@ -118,8 +118,6 @@ class TestFailedPageRecording:
     """When a page fetch fails, it should be recorded in the checkpoint."""
 
     @pytest.mark.asyncio
-
-
     async def test_failed_page_recorded_in_checkpoint(self, tmp_path: Path) -> None:
         # Page 0 succeeds, page 1 fails, page 2 succeeds, page 3 empty (stops)
         http = FakeHttpClient(
@@ -134,9 +132,7 @@ class TestFailedPageRecording:
             http_client=http, auth=NoAuth(), options=ZenodoOptions(include_files=False)
         )
         records = [
-            r async for r in extractor._extract_single_query(
-                ctx, "test query", query_string="q1"
-            )
+            r async for r in extractor._extract_single_query(ctx, "test query", query_string="q1")
         ]
 
         # Page 0 yielded 2, page 1 failed (skipped), page 2 yielded 2
@@ -144,8 +140,6 @@ class TestFailedPageRecording:
         assert cp.get_failed_pages("q1") == [1]
 
     @pytest.mark.asyncio
-
-
     async def test_query_not_marked_complete_with_failures(self, tmp_path: Path) -> None:
         http = FakeHttpClient(
             [_page(1, total=2), EMPTY_PAGE],
@@ -168,8 +162,6 @@ class TestRetryFailedPages:
     """On resume, failed pages should be retried before normal pagination."""
 
     @pytest.mark.asyncio
-
-
     async def test_retry_succeeds_yields_records(self, tmp_path: Path) -> None:
         # Set up checkpoint with a failed page
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
@@ -185,9 +177,7 @@ class TestRetryFailedPages:
             http_client=http, auth=NoAuth(), options=ZenodoOptions(include_files=False)
         )
         records = [
-            r async for r in extractor._extract_single_query(
-                ctx, "test query", query_string="q1"
-            )
+            r async for r in extractor._extract_single_query(ctx, "test query", query_string="q1")
         ]
 
         # Should have yielded the 2 records from the retried page
@@ -198,8 +188,6 @@ class TestRetryFailedPages:
         assert cp.get_failed_pages("q1") == []
 
     @pytest.mark.asyncio
-
-
     async def test_retry_still_failing_stays_in_checkpoint(self, tmp_path: Path) -> None:
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
         cp.mark_page("q1", 2, 4)
@@ -214,9 +202,7 @@ class TestRetryFailedPages:
             http_client=http, auth=NoAuth(), options=ZenodoOptions(include_files=False)
         )
         records = [
-            r async for r in extractor._extract_single_query(
-                ctx, "test query", query_string="q1"
-            )
+            r async for r in extractor._extract_single_query(ctx, "test query", query_string="q1")
         ]
 
         assert len(records) == 0
@@ -224,8 +210,6 @@ class TestRetryFailedPages:
         assert cp.get_failed_pages("q1") == [1]
 
     @pytest.mark.asyncio
-
-
     async def test_retry_happens_before_normal_pagination(self, tmp_path: Path) -> None:
         """Verify ordering: retry calls happen before resume pagination calls."""
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
@@ -247,9 +231,7 @@ class TestRetryFailedPages:
             http_client=http, auth=NoAuth(), options=ZenodoOptions(include_files=False)
         )
         records = [
-            r async for r in extractor._extract_single_query(
-                ctx, "test query", query_string="q1"
-            )
+            r async for r in extractor._extract_single_query(ctx, "test query", query_string="q1")
         ]
 
         assert len(records) == 4
@@ -264,8 +246,6 @@ class TestDateSliceCache:
     """Date slices should be cached in checkpoint and reused on resume."""
 
     @pytest.mark.asyncio
-
-
     async def test_date_slices_cached_after_computation(self, tmp_path: Path) -> None:
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
         assert cp.get_date_slices("ext batch 1") is None

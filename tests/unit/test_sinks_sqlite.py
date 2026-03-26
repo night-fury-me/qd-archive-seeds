@@ -92,9 +92,7 @@ def test_upsert_dataset_stores_license(tmp_path: Path) -> None:
     sink.close()
 
     conn = sqlite3.connect(tmp_path / "test.sqlite")
-    row = conn.execute(
-        "SELECT license FROM licenses WHERE project_id = ?", (int(pid),)
-    ).fetchone()
+    row = conn.execute("SELECT license FROM licenses WHERE project_id = ?", (int(pid),)).fetchone()
     conn.close()
     assert row[0] == "CC BY 4.0"
 

@@ -464,7 +464,8 @@ async def _probe_total(
     headers, params = auth.apply(headers, params)
     try:
         resp = await http_client.get(url, headers=headers, params=params)
-        return resp.json().get("hits", {}).get("total", 0)
+        total: int = resp.json().get("hits", {}).get("total", 0)
+        return total
     except Exception as exc:
         logger.warning("Probe request failed: %s", exc)
         return 0

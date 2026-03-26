@@ -141,8 +141,6 @@ class TestZenodoExtractor:
         return json.loads((FIXTURES_DIR / "zenodo_response.json").read_text())
 
     @pytest.mark.asyncio
-
-
     async def test_extracts_two_records_with_correct_fields(
         self, zenodo_payload: dict[str, Any]
     ) -> None:
@@ -201,8 +199,6 @@ class TestZenodoExtractor:
         assert r1.assets[0].local_filename == "data.zip"
 
     @pytest.mark.asyncio
-
-
     async def test_empty_hits_stops_pagination(self) -> None:
         """When the first page returns no hits, the extractor should yield nothing."""
         empty_page: dict[str, Any] = {"hits": {"hits": [], "total": 0}}
@@ -231,8 +227,6 @@ class TestZenodoExtractor:
         assert len(http_client.calls) == 1
 
     @pytest.mark.asyncio
-
-
     async def test_max_pages_limit_stops(self) -> None:
         page1: dict[str, Any] = {"hits": {"hits": [{"id": "1", "metadata": {}, "files": []}]}}
         page2: dict[str, Any] = {"hits": {"hits": [{"id": "2", "metadata": {}, "files": []}]}}
@@ -270,8 +264,6 @@ class TestStaticListExtractor:
     """Tests for StaticListExtractor using inline record data."""
 
     @pytest.mark.asyncio
-
-
     async def test_extracts_records_from_inline_data(self, minimal_config: PipelineConfig) -> None:
         """StaticListExtractor should yield one DatasetRecord per inline dict."""
         inline_records: list[dict[str, Any]] = [
@@ -319,8 +311,6 @@ class TestStaticListExtractor:
         assert r1.assets == []
 
     @pytest.mark.asyncio
-
-
     async def test_empty_list_yields_no_records(self, minimal_config: PipelineConfig) -> None:
         """StaticListExtractor with an empty records list should return nothing."""
         ctx = FakeRunContext(config=minimal_config)
@@ -340,8 +330,6 @@ class TestGenericRestExtractor:
     """Tests for GenericRestExtractor using a mock REST API response."""
 
     @pytest.mark.asyncio
-
-
     async def test_extracts_records_from_rest_response(self) -> None:
         """GenericRestExtractor should yield records from a paginated REST response."""
         page1: dict[str, Any] = {
@@ -402,8 +390,6 @@ class TestGenericRestExtractor:
         assert r1.assets == []
 
     @pytest.mark.asyncio
-
-
     async def test_pages_correctly_until_empty(self) -> None:
         """GenericRestExtractor should stop paginating when the items list is empty."""
         page1: dict[str, Any] = {
@@ -445,8 +431,6 @@ class TestGenericRestExtractor:
         assert len(http_client.calls) == 3
 
     @pytest.mark.asyncio
-
-
     async def test_nested_records_path(self) -> None:
         """GenericRestExtractor should navigate a dotted records_path like 'data.results'."""
         page1: dict[str, Any] = {
@@ -483,8 +467,6 @@ class TestGenericRestExtractor:
         assert records[0].title == "Nested Item"
 
     @pytest.mark.asyncio
-
-
     async def test_offset_pagination_type(self) -> None:
         page1: dict[str, Any] = {"items": [{"id": "1", "title": "One"}]}
         page2_empty: dict[str, Any] = {"items": []}
@@ -514,8 +496,6 @@ class TestGenericRestExtractor:
         assert http_client.calls[0]["params"].get("offset") == 0
 
     @pytest.mark.asyncio
-
-
     async def test_cursor_pagination_type(self) -> None:
         page1: dict[str, Any] = {"items": [{"id": "1", "title": "One"}]}
 
@@ -544,8 +524,6 @@ class TestGenericRestExtractor:
         assert "cursor" not in http_client.calls[0]["params"]
 
     @pytest.mark.asyncio
-
-
     async def test_max_pages_limits_extraction(self) -> None:
         page1: dict[str, Any] = {"items": [{"id": "1"}]}
         page2: dict[str, Any] = {"items": [{"id": "2"}]}
@@ -574,8 +552,6 @@ class TestGenericRestExtractor:
         assert records[0].source_dataset_id == "1"
 
     @pytest.mark.asyncio
-
-
     async def test_items_not_list_stops(self) -> None:
         page1: dict[str, Any] = {"items": {"id": "1"}}
 
@@ -602,8 +578,6 @@ class TestGenericRestExtractor:
         assert records == []
 
     @pytest.mark.asyncio
-
-
     async def test_skips_non_dict_items(self) -> None:
         page1: dict[str, Any] = {"items": ["bad", {"id": "ok", "title": "Good"}]}
         page2_empty: dict[str, Any] = {"items": []}
@@ -648,20 +622,18 @@ class TestZenodoMultiQuery:
         return _make_config({"source": source})
 
     @pytest.mark.asyncio
-
-
     async def test_multi_query_iterates_extension_and_nl_queries(self) -> None:
         """Extensions are combined into one OR query; NL queries run separately."""
         # Combined extension query returns two hits in one page
         hit_ext: dict[str, Any] = {
-            "hits": {"hits": [
-                {"id": "1", "metadata": {"keywords": ["qualitative"]}, "files": []},
-                {"id": "2", "metadata": {}, "files": []},
-            ]}
+            "hits": {
+                "hits": [
+                    {"id": "1", "metadata": {"keywords": ["qualitative"]}, "files": []},
+                    {"id": "2", "metadata": {}, "files": []},
+                ]
+            }
         }
-        hit_nl: dict[str, Any] = {
-            "hits": {"hits": [{"id": "3", "metadata": {}, "files": []}]}
-        }
+        hit_nl: dict[str, Any] = {"hits": {"hits": [{"id": "3", "metadata": {}, "files": []}]}}
         empty: dict[str, Any] = {"hits": {"hits": []}}
 
         # 1 combined ext query (hit_ext, empty) + 1 NL query (hit_nl, empty)
@@ -675,7 +647,8 @@ class TestZenodoMultiQuery:
         )
         ctx = FakeRunContext(config=config)
         extractor = ZenodoExtractor(
-            http_client=http_client, auth=NoAuth(),
+            http_client=http_client,
+            auth=NoAuth(),
             options=ZenodoOptions(auto_date_split=False),
         )
 
@@ -690,21 +663,23 @@ class TestZenodoMultiQuery:
         assert records[2].query_string == "nl batch 1/1 (1 terms)"
 
     @pytest.mark.asyncio
-
-
     async def test_multi_query_deduplicates_across_queries(self) -> None:
         """Same dataset ID from extension and NL queries should only appear once."""
         hit_ext: dict[str, Any] = {
-            "hits": {"hits": [
-                {"id": "100", "metadata": {}, "files": []},
-                {"id": "200", "metadata": {}, "files": []},
-            ]}
+            "hits": {
+                "hits": [
+                    {"id": "100", "metadata": {}, "files": []},
+                    {"id": "200", "metadata": {}, "files": []},
+                ]
+            }
         }
         hit_nl: dict[str, Any] = {
-            "hits": {"hits": [
-                {"id": "100", "metadata": {}, "files": []},  # duplicate
-                {"id": "300", "metadata": {}, "files": []},
-            ]}
+            "hits": {
+                "hits": [
+                    {"id": "100", "metadata": {}, "files": []},  # duplicate
+                    {"id": "300", "metadata": {}, "files": []},
+                ]
+            }
         }
         empty: dict[str, Any] = {"hits": {"hits": []}}
 
@@ -718,7 +693,8 @@ class TestZenodoMultiQuery:
         )
         ctx = FakeRunContext(config=config)
         extractor = ZenodoExtractor(
-            http_client=http_client, auth=NoAuth(),
+            http_client=http_client,
+            auth=NoAuth(),
             options=ZenodoOptions(auto_date_split=False),
         )
 
@@ -728,24 +704,28 @@ class TestZenodoMultiQuery:
         assert ids == ["100", "200", "300"]
 
     @pytest.mark.asyncio
-
-
     async def test_multi_query_populates_new_fields(self) -> None:
         """New entity fields should be populated from Zenodo metadata."""
         hit: dict[str, Any] = {
-            "hits": {"hits": [{
-                "id": "42",
-                "metadata": {
-                    "title": "Test",
-                    "version": "1.0",
-                    "language": "en",
-                    "publication_date": "2024-06-15",
-                    "creators": [{"name": "Alice"}],
-                    "contributors": [{"name": "Bob"}],
-                    "keywords": ["qualitative", "interview"],
-                },
-                "files": [{"key": "data.qdpx", "links": {"self": "https://z.org/f/data.qdpx"}}],
-            }]}
+            "hits": {
+                "hits": [
+                    {
+                        "id": "42",
+                        "metadata": {
+                            "title": "Test",
+                            "version": "1.0",
+                            "language": "en",
+                            "publication_date": "2024-06-15",
+                            "creators": [{"name": "Alice"}],
+                            "contributors": [{"name": "Bob"}],
+                            "keywords": ["qualitative", "interview"],
+                        },
+                        "files": [
+                            {"key": "data.qdpx", "links": {"self": "https://z.org/f/data.qdpx"}}
+                        ],
+                    }
+                ]
+            }
         }
         empty: dict[str, Any] = {"hits": {"hits": []}}
 
@@ -755,7 +735,8 @@ class TestZenodoMultiQuery:
         )
         ctx = FakeRunContext(config=config)
         extractor = ZenodoExtractor(
-            http_client=http_client, auth=NoAuth(),
+            http_client=http_client,
+            auth=NoAuth(),
             options=ZenodoOptions(auto_date_split=False),
         )
 
@@ -780,9 +761,7 @@ class TestZenodoMultiQuery:
 class TestZenodoDateSplitting:
     """Tests for adaptive date-range splitting when results exceed 10k."""
 
-    def _make_zenodo_config(
-        self, search_strategy: dict[str, Any] | None = None
-    ) -> Any:
+    def _make_zenodo_config(self, search_strategy: dict[str, Any] | None = None) -> Any:
         return _make_config(
             {
                 "source": {
@@ -797,8 +776,6 @@ class TestZenodoDateSplitting:
         )
 
     @pytest.mark.asyncio
-
-
     async def test_probe_total_returns_hit_count(self) -> None:
         """_probe_total should return the total from hits."""
         response_data: dict[str, Any] = {"hits": {"total": 5000, "hits": [{"id": "1"}]}}
@@ -809,8 +786,6 @@ class TestZenodoDateSplitting:
         assert total == 5000
 
     @pytest.mark.asyncio
-
-
     async def test_probe_total_returns_zero_on_error(self) -> None:
         """_probe_total should return 0 if the request fails."""
         http_client = FakeHttpClient([])  # No responses → will raise
@@ -820,8 +795,6 @@ class TestZenodoDateSplitting:
         assert total == 0
 
     @pytest.mark.asyncio
-
-
     async def test_find_date_slices_under_threshold(self) -> None:
         """If total is under threshold, return the full range as one slice."""
         from datetime import date
@@ -829,14 +802,17 @@ class TestZenodoDateSplitting:
         response_data: dict[str, Any] = {"hits": {"total": 500, "hits": [{"id": "1"}]}}
         http_client = FakeHttpClient([response_data])
         slices = await _find_date_slices(
-            http_client, NoAuth(), "https://zenodo.org/api/records",
-            {"q": "test"}, date(2020, 1, 1), date(2024, 12, 31), threshold=9500,
+            http_client,
+            NoAuth(),
+            "https://zenodo.org/api/records",
+            {"q": "test"},
+            date(2020, 1, 1),
+            date(2024, 12, 31),
+            threshold=9500,
         )
         assert slices == [(date(2020, 1, 1), date(2024, 12, 31))]
 
     @pytest.mark.asyncio
-
-
     async def test_find_date_slices_empty_range(self) -> None:
         """If total is 0, return empty list."""
         from datetime import date
@@ -844,14 +820,17 @@ class TestZenodoDateSplitting:
         response_data: dict[str, Any] = {"hits": {"total": 0, "hits": []}}
         http_client = FakeHttpClient([response_data])
         slices = await _find_date_slices(
-            http_client, NoAuth(), "https://zenodo.org/api/records",
-            {"q": "test"}, date(2020, 1, 1), date(2024, 12, 31), threshold=9500,
+            http_client,
+            NoAuth(),
+            "https://zenodo.org/api/records",
+            {"q": "test"},
+            date(2020, 1, 1),
+            date(2024, 12, 31),
+            threshold=9500,
         )
         assert slices == []
 
     @pytest.mark.asyncio
-
-
     async def test_find_date_slices_splits_when_over_threshold(self) -> None:
         """Should recursively split until each slice is under threshold."""
         from datetime import date
@@ -859,13 +838,18 @@ class TestZenodoDateSplitting:
         # Full range: 15000 (over) → left half: 6000 (under) → right half: 9000 (under)
         responses: list[dict[str, Any]] = [
             {"hits": {"total": 15000, "hits": [{"id": "1"}]}},  # full range probe
-            {"hits": {"total": 6000, "hits": [{"id": "1"}]}},   # left half probe
-            {"hits": {"total": 9000, "hits": [{"id": "1"}]}},   # right half probe
+            {"hits": {"total": 6000, "hits": [{"id": "1"}]}},  # left half probe
+            {"hits": {"total": 9000, "hits": [{"id": "1"}]}},  # right half probe
         ]
         http_client = FakeHttpClient(responses)
         slices = await _find_date_slices(
-            http_client, NoAuth(), "https://zenodo.org/api/records",
-            {"q": "test"}, date(2020, 1, 1), date(2024, 12, 31), threshold=9500,
+            http_client,
+            NoAuth(),
+            "https://zenodo.org/api/records",
+            {"q": "test"},
+            date(2020, 1, 1),
+            date(2024, 12, 31),
+            threshold=9500,
         )
         assert len(slices) == 2
         # Left half: 2020-01-01 to midpoint
@@ -876,8 +860,6 @@ class TestZenodoDateSplitting:
         assert slices[1][0] == slices[0][1] + __import__("datetime").timedelta(days=1)
 
     @pytest.mark.asyncio
-
-
     async def test_find_date_slices_single_day_floor(self) -> None:
         """Single day over threshold should return that day (can't split further)."""
         from datetime import date
@@ -885,14 +867,17 @@ class TestZenodoDateSplitting:
         response_data: dict[str, Any] = {"hits": {"total": 12000, "hits": [{"id": "1"}]}}
         http_client = FakeHttpClient([response_data])
         slices = await _find_date_slices(
-            http_client, NoAuth(), "https://zenodo.org/api/records",
-            {"q": "test"}, date(2024, 6, 15), date(2024, 6, 15), threshold=9500,
+            http_client,
+            NoAuth(),
+            "https://zenodo.org/api/records",
+            {"q": "test"},
+            date(2024, 6, 15),
+            date(2024, 6, 15),
+            threshold=9500,
         )
         assert slices == [(date(2024, 6, 15), date(2024, 6, 15))]
 
     @pytest.mark.asyncio
-
-
     async def test_extract_with_date_split_disabled(self) -> None:
         """When auto_date_split=False, should go straight to _extract_single_query."""
         hit: dict[str, Any] = {
@@ -905,15 +890,14 @@ class TestZenodoDateSplitting:
         )
         ctx = FakeRunContext(config=config)
         extractor = ZenodoExtractor(
-            http_client=http_client, auth=NoAuth(),
+            http_client=http_client,
+            auth=NoAuth(),
             options=ZenodoOptions(auto_date_split=False),
         )
         records = [r async for r in extractor.extract(ctx)]
         assert len(records) == 1
 
     @pytest.mark.asyncio
-
-
     async def test_extract_with_date_split_under_threshold_no_split(self) -> None:
         """When total is under threshold, should paginate without splitting."""
         # Probe response (total=500) + actual paginated response + empty
@@ -928,7 +912,8 @@ class TestZenodoDateSplitting:
         )
         ctx = FakeRunContext(config=config)
         extractor = ZenodoExtractor(
-            http_client=http_client, auth=NoAuth(),
+            http_client=http_client,
+            auth=NoAuth(),
             options=ZenodoOptions(auto_date_split=True),
         )
         records = [r async for r in extractor.extract(ctx)]
@@ -938,7 +923,6 @@ class TestZenodoDateSplitting:
 
 class TestZenodoExtractorEdges:
     @pytest.mark.asyncio
-
     async def test_include_files_false(self) -> None:
         payload: dict[str, Any] = {
             "hits": {"hits": [{"id": "1", "metadata": {}, "files": [{"key": "f"}]}]}
@@ -967,8 +951,6 @@ class TestZenodoExtractorEdges:
         assert records[0].assets == []
 
     @pytest.mark.asyncio
-
-
     async def test_hits_not_list_stops(self) -> None:
         payload: dict[str, Any] = {"hits": {"hits": {"id": "1"}}}
         http_client = FakeHttpClient([payload])
@@ -994,8 +976,6 @@ class TestZenodoExtractorEdges:
         assert records == []
 
     @pytest.mark.asyncio
-
-
     async def test_license_and_year_parsing(self) -> None:
         payload: dict[str, Any] = {
             "hits": {
@@ -1054,8 +1034,6 @@ class TestHarvardDataverseExtractor:
         return _make_config({"source": source})
 
     @pytest.mark.asyncio
-
-
     async def test_extracts_datasets_from_search(self) -> None:
         search_page: dict[str, Any] = {
             "data": {
@@ -1109,8 +1087,6 @@ class TestHarvardDataverseExtractor:
         assert r.assets[0].file_type == "qdpx"
 
     @pytest.mark.asyncio
-
-
     async def test_deduplicates_across_queries(self) -> None:
         hit_a: dict[str, Any] = {
             "data": {
@@ -1146,8 +1122,6 @@ class TestHarvardDataverseExtractor:
         assert ids == ["doi:10.1/A", "doi:10.1/B"]
 
     @pytest.mark.asyncio
-
-
     async def test_empty_search_yields_nothing(self) -> None:
         empty: dict[str, Any] = {"data": {"items": [], "total_count": 0}}
         http_client = FakeHttpClient([empty])
@@ -1165,7 +1139,6 @@ class TestHarvardDataverseExtractor:
 
 class TestHtmlScraperExtractor:
     @pytest.mark.asyncio
-
     async def test_extracts_records_from_html(self) -> None:
         html = (
             "<div class='item'>"
@@ -1210,8 +1183,6 @@ class TestHtmlScraperExtractor:
         assert records[0].assets[0].asset_url == "https://example.com/file1.qdpx"
 
     @pytest.mark.asyncio
-
-
     async def test_respects_max_items_and_skips_missing_nodes(self) -> None:
         html = (
             "<div class='item'><h2 class='title'>A</h2></div>"
@@ -1258,7 +1229,6 @@ class TestHtmlScraperExtractor:
 
 class TestSyracuseQdrExtractor:
     @pytest.mark.asyncio
-
     async def test_extracts_datasets_and_files(self) -> None:
         search_payload: dict[str, Any] = {
             "data": {
@@ -1310,8 +1280,6 @@ class TestSyracuseQdrExtractor:
         assert records[0].assets[0].local_filename == "file.txt"
 
     @pytest.mark.asyncio
-
-
     async def test_skips_missing_global_id_and_file_errors(self) -> None:
         search_payload: dict[str, Any] = {
             "data": {
@@ -1363,8 +1331,6 @@ class TestSyracuseQdrExtractor:
         assert records[0].assets == []
 
     @pytest.mark.asyncio
-
-
     async def test_stops_when_max_datasets_reached(self) -> None:
         search_payload: dict[str, Any] = {
             "data": {
@@ -1396,8 +1362,6 @@ class TestSyracuseQdrExtractor:
         assert http_client.calls == []
 
     @pytest.mark.asyncio
-
-
     async def test_breaks_when_items_invalid_or_empty(self) -> None:
         search_payload: dict[str, Any] = {"data": {"items": {}, "total_count": 0}}
         http_client = FakeHttpClient([search_payload])
@@ -1423,8 +1387,6 @@ class TestSyracuseQdrExtractor:
         assert records == []
 
     @pytest.mark.asyncio
-
-
     async def test_respects_effective_max_inside_items(self) -> None:
         search_payload: dict[str, Any] = {
             "data": {
@@ -1459,8 +1421,6 @@ class TestSyracuseQdrExtractor:
         assert len(records) == 1
 
     @pytest.mark.asyncio
-
-
     async def test_license_string_and_invalid_year_and_no_authors(self) -> None:
         search_payload: dict[str, Any] = {
             "data": {

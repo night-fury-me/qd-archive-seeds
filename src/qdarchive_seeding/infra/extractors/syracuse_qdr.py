@@ -46,9 +46,7 @@ class SyracuseQdrExtractor:
         if strategy is None:
             # Legacy single-query mode
             query = str(ctx.config.source.params.get("q", "*"))
-            async for record in self._extract_single_query(
-                ctx, query, query_string=query
-            ):
+            async for record in self._extract_single_query(ctx, query, query_string=query):
                 yield record
             return
 
@@ -95,9 +93,7 @@ class SyracuseQdrExtractor:
         """Run a single paginated query against the Syracuse QDR search API."""
         base_url = ctx.config.source.base_url.rstrip("/")
         search_endpoint = ctx.config.source.endpoints.get("search", "/search")
-        dataset_endpoint = ctx.config.source.endpoints.get(
-            "dataset", "/datasets/:persistentId/"
-        )
+        dataset_endpoint = ctx.config.source.endpoints.get("dataset", "/datasets/:persistentId/")
         search_url = f"{base_url}{search_endpoint}"
 
         headers: dict[str, str] = {}
@@ -145,7 +141,9 @@ class SyracuseQdrExtractor:
             except Exception as exc:
                 logger.error(
                     "HTTP request failed for query '%s' page %d: %s",
-                    query_string, page_count + 1, exc,
+                    query_string,
+                    page_count + 1,
+                    exc,
                 )
                 if checkpoint is not None:
                     checkpoint.mark_page_failed(query_string, page_count)
@@ -173,7 +171,10 @@ class SyracuseQdrExtractor:
 
             logger.debug(
                 "Query '%s' page %d: fetched %d datasets (%d/%d total)",
-                query_string, page_count + 1, len(items), datasets_yielded + len(items),
+                query_string,
+                page_count + 1,
+                len(items),
+                datasets_yielded + len(items),
                 total_count,
             )
 
@@ -192,8 +193,14 @@ class SyracuseQdrExtractor:
                     seen_ids.add(global_id)
 
                 record = await self._build_record(
-                    ctx, item, global_id, base_url, dataset_endpoint,
-                    headers, source_cfg, query_string,
+                    ctx,
+                    item,
+                    global_id,
+                    base_url,
+                    dataset_endpoint,
+                    headers,
+                    source_cfg,
+                    query_string,
                 )
                 if record is not None:
                     datasets_yielded += 1
@@ -210,7 +217,8 @@ class SyracuseQdrExtractor:
             else:
                 logger.warning(
                     "Query '%s' has %d failed pages, not marking complete",
-                    query_string, len(checkpoint.get_failed_pages(query_string)),
+                    query_string,
+                    len(checkpoint.get_failed_pages(query_string)),
                 )
 
     async def _build_record(
@@ -229,9 +237,7 @@ class SyracuseQdrExtractor:
         license_name: str | None = None
 
         if self.options.include_files:
-            result = await self._fetch_dataset_files(
-                base_url, dataset_endpoint, global_id, headers
-            )
+            result = await self._fetch_dataset_files(base_url, dataset_endpoint, global_id, headers)
             if result is not None:
                 file_list, license_name = result
                 assets = [
@@ -255,10 +261,7 @@ class SyracuseQdrExtractor:
         return DatasetRecord(
             source_name=source_cfg.name,
             source_dataset_id=global_id,
-            source_url=(
-                f"{base_url.rsplit('/api', 1)[0]}"
-                f"/dataset.xhtml?persistentId={global_id}"
-            ),
+            source_url=(f"{base_url.rsplit('/api', 1)[0]}/dataset.xhtml?persistentId={global_id}"),
             title=item.get("name"),
             description=item.get("description"),
             doi=doi,
@@ -296,9 +299,7 @@ class SyracuseQdrExtractor:
         params: dict[str, Any] = {"persistentId": persistent_id}
 
         try:
-            response = await self.http_client.get(
-                url, headers=headers, params=params, timeout=90.0
-            )
+            response = await self.http_client.get(url, headers=headers, params=params, timeout=90.0)
             payload = response.json()
         except Exception as exc:
             logger.debug("Failed to fetch files for dataset %s: %s", persistent_id, exc)

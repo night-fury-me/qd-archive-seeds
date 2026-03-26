@@ -208,21 +208,17 @@ def test_default_settings_values() -> None:
 @pytest.mark.asyncio
 async def test_get_many_returns_all_responses(client: HttpxClient) -> None:
     """get_many fetches multiple URLs concurrently."""
-    respx.get("https://example.com/api/1").mock(
-        return_value=httpx.Response(200, json={"id": 1})
-    )
-    respx.get("https://example.com/api/2").mock(
-        return_value=httpx.Response(200, json={"id": 2})
-    )
-    respx.get("https://example.com/api/3").mock(
-        return_value=httpx.Response(200, json={"id": 3})
-    )
+    respx.get("https://example.com/api/1").mock(return_value=httpx.Response(200, json={"id": 1}))
+    respx.get("https://example.com/api/2").mock(return_value=httpx.Response(200, json={"id": 2}))
+    respx.get("https://example.com/api/3").mock(return_value=httpx.Response(200, json={"id": 3}))
 
-    responses = await client.get_many([
-        {"url": "https://example.com/api/1", "headers": {}, "params": {}},
-        {"url": "https://example.com/api/2", "headers": {}, "params": {}},
-        {"url": "https://example.com/api/3", "headers": {}, "params": {}},
-    ])
+    responses = await client.get_many(
+        [
+            {"url": "https://example.com/api/1", "headers": {}, "params": {}},
+            {"url": "https://example.com/api/2", "headers": {}, "params": {}},
+            {"url": "https://example.com/api/3", "headers": {}, "params": {}},
+        ]
+    )
 
     assert len(responses) == 3
     ids = {r.json()["id"] for r in responses}
@@ -235,17 +231,15 @@ async def test_get_many_with_rate_limiter(fast_settings: HttpClientSettings) -> 
     """get_many respects rate limiter."""
     limiter = RateLimiter(max_per_second=100.0)
     c = HttpxClient(fast_settings, rate_limiter=limiter)
-    respx.get("https://example.com/api/a").mock(
-        return_value=httpx.Response(200, json={"x": "a"})
-    )
-    respx.get("https://example.com/api/b").mock(
-        return_value=httpx.Response(200, json={"x": "b"})
-    )
+    respx.get("https://example.com/api/a").mock(return_value=httpx.Response(200, json={"x": "a"}))
+    respx.get("https://example.com/api/b").mock(return_value=httpx.Response(200, json={"x": "b"}))
 
-    responses = await c.get_many([
-        {"url": "https://example.com/api/a", "headers": {}, "params": {}},
-        {"url": "https://example.com/api/b", "headers": {}, "params": {}},
-    ])
+    responses = await c.get_many(
+        [
+            {"url": "https://example.com/api/a", "headers": {}, "params": {}},
+            {"url": "https://example.com/api/b", "headers": {}, "params": {}},
+        ]
+    )
 
     assert len(responses) == 2
 

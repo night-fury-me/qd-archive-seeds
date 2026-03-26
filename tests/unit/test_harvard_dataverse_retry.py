@@ -121,7 +121,6 @@ EMPTY_PAGE: dict[str, Any] = {"data": {"items": [], "total_count": 0}}
 
 class TestFailedPageRecording:
     @pytest.mark.asyncio
-
     async def test_failed_page_recorded_in_checkpoint(self, tmp_path: Path) -> None:
         # per_page=2, total_count=6: pages 0,1,2. Page 1 fails.
         http = FakeHttpClient(
@@ -146,8 +145,6 @@ class TestFailedPageRecording:
         assert cp.get_failed_pages("q1") == [1]
 
     @pytest.mark.asyncio
-
-
     async def test_query_not_marked_complete_with_failures(self, tmp_path: Path) -> None:
         # per_page=2, total_count=4: pages 0,1. Page 1 fails.
         http = FakeHttpClient(
@@ -171,7 +168,6 @@ class TestFailedPageRecording:
 
 class TestRetryFailedPages:
     @pytest.mark.asyncio
-
     async def test_retry_succeeds_yields_records(self, tmp_path: Path) -> None:
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
         cp.mark_page("q1", 2, 4)
@@ -191,8 +187,6 @@ class TestRetryFailedPages:
         assert cp.get_failed_pages("q1") == []
 
     @pytest.mark.asyncio
-
-
     async def test_retry_still_failing_stays_in_checkpoint(self, tmp_path: Path) -> None:
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
         cp.mark_page("q1", 2, 4)
@@ -211,8 +205,6 @@ class TestRetryFailedPages:
         assert cp.get_failed_pages("q1") == [1]
 
     @pytest.mark.asyncio
-
-
     async def test_retry_happens_before_normal_pagination(self, tmp_path: Path) -> None:
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
         cp.mark_page("q1", 1, 2)
@@ -242,7 +234,6 @@ class TestRetryFailedPages:
 
 class TestResumeSkipsCompletedQueries:
     @pytest.mark.asyncio
-
     async def test_completed_query_is_skipped(self, tmp_path: Path) -> None:
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
         cp.mark_query_complete("q1")

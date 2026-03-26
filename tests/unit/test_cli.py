@@ -27,9 +27,6 @@ runner = CliRunner()
 
 
 @pytest.mark.asyncio
-
-
-
 async def test_validate_config_valid(config_yaml_path: Path) -> None:
     result = runner.invoke(app, ["seed", "validate-config", "--config", str(config_yaml_path)])
     assert result.exit_code == 0
@@ -37,9 +34,6 @@ async def test_validate_config_valid(config_yaml_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-
-
-
 async def test_validate_config_invalid(tmp_path: Path) -> None:
     bad = tmp_path / "bad.yaml"
     bad.write_text("not: valid: config")
@@ -48,18 +42,12 @@ async def test_validate_config_invalid(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-
-
-
 async def test_validate_config_missing() -> None:
     result = runner.invoke(app, ["seed", "validate-config", "--config", "/nonexistent.yaml"])
     assert result.exit_code == 1
 
 
 @pytest.mark.asyncio
-
-
-
 async def test_status_missing_db() -> None:
     result = runner.invoke(app, ["seed", "status", "--db", "/nonexistent.sqlite"])
     assert result.exit_code == 1
@@ -117,9 +105,6 @@ def test_run_pipeline_invokes_runner(monkeypatch: object, minimal_config: Any) -
 
 
 @pytest.mark.asyncio
-
-
-
 async def test_run_pipeline_config_error(monkeypatch: object) -> None:
     def fake_load_config(_path: Path) -> Any:
         raise ConfigError("bad config")
@@ -133,9 +118,6 @@ async def test_run_pipeline_config_error(monkeypatch: object) -> None:
 
 
 @pytest.mark.asyncio
-
-
-
 async def test_cli_progress_display_events() -> None:
     console = Console(record=True)
     seed_module.console = console
@@ -168,9 +150,6 @@ async def test_cli_progress_display_events() -> None:
 
 
 @pytest.mark.asyncio
-
-
-
 async def test_status_command_with_db(tmp_path: Path) -> None:
     db = tmp_path / "qdarchive.sqlite"
     conn = sqlite3.connect(db)
@@ -201,9 +180,6 @@ async def test_status_command_with_db(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-
-
-
 async def test_export_csv_and_excel(tmp_path: Path) -> None:
     db = tmp_path / "qdarchive.sqlite"
     conn = sqlite3.connect(db)
@@ -241,9 +217,6 @@ async def test_export_csv_and_excel(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-
-
-
 async def test_export_unknown_format(tmp_path: Path) -> None:
     db = tmp_path / "qdarchive.sqlite"
     conn = sqlite3.connect(db)
@@ -268,9 +241,6 @@ async def test_export_unknown_format(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-
-
-
 async def test_export_missing_db() -> None:
     result = runner.invoke(
         app,
@@ -282,9 +252,6 @@ async def test_export_missing_db() -> None:
 
 
 @pytest.mark.asyncio
-
-
-
 async def test_cli_main_module_executes(monkeypatch: object) -> None:
     monkeypatch.setattr("sys.argv", ["qdarchive", "--help"])  # type: ignore[attr-defined]
     import sys

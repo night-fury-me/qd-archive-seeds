@@ -13,9 +13,6 @@ from qdarchive_seeding.app.runner import ETLRunner
 
 
 @pytest.mark.asyncio
-
-
-
 async def test_static_list_to_sqlite(tmp_path: Path) -> None:
     config_dict: dict[str, Any] = {
         "pipeline": {"id": "integration_test", "run_mode": "full"},

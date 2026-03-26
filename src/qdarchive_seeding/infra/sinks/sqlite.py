@@ -94,10 +94,7 @@ class SQLiteSink(BaseSink):
 
     def _run_column_migrations(self) -> None:
         """Add columns to existing tables if they don't exist yet."""
-        existing = {
-            row[1]
-            for row in self._conn.execute("PRAGMA table_info(files)").fetchall()
-        }
+        existing = {row[1] for row in self._conn.execute("PRAGMA table_info(files)").fetchall()}
         for col_name, ddl in _MIGRATION_ADD_FILE_COLUMNS:
             if col_name not in existing:
                 self._conn.execute(ddl)
@@ -213,9 +210,7 @@ class SQLiteSink(BaseSink):
     def upsert_asset(self, dataset_id: str, asset: AssetRecord) -> None:
         project_id = int(dataset_id)
         file_name = asset.local_filename or asset.asset_url.rsplit("/", 1)[-1]
-        file_type = asset.file_type or (
-            file_name.rsplit(".", 1)[-1] if "." in file_name else None
-        )
+        file_type = asset.file_type or (file_name.rsplit(".", 1)[-1] if "." in file_name else None)
         status = asset.download_status or "UNKNOWN"
         self._conn.execute(
             """

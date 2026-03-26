@@ -228,9 +228,7 @@ class ETLRunner:
 
             # Get download decision: callback (interactive) > explicit > default
             if confirm_callback is not None and not no_confirm and collected_records:
-                decision = confirm_callback(
-                    len(collected_records), total_assets, total_size_bytes
-                )
+                decision = confirm_callback(len(collected_records), total_assets, total_size_bytes)
             else:
                 decision = download_decision or DownloadDecision()
 
@@ -288,9 +286,7 @@ class ETLRunner:
                             return asset_ref, None, None
                         try:
                             # Per-asset progress callback avoids shared state
-                            def _on_progress(
-                                bytes_so_far: int, total_bytes: int | None
-                            ) -> None:
+                            def _on_progress(bytes_so_far: int, total_bytes: int | None) -> None:
                                 bus.publish(
                                     AssetDownloadProgress(
                                         asset_url=asset_ref.asset_url,
@@ -337,8 +333,7 @@ class ETLRunner:
                     c.filesystem.ensure_dir(target_dir)
 
                     tasks = [
-                        _download_one(asset, target_dir, download_sem)
-                        for asset in record.assets
+                        _download_one(asset, target_dir, download_sem) for asset in record.assets
                     ]
                     results = await asyncio.gather(*tasks)
 
@@ -430,9 +425,7 @@ class ETLRunner:
         if c.checkpoint.has_unresolved_failures():
             log.warning("Checkpoint retained: unresolved extraction page failures remain")
         else:
-            completed_count = sum(
-                1 for q in c.checkpoint._queries.values() if q.completed
-            )
+            completed_count = sum(1 for q in c.checkpoint._queries.values() if q.completed)
             log.info(
                 "Checkpoint preserved: %d completed queries available for skip on next run",
                 completed_count,

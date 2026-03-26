@@ -192,9 +192,9 @@ def _make_container(
         auth=None,  # type: ignore[arg-type]
         http_client=None,  # type: ignore[arg-type]
         rate_limiter=type(
-            "Limiter", (),
-            {"wait": lambda self: None,
-             "async_wait": lambda self: __import__("asyncio").sleep(0)},
+            "Limiter",
+            (),
+            {"wait": lambda self: None, "async_wait": lambda self: __import__("asyncio").sleep(0)},
         )(),
         extractor=extractor,
         pre_transform_chain=TransformChain(transforms=pre_transforms),
@@ -526,8 +526,11 @@ async def test_runner_non_success_download_status(
 
     class NonSuccessDownloader(_Downloader):
         async def download(  # type: ignore[override]
-            self, asset: AssetRecord, _target_dir: Path,
-            *, progress_callback: object = None,
+            self,
+            asset: AssetRecord,
+            _target_dir: Path,
+            *,
+            progress_callback: object = None,
         ):
             asset.download_status = "FAILED"
             return type(

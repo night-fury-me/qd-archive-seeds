@@ -50,7 +50,7 @@ class SearchStrategy(BaseConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def _coerce_nulls(cls, values: dict[str, object]) -> dict[str, object]:  # type: ignore[override]
+    def _coerce_nulls(cls, values: dict[str, object]) -> dict[str, object]:
         """YAML returns None for keys with no value; coerce to empty list/dict."""
         for key in ("extension_queries", "natural_language_queries"):
             if values.get(key) is None:
