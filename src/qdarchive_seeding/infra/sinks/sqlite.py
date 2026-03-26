@@ -87,6 +87,7 @@ class SQLiteSink(BaseSink):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self.path)
         self._conn.execute("PRAGMA foreign_keys = ON")
+        self._conn.execute("PRAGMA busy_timeout = 30000")  # wait up to 30s for locks
         self._conn.executescript(_MIGRATION)
         self._conn.executescript(SCHEMA)
         self._run_column_migrations()
