@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import pytest
-
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from qdarchive_seeding.app.checkpoint import CheckpointManager
 from qdarchive_seeding.app.config_models import PipelineConfig

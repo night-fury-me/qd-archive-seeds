@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import pytest
-
 import sqlite3
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 from qdarchive_seeding.app.config_loader import load_config
