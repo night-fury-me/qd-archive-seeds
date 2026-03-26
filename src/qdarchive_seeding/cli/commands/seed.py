@@ -410,7 +410,7 @@ def run_pipeline(
     if max_items is not None:
         cfg.pipeline.max_items = max_items
 
-    container = build_container(cfg, force=fresh_download, retry_failed=retry_failed)
+    container = build_container(cfg, fresh_download=fresh_download, retry_failed=retry_failed)
 
     if fresh_extract:
         container.checkpoint.clear()
