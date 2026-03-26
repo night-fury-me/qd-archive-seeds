@@ -51,10 +51,10 @@ def test_load_dotenv_parses_export_and_comments(tmp_path: Path, monkeypatch: obj
 def test_build_policy_from_registry(minimal_config: PipelineConfig) -> None:
     registries = create_default_registries()
 
-    policy = _build_policy(minimal_config, registries, force=False, retry_failed=False)
+    policy = _build_policy(minimal_config, registries, redownload_all=False, retry_failed=False)
     assert isinstance(policy, IncrementalPolicy)
 
-    policy = _build_policy(minimal_config, registries, force=False, retry_failed=True)
+    policy = _build_policy(minimal_config, registries, redownload_all=False, retry_failed=True)
     assert isinstance(policy, RetryPolicy)
 
 

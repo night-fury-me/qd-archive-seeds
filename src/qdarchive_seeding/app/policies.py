@@ -17,10 +17,10 @@ class IncrementalPolicy(Policy):
     """Skip assets already downloaded successfully; always re-download RESUMABLE."""
 
     run_mode: str = RUN_MODE_INCREMENTAL
-    force: bool = False
+    redownload_all: bool = False
 
     def should_skip_asset(self, asset: AssetRecord) -> bool:
-        if self.force:
+        if self.redownload_all:
             return False
         # Always retry RESUMABLE (partial downloads)
         if asset.download_status == DOWNLOAD_STATUS_RESUMABLE:

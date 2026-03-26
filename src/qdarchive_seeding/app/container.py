@@ -93,7 +93,7 @@ def build_container(
     config: PipelineConfig,
     *,
     run_id: str | None = None,
-    force: bool = False,
+    redownload_all: bool = False,
     retry_failed: bool = False,
     runs_dir: Path = Path("runs"),
     enable_log_queue: bool = False,
@@ -143,7 +143,9 @@ def build_container(
     downloader = downloader_factory(download_client, checksum, chunk_size)
 
     sink = _build_sink(config, registries)
-    policy = _build_policy(config, registries, force=force, retry_failed=retry_failed)
+    policy = _build_policy(
+        config, registries, redownload_all=redownload_all, retry_failed=retry_failed
+    )
 
     progress_bus_factory = registries.progress_buses.get("default")
     progress_bus = progress_bus_factory()
@@ -218,11 +220,11 @@ def _build_policy(
     config: PipelineConfig,
     registries: ComponentRegistries,
     *,
-    force: bool,
+    redownload_all: bool,
     retry_failed: bool,
 ) -> Policy:
     if retry_failed:
         factory = registries.policies.get("retry")
         return factory(retry_failed)  # type: ignore[no-any-return]
     factory = registries.policies.get("incremental")
-    return factory(config.pipeline.run_mode, force)  # type: ignore[no-any-return]
+    return factory(config.pipeline.run_mode, redownload_all)  # type: ignore[no-any-return]

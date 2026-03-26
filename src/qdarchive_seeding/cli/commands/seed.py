@@ -379,7 +379,9 @@ def _prompt_download_decision(
 def run_pipeline(
     config: Annotated[Path, typer.Option("--config", help="Path to YAML config file")],
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Run without downloading")] = False,
-    force: Annotated[bool, typer.Option("--force", help="Force re-download all")] = False,
+    redownload_all: Annotated[
+        bool, typer.Option("--redownload-all", help="Re-download all files, ignoring prior status")
+    ] = False,
     max_items: Annotated[int | None, typer.Option("--max-items", help="Override max items")] = None,
     retry_failed: Annotated[
         bool, typer.Option("--retry-failed", help="Retry failed downloads")
@@ -408,7 +410,7 @@ def run_pipeline(
     if max_items is not None:
         cfg.pipeline.max_items = max_items
 
-    container = build_container(cfg, force=force, retry_failed=retry_failed)
+    container = build_container(cfg, force=redownload_all, retry_failed=retry_failed)
 
     if fresh_extract:
         container.checkpoint.clear()

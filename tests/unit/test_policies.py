@@ -16,22 +16,22 @@ def _asset(status: str | None = None) -> AssetRecord:
 
 
 def test_incremental_skips_success() -> None:
-    policy = IncrementalPolicy(run_mode=RUN_MODE_INCREMENTAL, force=False)
+    policy = IncrementalPolicy(run_mode=RUN_MODE_INCREMENTAL, redownload_all=False)
     assert policy.should_skip_asset(_asset(DOWNLOAD_STATUS_SUCCESS)) is True
 
 
 def test_incremental_does_not_skip_failed() -> None:
-    policy = IncrementalPolicy(run_mode=RUN_MODE_INCREMENTAL, force=False)
+    policy = IncrementalPolicy(run_mode=RUN_MODE_INCREMENTAL, redownload_all=False)
     assert policy.should_skip_asset(_asset(DOWNLOAD_STATUS_FAILED)) is False
 
 
-def test_incremental_force_does_not_skip() -> None:
-    policy = IncrementalPolicy(run_mode=RUN_MODE_INCREMENTAL, force=True)
+def test_incremental_redownload_all_does_not_skip() -> None:
+    policy = IncrementalPolicy(run_mode=RUN_MODE_INCREMENTAL, redownload_all=True)
     assert policy.should_skip_asset(_asset(DOWNLOAD_STATUS_SUCCESS)) is False
 
 
 def test_full_mode_does_not_skip() -> None:
-    policy = IncrementalPolicy(run_mode=RUN_MODE_FULL, force=False)
+    policy = IncrementalPolicy(run_mode=RUN_MODE_FULL, redownload_all=False)
     assert policy.should_skip_asset(_asset(DOWNLOAD_STATUS_SUCCESS)) is False
 
 
@@ -63,7 +63,7 @@ def test_retry_policy_should_retry_under_max() -> None:
 
 
 def test_incremental_does_not_skip_resumable() -> None:
-    policy = IncrementalPolicy(run_mode=RUN_MODE_INCREMENTAL, force=False)
+    policy = IncrementalPolicy(run_mode=RUN_MODE_INCREMENTAL, redownload_all=False)
     assert policy.should_skip_asset(_asset(DOWNLOAD_STATUS_RESUMABLE)) is False
 
 
