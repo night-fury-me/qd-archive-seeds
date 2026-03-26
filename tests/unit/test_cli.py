@@ -105,7 +105,7 @@ def test_run_pipeline_invokes_runner(monkeypatch: object, minimal_config: Any) -
             "--dry-run",
             "--max-items",
             "5",
-            "--redownload-all",
+            "--fresh-download",
             "--retry-failed",
         ],
     )

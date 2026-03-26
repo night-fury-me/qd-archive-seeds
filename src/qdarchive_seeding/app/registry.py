@@ -368,10 +368,10 @@ def _build_mongodb_sink(options: dict[str, Any]) -> Sink:
 # ---------------------------------------------------------------------------
 
 
-def _build_incremental_policy(run_mode: str, redownload_all: bool) -> Any:
+def _build_incremental_policy(run_mode: str, fresh_download: bool) -> Any:
     from qdarchive_seeding.app.policies import IncrementalPolicy
 
-    return IncrementalPolicy(run_mode=run_mode, redownload_all=redownload_all)
+    return IncrementalPolicy(run_mode=run_mode, fresh_download=fresh_download)
 
 
 def _build_retry_policy(retry_failed: bool) -> Any:
