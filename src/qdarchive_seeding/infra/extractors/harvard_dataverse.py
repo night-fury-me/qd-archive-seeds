@@ -286,8 +286,9 @@ class HarvardDataverseExtractor:
         files_endpoint = ctx.config.source.endpoints.get(
             "files", "/datasets/:persistentId/versions/:latest/files"
         )
+        # The Dataverse Files API uses :persistentId as a literal path token;
+        # the actual DOI is passed as the ?persistentId= query parameter.
         url = f"{base_url}{files_endpoint}"
-        url = url.replace(":persistentId", persistent_id).replace(":latest", ":latest")
 
         headers: dict[str, str] = {}
         params: dict[str, Any] = {"persistentId": persistent_id}
@@ -296,8 +297,8 @@ class HarvardDataverseExtractor:
         try:
             response = await self.http_client.get(url, headers=headers, params=params)
             payload = response.json()
-        except Exception:
-            logger.warning("Failed to fetch files for %s", persistent_id, exc_info=True)
+        except Exception as exc:
+            logger.debug("Failed to fetch files for %s: %s", persistent_id, exc)
             return []
 
         data = payload.get("data", [])
