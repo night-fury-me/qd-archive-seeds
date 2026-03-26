@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS files (
   project_id INTEGER NOT NULL,
   file_name TEXT,
   file_type TEXT,
+  asset_url TEXT,
+  size_bytes INTEGER,
   status TEXT NOT NULL DEFAULT 'UNKNOWN'
     CHECK(status IN ('UNKNOWN', 'SUCCESS', 'FAILED', 'SKIPPED', 'RESUMABLE')),
   FOREIGN KEY (project_id) REFERENCES projects(id)
@@ -70,6 +72,11 @@ DROP TABLE IF EXISTS assets;
 DROP TABLE IF EXISTS datasets;
 """
 
+_MIGRATION_ADD_FILE_COLUMNS = [
+    ("asset_url", "ALTER TABLE files ADD COLUMN asset_url TEXT"),
+    ("size_bytes", "ALTER TABLE files ADD COLUMN size_bytes INTEGER"),
+]
+
 
 @dataclass(slots=True)
 class SQLiteSink(BaseSink):
@@ -82,6 +89,18 @@ class SQLiteSink(BaseSink):
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.executescript(_MIGRATION)
         self._conn.executescript(SCHEMA)
+        self._run_column_migrations()
+
+    def _run_column_migrations(self) -> None:
+        """Add columns to existing tables if they don't exist yet."""
+        existing = {
+            row[1]
+            for row in self._conn.execute("PRAGMA table_info(files)").fetchall()
+        }
+        for col_name, ddl in _MIGRATION_ADD_FILE_COLUMNS:
+            if col_name not in existing:
+                self._conn.execute(ddl)
+        self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
@@ -199,14 +218,16 @@ class SQLiteSink(BaseSink):
         status = asset.download_status or "UNKNOWN"
         self._conn.execute(
             """
-            INSERT INTO files (project_id, file_name, file_type, status)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO files (project_id, file_name, file_type, asset_url, size_bytes, status)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(project_id, file_name)
             DO UPDATE SET
               file_type=excluded.file_type,
+              asset_url=COALESCE(excluded.asset_url, asset_url),
+              size_bytes=COALESCE(excluded.size_bytes, size_bytes),
               status=excluded.status
             """,
-            (project_id, file_name, file_type, status),
+            (project_id, file_name, file_type, asset.asset_url, asset.size_bytes, status),
         )
         self._conn.commit()
 
@@ -243,3 +264,73 @@ class SQLiteSink(BaseSink):
             (repository_id,),
         ).fetchall()
         return {row[0] for row in rows if row[0]}
+
+    def get_pending_download_datasets(
+        self, repository_id: int | None = None
+    ) -> list[tuple[str, DatasetRecord, list[AssetRecord]]]:
+        """Load datasets that have files not yet successfully downloaded.
+
+        Returns a list of (dataset_id, DatasetRecord, [AssetRecord, ...]) tuples
+        for projects that have at least one file with status != 'SUCCESS'.
+        Only includes files that have asset_url stored (needed for download).
+        """
+        query = """
+            SELECT DISTINCT p.id, p.query_string, p.repository_id, p.repository_url,
+                   p.project_url, p.version, p.title, p.description, p.language,
+                   p.doi, p.upload_date, p.download_date,
+                   p.download_repository_folder, p.download_project_folder,
+                   p.download_version_folder, p.download_method
+            FROM projects p
+            JOIN files f ON f.project_id = p.id
+            WHERE f.status != 'SUCCESS' AND f.asset_url IS NOT NULL
+        """
+        params: list[int] = []
+        if repository_id is not None:
+            query += " AND p.repository_id = ?"
+            params.append(repository_id)
+
+        rows = self._conn.execute(query, params).fetchall()
+        results: list[tuple[str, DatasetRecord, list[AssetRecord]]] = []
+
+        for row in rows:
+            pid = row[0]
+            record = DatasetRecord(
+                source_name=row[12] or "",  # download_repository_folder
+                source_dataset_id=str(row[13]),  # download_project_folder
+                source_url=row[4],
+                query_string=row[1],
+                repository_id=row[2],
+                repository_url=row[3],
+                version=row[5],
+                title=row[6],
+                description=row[7],
+                language=row[8],
+                doi=row[9],
+                upload_date=row[10],
+                download_date=row[11],
+                download_repository_folder=row[12],
+                download_project_folder=row[13],
+                download_version_folder=row[14],
+                download_method=row[15],
+            )
+
+            file_rows = self._conn.execute(
+                "SELECT file_name, file_type, asset_url, size_bytes, status "
+                "FROM files WHERE project_id = ?",
+                (pid,),
+            ).fetchall()
+            assets = [
+                AssetRecord(
+                    asset_url=fr[2] or "",
+                    local_filename=fr[0],
+                    file_type=fr[1],
+                    size_bytes=fr[3],
+                    download_status=fr[4],
+                )
+                for fr in file_rows
+                if fr[2]  # only include files with asset_url
+            ]
+            record.assets = assets
+            results.append((str(pid), record, assets))
+
+        return results

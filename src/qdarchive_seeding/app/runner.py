@@ -199,14 +199,43 @@ class ETLRunner:
 
         # ===== Phase 2: Download =====
         if "download" in phases and not metadata_only and not dry_run:
+            # Load previously-extracted datasets from DB that still need downloading
+            if hasattr(c.sink, "get_pending_download_datasets"):
+                pending = c.sink.get_pending_download_datasets(
+                    repository_id=c.config.source.repository_id
+                )
+                # Merge: add DB records not already in collected_records
+                collected_ids_set = set(collected_dataset_ids)
+                for db_id, db_record, _assets in pending:
+                    if db_id not in collected_ids_set:
+                        collected_records.append(db_record)
+                        collected_dataset_ids.append(db_id)
+                        total_assets += len(db_record.assets)
+                if pending:
+                    # Recompute total size with merged records
+                    total_size_bytes = sum(
+                        asset.size_bytes or 0
+                        for record in collected_records
+                        for asset in record.assets
+                    )
+                    log.info(
+                        "Loaded %d pending-download datasets from DB "
+                        "(total now: %d datasets, %d files)",
+                        len(pending) - len(collected_ids_set & {p[0] for p in pending}),
+                        len(collected_records),
+                        total_assets,
+                    )
+
             # Get download decision: callback (interactive) > explicit > default
-            if confirm_callback is not None and not no_confirm and loaded > 0:
-                decision = confirm_callback(loaded, total_assets, total_size_bytes)
+            if confirm_callback is not None and not no_confirm and collected_records:
+                decision = confirm_callback(
+                    len(collected_records), total_assets, total_size_bytes
+                )
             else:
                 decision = download_decision or DownloadDecision()
 
             # User chose to skip download
-            if decision.percentage == 0:
+            if decision.percentage == 0 and decision.exact_count is None:
                 log.info("Download skipped by user")
                 skipped = total_assets
             elif collected_records:
