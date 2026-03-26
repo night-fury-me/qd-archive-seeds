@@ -347,7 +347,8 @@ def _prompt_download_decision(
     console.print("[bold]Download options:[/bold]")
     console.print("  [1] Download all datasets")
     console.print("  [2] Download a percentage of datasets")
-    console.print("  [3] Skip download (metadata only)")
+    console.print("  [3] Download an exact number of datasets")
+    console.print("  [4] Skip download (metadata only)")
     console.print()
 
     choice = typer.prompt("Choose an option", type=int, default=1)
@@ -362,6 +363,14 @@ def _prompt_download_decision(
         )
         pct = max(1, min(100, pct))
         return DownloadDecision(download_all=False, percentage=pct)
+    elif choice == 3:
+        count = typer.prompt(
+            f"Number of datasets to download (1-{total_projects})",
+            type=int,
+            default=total_projects,
+        )
+        count = max(1, min(total_projects, count))
+        return DownloadDecision(download_all=False, exact_count=count)
     else:
         return DownloadDecision(download_all=False, percentage=0)
 
@@ -381,6 +390,13 @@ def run_pipeline(
     metadata_only: Annotated[
         bool, typer.Option("--metadata-only", help="Only collect metadata, skip downloads")
     ] = False,
+    fresh_extract: Annotated[
+        bool,
+        typer.Option(
+            "--fresh-extract",
+            help="Clear checkpoint and re-extract all queries from scratch",
+        ),
+    ] = False,
 ) -> None:
     """Run a seeding pipeline from a YAML config."""
     try:
@@ -394,6 +410,10 @@ def run_pipeline(
 
     container = build_container(cfg, force=force, retry_failed=retry_failed)
 
+    if fresh_extract:
+        container.checkpoint.clear()
+        console.print("[yellow]Checkpoint cleared — extracting all queries from scratch.[/yellow]")
+
     display = CliProgressDisplay()
     container.progress_bus.subscribe(display)
 
@@ -403,6 +423,7 @@ def run_pipeline(
             dry_run=dry_run,
             no_confirm=no_confirm,
             metadata_only=metadata_only,
+            fresh_extract=fresh_extract,
             confirm_callback=_prompt_download_decision if not no_confirm else None,
         )
     )

@@ -47,6 +47,7 @@ class DownloadDecision:
 
     download_all: bool = True
     percentage: int = 100  # 1-100
+    exact_count: int | None = None  # if set, download exactly this many datasets
 
 
 class ETLRunner:
@@ -59,6 +60,7 @@ class ETLRunner:
         dry_run: bool = False,
         no_confirm: bool = False,
         metadata_only: bool = False,
+        fresh_extract: bool = False,
         download_decision: DownloadDecision | None = None,
         confirm_callback: Callable[[int, int, int], DownloadDecision] | None = None,
     ) -> RunInfo:
@@ -211,7 +213,12 @@ class ETLRunner:
                 bus.publish(StageChanged("download"))
 
                 downloads_root = Path(c.config.storage.downloads_root)
-                if not decision.download_all and decision.percentage < 100:
+                if decision.exact_count is not None:
+                    limit = max(1, min(len(collected_records), decision.exact_count))
+                    records_to_download = collected_records[:limit]
+                    dataset_ids_to_download = collected_dataset_ids[:limit]
+                    skipped += sum(len(r.assets) for r in collected_records[limit:])
+                elif not decision.download_all and decision.percentage < 100:
                     limit = max(1, len(collected_records) * decision.percentage // 100)
                     records_to_download = collected_records[:limit]
                     dataset_ids_to_download = collected_dataset_ids[:limit]
@@ -394,7 +401,13 @@ class ETLRunner:
         if c.checkpoint.has_unresolved_failures():
             log.warning("Checkpoint retained: unresolved extraction page failures remain")
         else:
-            c.checkpoint.clear()
+            completed_count = sum(
+                1 for q in c.checkpoint._queries.values() if q.completed
+            )
+            log.info(
+                "Checkpoint preserved: %d completed queries available for skip on next run",
+                completed_count,
+            )
         bus.publish(StageChanged("done"))
         bus.publish(Completed(run_info=run_info))
         log.info("Run completed: %s", run_info.counts)
