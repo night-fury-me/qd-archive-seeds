@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import pytest
-
 import runpy
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import pytest
 from rich.console import Console
 from typer.testing import CliRunner
 
@@ -179,8 +178,11 @@ async def test_status_command_with_db(tmp_path: Path) -> None:
         conn.executescript(
             """
             CREATE TABLE projects (id INTEGER PRIMARY KEY, project_url TEXT NOT NULL);
-            CREATE TABLE files (id INTEGER PRIMARY KEY, project_id INTEGER, file_name TEXT, status TEXT);
-            INSERT INTO projects (id, project_url) VALUES (1, 'u1'), (2, 'u2');
+            CREATE TABLE files (
+                id INTEGER PRIMARY KEY, project_id INTEGER,
+                file_name TEXT, status TEXT);
+            INSERT INTO projects (id, project_url)
+                VALUES (1, 'u1'), (2, 'u2');
             INSERT INTO files (id, project_id, file_name, status) VALUES
               (1, 1, 'a.qdpx', 'SUCCESS'),
               (2, 1, 'b.pdf', 'FAILED'),
@@ -209,9 +211,12 @@ async def test_export_csv_and_excel(tmp_path: Path) -> None:
         conn.executescript(
             """
             CREATE TABLE projects (id INTEGER PRIMARY KEY, project_url TEXT NOT NULL);
-            CREATE TABLE files (id INTEGER PRIMARY KEY, project_id INTEGER, file_name TEXT, status TEXT);
+            CREATE TABLE files (
+                id INTEGER PRIMARY KEY, project_id INTEGER,
+                file_name TEXT, status TEXT);
             INSERT INTO projects (id, project_url) VALUES (1, 'u1');
-            INSERT INTO files (id, project_id, file_name, status) VALUES (1, 1, 'a.qdpx', 'SUCCESS');
+            INSERT INTO files (id, project_id, file_name, status)
+                VALUES (1, 1, 'a.qdpx', 'SUCCESS');
             """
         )
         conn.commit()

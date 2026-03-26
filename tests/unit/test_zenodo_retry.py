@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import pytest
-
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from qdarchive_seeding.app.checkpoint import CheckpointManager
 from qdarchive_seeding.app.config_models import PipelineConfig
@@ -133,7 +133,11 @@ class TestFailedPageRecording:
         extractor = ZenodoExtractor(
             http_client=http, auth=NoAuth(), options=ZenodoOptions(include_files=False)
         )
-        records = [r async for r in extractor._extract_single_query(ctx, "test query", query_string="q1")]
+        records = [
+            r async for r in extractor._extract_single_query(
+                ctx, "test query", query_string="q1"
+            )
+        ]
 
         # Page 0 yielded 2, page 1 failed (skipped), page 2 yielded 2
         assert len(records) == 4
@@ -180,7 +184,11 @@ class TestRetryFailedPages:
         extractor = ZenodoExtractor(
             http_client=http, auth=NoAuth(), options=ZenodoOptions(include_files=False)
         )
-        records = [r async for r in extractor._extract_single_query(ctx, "test query", query_string="q1")]
+        records = [
+            r async for r in extractor._extract_single_query(
+                ctx, "test query", query_string="q1"
+            )
+        ]
 
         # Should have yielded the 2 records from the retried page
         assert len(records) == 2
@@ -205,7 +213,11 @@ class TestRetryFailedPages:
         extractor = ZenodoExtractor(
             http_client=http, auth=NoAuth(), options=ZenodoOptions(include_files=False)
         )
-        records = [r async for r in extractor._extract_single_query(ctx, "test query", query_string="q1")]
+        records = [
+            r async for r in extractor._extract_single_query(
+                ctx, "test query", query_string="q1"
+            )
+        ]
 
         assert len(records) == 0
         # Page should remain in failed list
@@ -234,7 +246,11 @@ class TestRetryFailedPages:
         extractor = ZenodoExtractor(
             http_client=http, auth=NoAuth(), options=ZenodoOptions(include_files=False)
         )
-        records = [r async for r in extractor._extract_single_query(ctx, "test query", query_string="q1")]
+        records = [
+            r async for r in extractor._extract_single_query(
+                ctx, "test query", query_string="q1"
+            )
+        ]
 
         assert len(records) == 4
         # First 2 from retry, next 2 from normal pagination

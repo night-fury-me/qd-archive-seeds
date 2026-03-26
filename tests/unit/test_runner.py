@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import pytest
-
 from collections.abc import AsyncIterator, Iterable
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from qdarchive_seeding.app.checkpoint import CheckpointManager
 from qdarchive_seeding.app.config_models import LoggingSettings, PipelineConfig
@@ -191,7 +191,11 @@ def _make_container(
         logger_bundle=logger_bundle,
         auth=None,  # type: ignore[arg-type]
         http_client=None,  # type: ignore[arg-type]
-        rate_limiter=type("Limiter", (), {"wait": lambda self: None, "async_wait": lambda self: __import__("asyncio").sleep(0)})(),
+        rate_limiter=type(
+            "Limiter", (),
+            {"wait": lambda self: None,
+             "async_wait": lambda self: __import__("asyncio").sleep(0)},
+        )(),
         extractor=extractor,
         pre_transform_chain=TransformChain(transforms=pre_transforms),
         post_transform_chain=TransformChain(transforms=post_transforms),
@@ -208,7 +212,9 @@ def _make_container(
 
 
 @pytest.mark.asyncio
-async def test_runner_download_and_sink_errors(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+async def test_runner_download_and_sink_errors(
+    tmp_path: Path, minimal_config: PipelineConfig
+) -> None:
     record = DatasetRecord(
         source_name="s",
         source_dataset_id="1",
@@ -405,7 +411,9 @@ async def test_runner_cancelled_breaks_loop(tmp_path: Path, minimal_config: Pipe
 
 
 @pytest.mark.asyncio
-async def test_runner_filters_every_50_items(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+async def test_runner_filters_every_50_items(
+    tmp_path: Path, minimal_config: PipelineConfig
+) -> None:
     records = [
         DatasetRecord(source_name="s", source_dataset_id=str(i), source_url="u") for i in range(50)
     ]
@@ -506,7 +514,9 @@ async def test_runner_cancelled_during_assets_breaks(
 
 
 @pytest.mark.asyncio
-async def test_runner_non_success_download_status(tmp_path: Path, minimal_config: PipelineConfig) -> None:
+async def test_runner_non_success_download_status(
+    tmp_path: Path, minimal_config: PipelineConfig
+) -> None:
     record = DatasetRecord(
         source_name="s",
         source_dataset_id="1",
@@ -515,7 +525,10 @@ async def test_runner_non_success_download_status(tmp_path: Path, minimal_config
     )
 
     class NonSuccessDownloader(_Downloader):
-        async def download(self, asset: AssetRecord, _target_dir: Path, *, progress_callback: object = None):  # type: ignore[override]
+        async def download(  # type: ignore[override]
+            self, asset: AssetRecord, _target_dir: Path,
+            *, progress_callback: object = None,
+        ):
             asset.download_status = "FAILED"
             return type(
                 "Result",

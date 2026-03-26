@@ -68,7 +68,10 @@ def test_upsert_dataset_stores_keywords(tmp_path: Path) -> None:
 def test_upsert_dataset_stores_persons(tmp_path: Path) -> None:
     sink = SQLiteSink(name="test", path=tmp_path / "test.sqlite")
     record = _make_record(
-        persons=[PersonRole(name="Alice", role="CREATOR"), PersonRole(name="Bob", role="CONTRIBUTOR")]
+        persons=[
+            PersonRole(name="Alice", role="CREATOR"),
+            PersonRole(name="Bob", role="CONTRIBUTOR"),
+        ]
     )
     pid = sink.upsert_dataset(record)
     sink.close()

@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_asyncio
 
 from qdarchive_seeding.app.config_models import PipelineConfig
 from qdarchive_seeding.core.entities import DatasetRecord
@@ -144,7 +143,9 @@ class TestZenodoExtractor:
     @pytest.mark.asyncio
 
 
-    async def test_extracts_two_records_with_correct_fields(self, zenodo_payload: dict[str, Any]) -> None:
+    async def test_extracts_two_records_with_correct_fields(
+        self, zenodo_payload: dict[str, Any]
+    ) -> None:
         """ZenodoExtractor should yield 2 DatasetRecords with the right metadata and assets."""
         empty_page: dict[str, Any] = {"hits": {"hits": [], "total": 0}}
         http_client = FakeHttpClient([zenodo_payload, empty_page])
@@ -802,7 +803,9 @@ class TestZenodoDateSplitting:
         """_probe_total should return the total from hits."""
         response_data: dict[str, Any] = {"hits": {"total": 5000, "hits": [{"id": "1"}]}}
         http_client = FakeHttpClient([response_data])
-        total = await _probe_total(http_client, NoAuth(), "https://zenodo.org/api/records", {"q": "test"})
+        total = await _probe_total(
+            http_client, NoAuth(), "https://zenodo.org/api/records", {"q": "test"}
+        )
         assert total == 5000
 
     @pytest.mark.asyncio
@@ -811,7 +814,9 @@ class TestZenodoDateSplitting:
     async def test_probe_total_returns_zero_on_error(self) -> None:
         """_probe_total should return 0 if the request fails."""
         http_client = FakeHttpClient([])  # No responses → will raise
-        total = await _probe_total(http_client, NoAuth(), "https://zenodo.org/api/records", {"q": "test"})
+        total = await _probe_total(
+            http_client, NoAuth(), "https://zenodo.org/api/records", {"q": "test"}
+        )
         assert total == 0
 
     @pytest.mark.asyncio
