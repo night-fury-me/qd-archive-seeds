@@ -206,6 +206,7 @@ def _build_syracuse_qdr_extractor(
         auth=auth,
         options=SyracuseQdrOptions(
             max_datasets=options.get("max_datasets"),
+            include_files=options.get("include_files", True),
         ),
     )
 

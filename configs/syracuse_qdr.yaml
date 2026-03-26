@@ -1,45 +1,134 @@
 pipeline:
   id: "syracuse_qdr_seed_v1"
   run_mode: "incremental"
-  max_items: 500
+  max_items: 5000
+  phases: ["metadata", "download"]
 
 source:
   name: "syracuse_qdr"
   type: "rest_api"
   base_url: "https://data.qdr.syr.edu/api"
+  repository_id: 20
+  repository_url: "https://data.qdr.syr.edu"
   endpoints:
     search: "/search"
     dataset: "/datasets/:persistentId/"
   params:
-    q: "*"
     type: "dataset"
-    per_page: 1000
+    per_page: 100
   pagination:
     type: "offset"
     offset_param: "start"
     size_param: "per_page"
+  search_strategy:
+    extension_queries:
+      # REFI-QDA Standard
+      - "qdpx"
+      - "qdc"
+      # MAXQDA
+      - "mqda"
+      - "mx24"
+      - "mx22"
+      - "mx20"
+      - "mx18"
+      - "mx12"
+      # NVivo
+      - "nvp"
+      - "nvpx"
+      # ATLAS.ti
+      - "atlasproj"
+      - "hpr7"
+      # QDA Miner
+      - "ppj"
+      - "pprj"
+      # f4analyse
+      - "f4p"
+      # Quirkos
+      - "qpd"
+    natural_language_queries:
+      # ── QDA tool names ──
+      - "NVivo"
+      - "ATLAS.ti"
+      - "MAXQDA"
+      - "Dedoose"
+      - "REFI-QDA"
+      - "HyperRESEARCH"
+      - '"NVivo project"'
+      - '"ATLAS.ti project"'
+      # ── Core qualitative methodology ──
+      - '"qualitative interview"'
+      - '"semi-structured interview"'
+      - '"structured interview"'
+      - '"unstructured interview"'
+      - '"in-depth interview"'
+      - '"key informant interview"'
+      - '"expert interview"'
+      - '"stakeholder interview"'
+      - '"narrative interview"'
+      - '"interview transcript"'
+      - '"interview transcripts"'
+      - '"interview data"'
+      - '"interview guide"'
+      # ── Focus groups ──
+      - '"focus group"'
+      - '"focus group transcript"'
+      - '"focus group data"'
+      - '"focus group discussion"'
+      - '"discussion guide"'
+      # ── Analysis methods ──
+      - '"thematic analysis"'
+      - '"thematic coding"'
+      - '"grounded theory"'
+      - '"content analysis"'
+      - '"discourse analysis"'
+      - '"narrative analysis"'
+      - '"conversation analysis"'
+      - '"framework analysis"'
+      - '"qualitative data analysis"'
+      - '"qualitative analysis"'
+      - '"qualitative coding"'
+      - '"qualitative codebook"'
+      - '"coding scheme"'
+      - '"inductive coding"'
+      - '"deductive coding"'
+      # ── Ethnography & fieldwork ──
+      - '"ethnographic"'
+      - '"ethnography"'
+      - '"field notes"'
+      - '"fieldwork"'
+      - '"participant observation"'
+      # ── Broader qualitative research ──
+      - '"qualitative research"'
+      - '"qualitative study"'
+      - '"qualitative methods"'
+      - '"qualitative data"'
+      - '"qualitative dataset"'
+      - '"phenomenological study"'
+      - '"mixed methods"'
+      - '"action research"'
+      - '"participatory research"'
+      - '"case study"'
+      - '"oral history"'
 
 auth:
   type: "api_key"
   placement: "header"
   header_name: "X-Dataverse-key"
   env:
-    api_key: "CYRACUSE_TOKEN"
+    api_key: "SYRACUSE_QDR_TOKEN"
 
 extractor:
   name: "syracuse_qdr_extractor"
   options:
-    max_datasets: 500
+    include_files: true
+    max_datasets: 5000
 
 pre_transforms:
   - name: "validate_required_fields"
     options:
-      required_fields: ["source_url", "has_assets"]
+      required_fields: ["source_url"]
   - name: "normalize_fields"
   - name: "deduplicate_assets"
-  - name: "filter_by_extensions"
-    options:
-      categories: ["analysis_data"]
   - name: "slugify_dataset"
 
 post_transforms:
@@ -47,13 +136,18 @@ post_transforms:
 
 storage:
   downloads_root: "./downloads"
-  layout: "{source_name}/{dataset_slug}/"
+  layout: "{source_name}/{dataset_slug}/{version}/"
   checksum: "sha256"
 
 sink:
   type: "sqlite"
   options:
     path: "./metadata/qdarchive.sqlite"
+
+http:
+  timeout_seconds: 15
+  max_retries: 5
+  rate_limit_per_second: 1.0  # QDR is small, can be a bit faster
 
 logging:
   level: "INFO"

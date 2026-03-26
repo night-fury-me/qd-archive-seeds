@@ -1319,17 +1319,17 @@ class TestSyracuseQdrExtractor:
         }
 
         class ErrorHttpClient(FakeHttpClient):
-            def get(
+            async def get(
                 self,
                 url: str,
                 *,
                 headers: dict[str, str] | None = None,
                 params: dict[str, Any] | None = None,
                 timeout: float | None = None,
-            ) -> FakeResponse:  # type: ignore[override]
+            ) -> FakeResponse:
                 if "datasets" in url:
                     raise RuntimeError("fail")
-                return super().get(url, headers=headers, params=params, timeout=timeout)
+                return await super().get(url, headers=headers, params=params, timeout=timeout)
 
         http_client = ErrorHttpClient([search_payload])
         config = _make_config(
@@ -1351,7 +1351,11 @@ class TestSyracuseQdrExtractor:
 
         records = [r async for r in extractor.extract(ctx)]
 
-        assert records == []
+        # First item has no global_id → skipped
+        # Second item has file fetch error → record yielded with empty assets
+        assert len(records) == 1
+        assert records[0].source_dataset_id == "doi:10.999/err"
+        assert records[0].assets == []
 
     @pytest.mark.asyncio
 
