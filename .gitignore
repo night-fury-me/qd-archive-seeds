@@ -28,6 +28,7 @@ src/qdarchive_seeding/tui/
 logs/
 runs/
 downloads/
+metadata/
 
 # Large downloaded datasets (keep out of the repo)
 # downloads/zenodo/ contains many large files; ignore to avoid pushing
