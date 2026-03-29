@@ -253,17 +253,21 @@ class HarvardDataverseExtractor:
         dataset_host = urlparse(dataset_url_raw).netloc.lower()
         is_harvested = bool(dataset_host and dataset_host != repo_host)
         harvested_from = dataset_host if is_harvested else None
-        if is_harvested:
-            logger.info(
-                "Harvested dataset %s (hosted on %s, not %s) — skipping file download",
-                global_id,
-                dataset_host,
-                repo_host,
-            )
 
         assets: list[AssetRecord] = []
-        if self.options.include_files and not is_harvested:
-            assets = await self._fetch_files(ctx, global_id)
+        if self.options.include_files:
+            if is_harvested:
+                # Fetch files from the original Dataverse that hosts this dataset
+                parsed = urlparse(dataset_url_raw)
+                original_base = f"{parsed.scheme}://{parsed.netloc}/api"
+                logger.info(
+                    "Harvested dataset %s — fetching files from origin %s",
+                    global_id,
+                    parsed.netloc,
+                )
+                assets = await self._fetch_files(ctx, global_id, base_url_override=original_base)
+            else:
+                assets = await self._fetch_files(ctx, global_id)
 
         persons: list[PersonRole] = []
         for author in item.get("authors", []):
@@ -297,9 +301,21 @@ class HarvardDataverseExtractor:
             raw=item,
         )
 
-    async def _fetch_files(self, ctx: RunContext, persistent_id: str) -> list[AssetRecord]:
-        """Fetch the file listing for a dataset via the Dataverse Files API."""
-        base_url = ctx.config.source.base_url.rstrip("/")
+    async def _fetch_files(
+        self,
+        ctx: RunContext,
+        persistent_id: str,
+        *,
+        base_url_override: str | None = None,
+    ) -> list[AssetRecord]:
+        """Fetch the file listing for a dataset via the Dataverse Files API.
+
+        Args:
+            base_url_override: When set, fetch files from this API base URL
+                instead of the configured source. Used for harvested datasets
+                so we hit the original Dataverse that actually hosts the files.
+        """
+        base_url = (base_url_override or ctx.config.source.base_url).rstrip("/")
         files_endpoint = ctx.config.source.endpoints.get(
             "files", "/datasets/:persistentId/versions/:latest/files"
         )
@@ -309,37 +325,27 @@ class HarvardDataverseExtractor:
 
         headers: dict[str, str] = {}
         params: dict[str, Any] = {"persistentId": persistent_id}
-        headers, params = self.auth.apply(headers, params)
+        # Only apply our auth when querying our own Dataverse
+        if base_url_override is None:
+            headers, params = self.auth.apply(headers, params)
 
         try:
             response = await self.http_client.get(url, headers=headers, params=params)
             payload = response.json()
         except Exception as exc:
-            logger.debug("Failed to fetch files for %s: %s", persistent_id, exc)
+            logger.debug("Failed to fetch files for %s from %s: %s", persistent_id, base_url, exc)
             return []
 
         data = payload.get("data", [])
         if not isinstance(data, list):
             return []
 
-        base_url = ctx.config.source.base_url.rstrip("/")
         assets: list[AssetRecord] = []
         for file_entry in data:
             data_file = file_entry.get("dataFile", {})
             filename = data_file.get("filename", "")
             file_id = data_file.get("id")
             if not filename or not file_id:
-                continue
-
-            # Skip individual harvested files (storageIdentifier starts with a
-            # remote URL rather than a local storage prefix like "file://" or "s3://")
-            storage_id = data_file.get("storageIdentifier", "")
-            if storage_id.startswith("http://") or storage_id.startswith("https://"):
-                logger.debug(
-                    "Skipping harvested file %s (remote storageIdentifier: %s)",
-                    filename,
-                    storage_id[:80],
-                )
                 continue
 
             download_url = f"{base_url}/access/datafile/{file_id}"

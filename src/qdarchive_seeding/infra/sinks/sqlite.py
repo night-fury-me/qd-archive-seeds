@@ -299,7 +299,6 @@ class SQLiteSink(BaseSink):
             FROM projects p
             JOIN files f ON f.project_id = p.id
             WHERE f.status != 'SUCCESS' AND f.asset_url IS NOT NULL
-              AND p.is_harvested = 0
         """
         params: list[int] = []
         if repository_id is not None:
