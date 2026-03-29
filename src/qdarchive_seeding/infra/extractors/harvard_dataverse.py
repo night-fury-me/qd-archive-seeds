@@ -389,9 +389,21 @@ class HarvardDataverseExtractor:
 
         headers: dict[str, str] = {}
         params: dict[str, Any] = {"persistentId": persistent_id}
-        # Only apply our auth when querying our own Dataverse
+        # Apply auth: our own token for our Dataverse, external auth for others
+        origin_auth_headers: dict[str, str] = {}
         if base_url_override is None:
             headers, params = self.auth.apply(headers, params)
+        else:
+            origin_host = urlparse(base_url_override).netloc.lower()
+            ext_auth = ctx.config.external_auth.get(origin_host)
+            if ext_auth:
+                import os
+
+                token = os.environ.get(ext_auth.env.get("api_key", ""), "")
+                if token:
+                    headers[ext_auth.header_name] = token
+                    origin_auth_headers[ext_auth.header_name] = token
+                    logger.debug("Applied external auth for %s", origin_host)
 
         try:
             response = await self.http_client.get(url, headers=headers, params=params)
@@ -415,12 +427,17 @@ class HarvardDataverseExtractor:
             download_url = f"{base_url}/access/datafile/{file_id}"
             file_type = PurePosixPath(filename).suffix.lstrip(".") if filename else None
 
+            metadata: dict[str, Any] = {}
+            if origin_auth_headers:
+                metadata["auth_headers"] = origin_auth_headers
+
             assets.append(
                 AssetRecord(
                     asset_url=download_url,
                     local_filename=filename,
                     file_type=file_type,
                     size_bytes=data_file.get("filesize"),
+                    metadata=metadata or None,
                 )
             )
 

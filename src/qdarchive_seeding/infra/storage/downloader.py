@@ -50,6 +50,9 @@ class Downloader:
         final_path = target_dir / filename
 
         headers: dict[str, str] = {}
+        # Apply per-asset auth headers (e.g. external Dataverse tokens)
+        if asset.metadata and "auth_headers" in asset.metadata:
+            headers.update(asset.metadata["auth_headers"])
         mode = "w+b"
         downloaded = 0
         if temp_path.exists():

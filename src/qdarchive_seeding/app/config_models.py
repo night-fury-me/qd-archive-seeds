@@ -79,6 +79,14 @@ class AuthSettings(BaseConfig):
     header_name: str | None = None
 
 
+class ExternalAuthEntry(BaseConfig):
+    """Auth config for an external Dataverse host (used for harvested datasets)."""
+
+    type: Literal["api_key", "bearer"] = "api_key"
+    env: dict[str, str] = Field(default_factory=dict)
+    header_name: str = "X-Dataverse-key"
+
+
 class ExtractorSettings(BaseConfig):
     name: str
     options: dict[str, Any] = Field(default_factory=dict)
@@ -128,6 +136,7 @@ class PipelineConfig(BaseConfig):
     sink: SinkSettings
     http: HttpSettings = Field(default_factory=HttpSettings)
     logging: LoggingSettings
+    external_auth: dict[str, ExternalAuthEntry] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod

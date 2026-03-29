@@ -152,6 +152,13 @@ auth:
   placement: "header"
   header_name: "X-Dataverse-key"
 
+external_auth:
+  data.qdr.syr.edu:
+    type: "api_key"
+    env:
+      api_key: "SYRACUSE_QDR_TOKEN"
+    header_name: "X-Dataverse-key"
+
 extractor:
   name: "harvard_dataverse_extractor"
   options:
