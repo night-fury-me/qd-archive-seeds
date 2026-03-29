@@ -257,15 +257,24 @@ class HarvardDataverseExtractor:
         assets: list[AssetRecord] = []
         if self.options.include_files:
             if is_harvested:
-                # Fetch files from the original Dataverse that hosts this dataset
-                parsed = urlparse(dataset_url_raw)
-                original_base = f"{parsed.scheme}://{parsed.netloc}/api"
-                logger.info(
-                    "Harvested dataset %s — fetching files from origin %s",
-                    global_id,
-                    parsed.netloc,
-                )
-                assets = await self._fetch_files(ctx, global_id, base_url_override=original_base)
+                # Resolve the actual Dataverse host (DOI URLs redirect to it)
+                original_base = await self._resolve_origin_base_url(dataset_url_raw)
+                if original_base:
+                    harvested_from = urlparse(original_base).netloc.lower()
+                    logger.info(
+                        "Harvested dataset %s — fetching files from origin %s",
+                        global_id,
+                        harvested_from,
+                    )
+                    assets = await self._fetch_files(
+                        ctx, global_id, base_url_override=original_base
+                    )
+                else:
+                    logger.warning(
+                        "Harvested dataset %s — could not resolve origin from %s",
+                        global_id,
+                        dataset_url_raw,
+                    )
             else:
                 assets = await self._fetch_files(ctx, global_id)
 
@@ -300,6 +309,33 @@ class HarvardDataverseExtractor:
             assets=assets,
             raw=item,
         )
+
+    async def _resolve_origin_base_url(self, dataset_url: str) -> str | None:
+        """Resolve a DOI or redirect URL to the actual Dataverse API base URL.
+
+        Follows redirects on the dataset URL (e.g. https://doi.org/10.5683/...)
+        to discover the real Dataverse host (e.g. https://borealisdata.ca),
+        then returns its API base URL (e.g. https://borealisdata.ca/api).
+        Returns None if resolution fails.
+        """
+        parsed = urlparse(dataset_url)
+        # If it's already a Dataverse host (not doi.org), use it directly
+        if parsed.netloc.lower() != "doi.org":
+            return f"{parsed.scheme}://{parsed.netloc}/api"
+
+        try:
+            # Follow redirects via GET with a small timeout; we only need the final URL
+            response = await self.http_client.get(dataset_url, headers={}, params={})
+            final_url = str(response.url) if hasattr(response, "url") else ""
+            if final_url:
+                final_parsed = urlparse(final_url)
+                resolved = f"{final_parsed.scheme}://{final_parsed.netloc}/api"
+                logger.debug("Resolved DOI %s → %s", dataset_url, resolved)
+                return resolved
+        except Exception as exc:
+            logger.debug("Failed to resolve DOI %s: %s", dataset_url, exc)
+
+        return None
 
     async def _fetch_files(
         self,
