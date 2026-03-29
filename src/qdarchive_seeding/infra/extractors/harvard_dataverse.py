@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
+from urllib.parse import urlparse
 
 from qdarchive_seeding.app.progress import PageProgress, QueryProgress
 from qdarchive_seeding.core.constants import (
@@ -246,7 +247,23 @@ class HarvardDataverseExtractor:
                 return None
             seen_ids.add(global_id)
 
-        assets = await self._fetch_files(ctx, global_id) if self.options.include_files else []
+        # Detect harvested datasets: their URL points to a different Dataverse
+        dataset_url_raw = item.get("url", "")
+        repo_host = urlparse(source_cfg.repository_url).netloc.lower()
+        dataset_host = urlparse(dataset_url_raw).netloc.lower()
+        is_harvested = bool(dataset_host and dataset_host != repo_host)
+        if is_harvested:
+            logger.debug(
+                "Skipping file fetch for harvested dataset %s (hosted on %s)",
+                global_id,
+                dataset_host,
+            )
+
+        assets = (
+            await self._fetch_files(ctx, global_id)
+            if self.options.include_files and not is_harvested
+            else []
+        )
 
         persons: list[PersonRole] = []
         for author in item.get("authors", []):
