@@ -35,6 +35,8 @@ class DatasetRecord:
     download_project_folder: str | None = None
     download_version_folder: str | None = None
     download_method: str | None = None
+    is_harvested: bool = False
+    harvested_from: str | None = None
     keywords: list[str] = field(default_factory=list)
     persons: list[PersonRole] = field(default_factory=list)
     # --- Deprecated fields (kept for backward compatibility) ---

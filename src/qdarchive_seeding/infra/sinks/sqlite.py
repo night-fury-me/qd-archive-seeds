@@ -24,7 +24,9 @@ CREATE TABLE IF NOT EXISTS projects (
   download_repository_folder TEXT,
   download_project_folder TEXT,
   download_version_folder TEXT,
-  download_method TEXT CHECK(download_method IN ('SCRAPING', 'API-CALL'))
+  download_method TEXT CHECK(download_method IN ('SCRAPING', 'API-CALL')),
+  is_harvested INTEGER NOT NULL DEFAULT 0,
+  harvested_from TEXT
 );
 
 CREATE TABLE IF NOT EXISTS files (
@@ -77,6 +79,11 @@ _MIGRATION_ADD_FILE_COLUMNS = [
     ("size_bytes", "ALTER TABLE files ADD COLUMN size_bytes INTEGER"),
 ]
 
+_MIGRATION_ADD_PROJECT_COLUMNS = [
+    ("is_harvested", "ALTER TABLE projects ADD COLUMN is_harvested INTEGER NOT NULL DEFAULT 0"),
+    ("harvested_from", "ALTER TABLE projects ADD COLUMN harvested_from TEXT"),
+]
+
 
 @dataclass(slots=True)
 class SQLiteSink(BaseSink):
@@ -94,9 +101,17 @@ class SQLiteSink(BaseSink):
 
     def _run_column_migrations(self) -> None:
         """Add columns to existing tables if they don't exist yet."""
-        existing = {row[1] for row in self._conn.execute("PRAGMA table_info(files)").fetchall()}
+        existing_files = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(files)").fetchall()
+        }
         for col_name, ddl in _MIGRATION_ADD_FILE_COLUMNS:
-            if col_name not in existing:
+            if col_name not in existing_files:
+                self._conn.execute(ddl)
+        existing_projects = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(projects)").fetchall()
+        }
+        for col_name, ddl in _MIGRATION_ADD_PROJECT_COLUMNS:
+            if col_name not in existing_projects:
                 self._conn.execute(ddl)
         self._conn.commit()
 
@@ -151,6 +166,8 @@ class SQLiteSink(BaseSink):
             record.download_project_folder,
             record.download_version_folder,
             record.download_method,
+            int(record.is_harvested),
+            record.harvested_from,
         )
 
         if existing_id is not None:
@@ -160,7 +177,8 @@ class SQLiteSink(BaseSink):
                   version=?, title=?, description=?, language=?, doi=?,
                   upload_date=?, download_date=?,
                   download_repository_folder=?, download_project_folder=?,
-                  download_version_folder=?, download_method=?
+                  download_version_folder=?, download_method=?,
+                  is_harvested=?, harvested_from=?
                 WHERE id=?""",
                 (*values, existing_id),
             )
@@ -172,8 +190,9 @@ class SQLiteSink(BaseSink):
                   version, title, description, language, doi,
                   upload_date, download_date,
                   download_repository_folder, download_project_folder,
-                  download_version_folder, download_method
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                  download_version_folder, download_method,
+                  is_harvested, harvested_from
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 values,
             )
             project_id = cursor.lastrowid or 0
@@ -275,10 +294,12 @@ class SQLiteSink(BaseSink):
                    p.project_url, p.version, p.title, p.description, p.language,
                    p.doi, p.upload_date, p.download_date,
                    p.download_repository_folder, p.download_project_folder,
-                   p.download_version_folder, p.download_method
+                   p.download_version_folder, p.download_method,
+                   p.is_harvested, p.harvested_from
             FROM projects p
             JOIN files f ON f.project_id = p.id
             WHERE f.status != 'SUCCESS' AND f.asset_url IS NOT NULL
+              AND p.is_harvested = 0
         """
         params: list[int] = []
         if repository_id is not None:
@@ -308,6 +329,8 @@ class SQLiteSink(BaseSink):
                 download_project_folder=row[13],
                 download_version_folder=row[14],
                 download_method=row[15],
+                is_harvested=bool(row[16]),
+                harvested_from=row[17],
             )
 
             file_rows = self._conn.execute(

@@ -252,18 +252,18 @@ class HarvardDataverseExtractor:
         repo_host = urlparse(source_cfg.repository_url).netloc.lower()
         dataset_host = urlparse(dataset_url_raw).netloc.lower()
         is_harvested = bool(dataset_host and dataset_host != repo_host)
+        harvested_from = dataset_host if is_harvested else None
         if is_harvested:
-            logger.debug(
-                "Skipping file fetch for harvested dataset %s (hosted on %s)",
+            logger.info(
+                "Harvested dataset %s (hosted on %s, not %s) — skipping file download",
                 global_id,
                 dataset_host,
+                repo_host,
             )
 
-        assets = (
-            await self._fetch_files(ctx, global_id)
-            if self.options.include_files and not is_harvested
-            else []
-        )
+        assets: list[AssetRecord] = []
+        if self.options.include_files and not is_harvested:
+            assets = await self._fetch_files(ctx, global_id)
 
         persons: list[PersonRole] = []
         for author in item.get("authors", []):
@@ -287,6 +287,8 @@ class HarvardDataverseExtractor:
             language=None,
             upload_date=item.get("published_at"),
             download_method=DOWNLOAD_METHOD_API,
+            is_harvested=is_harvested,
+            harvested_from=harvested_from,
             download_repository_folder=source_cfg.name,
             download_project_folder=project_folder,
             keywords=item.get("keywords", []),
@@ -320,6 +322,7 @@ class HarvardDataverseExtractor:
         if not isinstance(data, list):
             return []
 
+        base_url = ctx.config.source.base_url.rstrip("/")
         assets: list[AssetRecord] = []
         for file_entry in data:
             data_file = file_entry.get("dataFile", {})
@@ -328,7 +331,18 @@ class HarvardDataverseExtractor:
             if not filename or not file_id:
                 continue
 
-            download_url = f"{ctx.config.source.base_url.rstrip('/')}/access/datafile/{file_id}"
+            # Skip individual harvested files (storageIdentifier starts with a
+            # remote URL rather than a local storage prefix like "file://" or "s3://")
+            storage_id = data_file.get("storageIdentifier", "")
+            if storage_id.startswith("http://") or storage_id.startswith("https://"):
+                logger.debug(
+                    "Skipping harvested file %s (remote storageIdentifier: %s)",
+                    filename,
+                    storage_id[:80],
+                )
+                continue
+
+            download_url = f"{base_url}/access/datafile/{file_id}"
             file_type = PurePosixPath(filename).suffix.lstrip(".") if filename else None
 
             assets.append(
