@@ -257,18 +257,37 @@ class HarvardDataverseExtractor:
         assets: list[AssetRecord] = []
         if self.options.include_files:
             if is_harvested:
-                # Resolve the actual Dataverse host (DOI URLs redirect to it)
+                # Resolve the actual host (DOI URLs redirect to the real server)
                 original_base = await self._resolve_origin_base_url(dataset_url_raw)
                 if original_base:
-                    harvested_from = urlparse(original_base).netloc.lower()
-                    logger.info(
-                        "Harvested dataset %s — fetching files from origin %s",
-                        global_id,
-                        harvested_from,
-                    )
-                    assets = await self._fetch_files(
-                        ctx, global_id, base_url_override=original_base
-                    )
+                    resolved_host = urlparse(original_base).netloc.lower()
+                    if resolved_host == repo_host:
+                        # DOI resolved back to our own Dataverse — treat as native
+                        is_harvested = False
+                        harvested_from = None
+                        logger.info(
+                            "Dataset %s resolved back to %s — treating as native",
+                            global_id,
+                            repo_host,
+                        )
+                        assets = await self._fetch_files(ctx, global_id)
+                    else:
+                        harvested_from = resolved_host
+                        logger.info(
+                            "Harvested dataset %s — fetching files from origin %s",
+                            global_id,
+                            resolved_host,
+                        )
+                        assets = await self._fetch_files(
+                            ctx, global_id, base_url_override=original_base
+                        )
+                        if not assets:
+                            logger.info(
+                                "Harvested dataset %s — origin %s returned no files "
+                                "(may not be a Dataverse installation)",
+                                global_id,
+                                resolved_host,
+                            )
                 else:
                     logger.warning(
                         "Harvested dataset %s — could not resolve origin from %s",
