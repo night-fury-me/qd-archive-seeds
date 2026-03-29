@@ -7,6 +7,8 @@ from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
+
 from qdarchive_seeding.app.progress import PageProgress, QueryProgress
 from qdarchive_seeding.core.constants import (
     DOWNLOAD_METHOD_API,
@@ -343,16 +345,23 @@ class HarvardDataverseExtractor:
             return f"{parsed.scheme}://{parsed.netloc}/api"
 
         try:
-            # Follow redirects via GET with a small timeout; we only need the final URL
+            # Follow redirects via GET; we only need the final URL
             response = await self.http_client.get(dataset_url, headers={}, params={})
             final_url = str(response.url) if hasattr(response, "url") else ""
-            if final_url:
-                final_parsed = urlparse(final_url)
-                resolved = f"{final_parsed.scheme}://{final_parsed.netloc}/api"
-                logger.debug("Resolved DOI %s → %s", dataset_url, resolved)
-                return resolved
+        except httpx.HTTPStatusError as exc:
+            # The target page may return 4xx/5xx (e.g. QDR returns 405 on /citation)
+            # but the redirect chain already resolved — extract the URL from the response
+            final_url = str(exc.response.url) if hasattr(exc.response, "url") else ""
+            logger.debug("DOI %s resolved with status %d", dataset_url, exc.response.status_code)
         except Exception as exc:
             logger.debug("Failed to resolve DOI %s: %s", dataset_url, exc)
+            return None
+
+        if final_url:
+            final_parsed = urlparse(final_url)
+            resolved = f"{final_parsed.scheme}://{final_parsed.netloc}/api"
+            logger.debug("Resolved DOI %s → %s", dataset_url, resolved)
+            return resolved
 
         return None
 
