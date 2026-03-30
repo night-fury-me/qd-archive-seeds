@@ -392,8 +392,8 @@ class ETLRunner:
                     )
                 )
 
-                # Use semaphore for concurrent downloads within each record
-                download_sem = asyncio.Semaphore(5)
+                # Global semaphore for concurrent downloads across all datasets
+                download_sem = asyncio.Semaphore(10)
 
                 async def _download_one(
                     asset_ref: Any,
@@ -457,12 +457,27 @@ class ETLRunner:
                             asset_ref.error_message = str(dl_exc)
                             return asset_ref, None, dl_exc
 
-                for record, dataset_id in zip(
-                    records_to_download, dataset_ids_to_download, strict=True
-                ):
+                _access_codes = (
+                    "403",
+                    "401",
+                    "400",
+                    "404",
+                    "Forbidden",
+                    "Unauthorized",
+                    "Bad Request",
+                    "Not Found",
+                    "login page",
+                    "Server disconnected",
+                )
+
+                # Concurrency lock for shared counter updates
+                _counter_lock = asyncio.Lock()
+
+                async def _process_dataset(record: Any, dataset_id: str) -> None:
+                    nonlocal downloaded, failed, skipped, access_denied
+
                     if ctx.cancelled:
-                        log.warning("Run cancelled during download")
-                        break
+                        return
 
                     # Restore prior download statuses from DB so the policy
                     # can skip already-downloaded files on resume.
@@ -472,8 +487,6 @@ class ETLRunner:
                             fname = asset.local_filename or asset.asset_url.rsplit("/", 1)[-1]
                             if fname in prior_statuses:
                                 asset.download_status = prior_statuses[fname]
-
-                    await c.rate_limiter.async_wait()
 
                     dataset_slug = (
                         record.download_project_folder
@@ -492,32 +505,25 @@ class ETLRunner:
                     ]
                     results = await asyncio.gather(*tasks)
 
+                    # Accumulate local counters then update shared state once
+                    local_downloaded = 0
+                    local_failed = 0
+                    local_skipped = 0
+                    local_access_denied = 0
+
                     for asset, dl_result, dl_error in results:
                         if asset.download_status == DOWNLOAD_STATUS_SKIPPED:
-                            skipped += 1
+                            local_skipped += 1
                             continue
                         if dl_error is not None:
-                            failed += 1
+                            local_failed += 1
                             err_str = str(dl_error)
                             failures.append({"asset_url": asset.asset_url, "error": err_str})
-                            # Suppress verbose logs for access-restricted errors
-                            _access_codes = (
-                                "403",
-                                "401",
-                                "400",
-                                "404",
-                                "Forbidden",
-                                "Unauthorized",
-                                "Bad Request",
-                                "Not Found",
-                                "login page",
-                                "Server disconnected",
-                            )
                             is_access_error = not err_str.strip() or any(
                                 code in err_str for code in _access_codes
                             )
                             if is_access_error:
-                                access_denied += 1
+                                local_access_denied += 1
                             else:
                                 bus.publish(
                                     ErrorEvent(
@@ -538,9 +544,9 @@ class ETLRunner:
                                 )
                             )
                             if dl_result.asset.download_status == DOWNLOAD_STATUS_SUCCESS:
-                                downloaded += 1
+                                local_downloaded += 1
                             else:
-                                failed += 1
+                                local_failed += 1
                                 failures.append(
                                     {
                                         "asset_url": asset.asset_url,
@@ -565,14 +571,12 @@ class ETLRunner:
                                 log,
                             )
                             if zip_files:
-                                # Persist the original ZIP asset as SUCCESS before replacing
                                 with contextlib.suppress(Exception):
                                     c.sink.upsert_asset(dataset_id, asset)
-                                # Replace the single ZIP asset with individual files
                                 new_assets: list[Any] = [a for a in record.assets if a is not asset]
                                 new_assets.extend(zip_files)
                                 record.assets = new_assets
-                                downloaded += len(zip_files) - 1
+                                local_downloaded += len(zip_files) - 1
 
                     # Update sink with download results
                     try:
@@ -581,17 +585,32 @@ class ETLRunner:
                     except Exception as exc:
                         log.error("Sink update error for %s: %s", dataset_id, exc)
 
-                    bus.publish(
-                        CountersUpdated(
-                            extracted=extracted,
-                            transformed=transformed,
-                            downloaded=downloaded,
-                            failed=failed,
-                            skipped=skipped - pre_excluded,
-                            access_denied=access_denied,
-                            total_assets=download_asset_count,
+                    # Update shared counters and publish progress
+                    async with _counter_lock:
+                        downloaded += local_downloaded
+                        failed += local_failed
+                        skipped += local_skipped
+                        access_denied += local_access_denied
+                        bus.publish(
+                            CountersUpdated(
+                                extracted=extracted,
+                                transformed=transformed,
+                                downloaded=downloaded,
+                                failed=failed,
+                                skipped=skipped - pre_excluded,
+                                access_denied=access_denied,
+                                total_assets=download_asset_count,
+                            )
                         )
+
+                # Process all datasets concurrently
+                dataset_tasks = [
+                    _process_dataset(record, dataset_id)
+                    for record, dataset_id in zip(
+                        records_to_download, dataset_ids_to_download, strict=True
                     )
+                ]
+                await asyncio.gather(*dataset_tasks)
                 if access_denied > 0:
                     log.info("Skipped %d files due to access restrictions (401/403)", access_denied)
         elif dry_run:
