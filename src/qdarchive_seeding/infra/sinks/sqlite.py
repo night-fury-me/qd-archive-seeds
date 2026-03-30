@@ -256,17 +256,25 @@ class SQLiteSink(BaseSink):
         self._conn.commit()
 
     def get_file_statuses(self, dataset_id: str) -> dict[str, str]:
-        """Return a mapping of file_name → status for a project.
+        """Return a mapping of lookup_key → status for a project.
 
-        Used by the runner to restore prior download states so that
-        already-downloaded files are skipped on resume.
+        Keys include both file_name and asset_url so the runner can match
+        regardless of whether the asset record carries a local filename or
+        only the original download URL.
         """
         project_id = int(dataset_id)
         rows = self._conn.execute(
-            "SELECT file_name, status FROM files WHERE project_id = ?",
+            "SELECT file_name, asset_url, status FROM files WHERE project_id = ?",
             (project_id,),
         ).fetchall()
-        return {row[0]: row[1] for row in rows if row[0]}
+        result: dict[str, str] = {}
+        for row in rows:
+            fname, url, status = row[0], row[1], row[2]
+            if fname:
+                result[fname] = status
+            if url:
+                result[url] = status
+        return result
 
     def get_existing_dataset_ids(self, repository_id: int) -> set[str]:
         """Return all download_project_folder values for a repository.

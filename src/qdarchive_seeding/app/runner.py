@@ -497,12 +497,16 @@ class ETLRunner:
 
                     # Restore prior download statuses from DB so the policy
                     # can skip already-downloaded files on resume.
+                    # Lookup by file_name, URL-derived name, and full asset_url.
                     if hasattr(c.sink, "get_file_statuses"):
                         prior_statuses = c.sink.get_file_statuses(dataset_id)
                         for asset in record.assets:
                             fname = asset.local_filename or asset.asset_url.rsplit("/", 1)[-1]
-                            if fname in prior_statuses:
-                                asset.download_status = prior_statuses[fname]
+                            status = prior_statuses.get(fname) or prior_statuses.get(
+                                asset.asset_url
+                            )
+                            if status:
+                                asset.download_status = status
 
                     dataset_slug = (
                         record.download_project_folder

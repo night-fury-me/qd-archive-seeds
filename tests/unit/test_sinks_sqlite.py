@@ -179,7 +179,15 @@ def test_get_file_statuses(tmp_path: Path) -> None:
     statuses = sink.get_file_statuses(pid)
     sink.close()
 
-    assert statuses == {"a.qdpx": "SUCCESS", "b.pdf": "FAILED", "c.csv": "RESUMABLE"}
+    # Keys include both file_name and asset_url for flexible lookup
+    assert statuses == {
+        "a.qdpx": "SUCCESS",
+        "u1": "SUCCESS",
+        "b.pdf": "FAILED",
+        "u2": "FAILED",
+        "c.csv": "RESUMABLE",
+        "u3": "RESUMABLE",
+    }
 
 
 def test_different_versions_separate_rows(tmp_path: Path) -> None:
