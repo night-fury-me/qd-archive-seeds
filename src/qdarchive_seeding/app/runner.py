@@ -513,7 +513,9 @@ class ETLRunner:
                                 "login page",
                                 "Server disconnected",
                             )
-                            is_access_error = any(code in err_str for code in _access_codes)
+                            is_access_error = not err_str.strip() or any(
+                                code in err_str for code in _access_codes
+                            )
                             if is_access_error:
                                 access_denied += 1
                             else:
