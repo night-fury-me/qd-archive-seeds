@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import sqlite3
 from pathlib import Path
@@ -401,9 +402,10 @@ def _prompt_download_decision(
 
 
 def _prompt_icpsr_login(icpsr_count: int) -> bool:
-    """Prompt the user for confirmation about ICPSR browser session requirement.
+    """Notify the user about ICPSR browser login and give time to log in.
 
-    Returns True if the user confirms to proceed, False to skip ICPSR downloads.
+    Non-blocking: always returns True to proceed with downloads.
+    The user can log in now or just press Enter to continue without logging in.
     """
     import sys
 
@@ -412,19 +414,15 @@ def _prompt_icpsr_login(icpsr_count: int) -> bool:
     print("  These files can only be downloaded if you are logged into ICPSR")
     print("  via institutional SSO in a Chromium-based browser on this machine.")
     print("  Login URL: https://www.icpsr.umich.edu/mydata")
+    print()
+    print("  You can log in now if needed, then come back and press Enter.")
     print(flush=True)
     sys.stdout.flush()
 
-    try:
-        raw = input("Continue with ICPSR downloads? [y/N]: ").strip().lower()
-    except (ValueError, EOFError):
-        raw = ""
+    with contextlib.suppress(EOFError):
+        input("Press Enter to continue... ")
 
-    if raw in ("y", "yes"):
-        return True
-
-    print("  Skipping ICPSR downloads.")
-    return False
+    return True
 
 
 @seed_app.command("run")
