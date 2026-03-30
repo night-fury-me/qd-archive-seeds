@@ -388,7 +388,8 @@ def _prompt_icpsr_login(icpsr_count: int) -> bool:
     console.print("  [Y] Yes, I am logged in — proceed with ICPSR downloads")
     console.print("  [n] No, skip ICPSR downloads (other downloads will continue)")
     console.print()
-    return typer.confirm("Proceed with ICPSR downloads?", default=True)
+    choice = typer.prompt("Proceed with ICPSR downloads? (y/n)", type=str, default="y")
+    return choice.strip().lower() in ("y", "yes")
 
 
 @seed_app.command("run")
