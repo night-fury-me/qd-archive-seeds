@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from qdarchive_seeding.core.constants import (
     DOWNLOAD_STATUS_FAILED,
     DOWNLOAD_STATUS_RESUMABLE,
+    DOWNLOAD_STATUS_SKIPPED,
     DOWNLOAD_STATUS_SUCCESS,
     RUN_MODE_INCREMENTAL,
 )
@@ -20,6 +21,9 @@ class IncrementalPolicy(Policy):
     fresh_download: bool = False
 
     def should_skip_asset(self, asset: AssetRecord) -> bool:
+        # Always honour SKIPPED (e.g. Classic ICPSR, requires manual download)
+        if asset.download_status == DOWNLOAD_STATUS_SKIPPED:
+            return True
         if self.fresh_download:
             return False
         # Always retry RESUMABLE (partial downloads)
@@ -42,7 +46,7 @@ class RetryPolicy(Policy):
     retry_failed: bool = False
 
     def should_skip_asset(self, asset: AssetRecord) -> bool:
-        if asset.download_status == DOWNLOAD_STATUS_SUCCESS:
+        if asset.download_status in (DOWNLOAD_STATUS_SUCCESS, DOWNLOAD_STATUS_SKIPPED):
             return True
         # Always retry RESUMABLE (partial downloads with .part files)
         if asset.download_status == DOWNLOAD_STATUS_RESUMABLE:
