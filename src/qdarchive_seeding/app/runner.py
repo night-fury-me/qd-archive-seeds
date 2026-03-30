@@ -473,6 +473,8 @@ class ETLRunner:
                                 skipped += 1
                                 await _publish_progress()
                             return asset_ref, None, None
+                        # Brief delay between downloads to avoid overwhelming the server
+                        await asyncio.sleep(0.5)
                         try:
                             # Classic ICPSR: 3-step form flow (sync, run in thread)
                             if "zipcart2" in asset_ref.asset_url:
