@@ -323,8 +323,10 @@ class ETLRunner:
                     await c.rate_limiter.async_wait()
 
                     dataset_slug = (
-                        record.raw.get("dataset_slug") if record.raw else None
-                    ) or "dataset"
+                        record.download_project_folder
+                        or (record.raw.get("dataset_slug") if record.raw else None)
+                        or "dataset"
+                    )
                     target_dir = c.path_strategy.dataset_dir(
                         downloads_root,
                         source_name=record.source_name,
