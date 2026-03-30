@@ -497,15 +497,17 @@ class ETLRunner:
 
                     # Restore prior download statuses from DB so the policy
                     # can skip already-downloaded files on resume.
-                    # Lookup by file_name, URL-derived name, and full asset_url.
+                    # Prioritize asset_url match (reliable) over file_name (may differ).
+                    # Skip UNKNOWN statuses as they indicate unresolved entries.
                     if hasattr(c.sink, "get_file_statuses"):
                         prior_statuses = c.sink.get_file_statuses(dataset_id)
                         for asset in record.assets:
                             fname = asset.local_filename or asset.asset_url.rsplit("/", 1)[-1]
-                            status = prior_statuses.get(fname) or prior_statuses.get(
-                                asset.asset_url
+                            # Try asset_url first (most reliable), then file_name
+                            status = prior_statuses.get(asset.asset_url) or prior_statuses.get(
+                                fname
                             )
-                            if status:
+                            if status and status != "UNKNOWN":
                                 asset.download_status = status
 
                     dataset_slug = (
@@ -616,10 +618,12 @@ class ETLRunner:
                                     downloaded += len(zip_files) - 1
                                     await _publish_progress()
 
-                    # Update sink with download results
+                    # Update sink with download results (skip policy-skipped assets
+                    # to avoid overwriting good DB statuses like SUCCESS with SKIPPED)
                     try:
                         for asset in record.assets:
-                            c.sink.upsert_asset(dataset_id, asset)
+                            if asset.download_status != DOWNLOAD_STATUS_SKIPPED:
+                                c.sink.upsert_asset(dataset_id, asset)
                     except Exception as exc:
                         log.error("Sink update error for %s: %s", dataset_id, exc)
 

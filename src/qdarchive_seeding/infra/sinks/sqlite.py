@@ -270,10 +270,10 @@ class SQLiteSink(BaseSink):
         result: dict[str, str] = {}
         for row in rows:
             fname, url, status = row[0], row[1], row[2]
-            if fname:
-                result[fname] = status
-            if url:
-                result[url] = status
+            # Prefer non-UNKNOWN statuses: don't overwrite a meaningful status
+            for key in (fname, url):
+                if key and (key not in result or result[key] == "UNKNOWN"):
+                    result[key] = status
         return result
 
     def get_existing_dataset_ids(self, repository_id: int) -> set[str]:
