@@ -109,7 +109,19 @@ class Downloader:
                 checksum = await self._stream_to_file(
                     response, fh, asset.asset_url, total_bytes, progress_cb
                 )
-        os.replace(temp_path, final_path)
+        if not temp_path.exists():
+            # .part file missing after streaming — possibly already renamed or disk issue
+            if final_path.exists():
+                # Another concurrent download already placed the file; treat as success
+                pass
+            else:
+                raise FileNotFoundError(
+                    f"Download streamed but .part file missing: {temp_path} "
+                    f"(dir exists: {target_dir.exists()}, "
+                    f"dir contents: {len(list(target_dir.iterdir()))} files)"
+                )
+        else:
+            os.replace(temp_path, final_path)
         asset.local_dir = str(target_dir)
         asset.local_filename = final_path.name
         asset.download_status = DOWNLOAD_STATUS_SUCCESS
