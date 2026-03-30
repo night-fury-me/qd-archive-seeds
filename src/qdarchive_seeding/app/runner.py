@@ -475,9 +475,10 @@ class ETLRunner:
                             return asset_ref, None, None
                         # Brief delay between downloads to avoid overwhelming the server
                         await asyncio.sleep(0.5)
-                        try:
-                            # Classic ICPSR: 3-step form flow (sync, run in thread)
-                            if "zipcart2" in asset_ref.asset_url:
+
+                        # Classic ICPSR: 3-step form flow (no retry)
+                        if "zipcart2" in asset_ref.asset_url:
+                            try:
                                 from qdarchive_seeding.infra.storage.icpsr_downloader import (
                                     download_classic_icpsr,
                                 )
@@ -504,77 +505,108 @@ class ETLRunner:
                                     async with _counter_lock:
                                         failed += 1
                                         await _publish_progress()
-                                return asset_ref, None, None
-
-                            # Per-asset progress callback avoids shared state
-                            def _on_progress(bytes_so_far: int, total_bytes: int | None) -> None:
-                                bus.publish(
-                                    AssetDownloadProgress(
-                                        asset_url=asset_ref.asset_url,
-                                        bytes_downloaded=bytes_so_far,
-                                        total_bytes=total_bytes,
-                                    )
-                                )
-
-                            dl_result = await c.downloader.download(
-                                asset_ref, target, progress_callback=_on_progress
-                            )
-                            # Update counters immediately
-                            async with _counter_lock:
-                                if (
-                                    dl_result
-                                    and dl_result.asset.download_status == DOWNLOAD_STATUS_SUCCESS
-                                ):
-                                    downloaded += 1
-                                    bus.publish(
-                                        AssetDownloadUpdate(
-                                            asset_url=asset_ref.asset_url,
-                                            status=DOWNLOAD_STATUS_SUCCESS,
-                                            bytes_downloaded=dl_result.bytes_downloaded,
-                                        )
-                                    )
-                                else:
+                            except Exception as icpsr_exc:
+                                asset_ref.download_status = DOWNLOAD_STATUS_FAILED
+                                asset_ref.error_message = str(icpsr_exc)
+                                async with _counter_lock:
                                     failed += 1
-                                    failures.append(
-                                        {
-                                            "asset_url": asset_ref.asset_url,
-                                            "error": "non-success status",
-                                        }
-                                    )
-                                await _publish_progress()
-                            return asset_ref, dl_result, None
-                        except Exception as dl_exc:
-                            asset_ref.download_status = DOWNLOAD_STATUS_FAILED
-                            asset_ref.error_message = str(dl_exc)
-                            err_str = str(dl_exc)
-                            async with _counter_lock:
-                                failed += 1
-                                failures.append(
-                                    {"asset_url": asset_ref.asset_url, "error": err_str}
+                                    await _publish_progress()
+                            return asset_ref, None, None
+
+                        # Per-asset progress callback
+                        def _on_progress(bytes_so_far: int, total_bytes: int | None) -> None:
+                            bus.publish(
+                                AssetDownloadProgress(
+                                    asset_url=asset_ref.asset_url,
+                                    bytes_downloaded=bytes_so_far,
+                                    total_bytes=total_bytes,
                                 )
-                                is_suppressed = (
-                                    not err_str.strip()
-                                    or any(code in err_str for code in _access_codes)
-                                    or any(code in err_str for code in _transient_codes)
+                            )
+
+                        # Retry loop for transient errors (DNS, timeout, connection)
+                        max_retries = 3
+                        last_exc: Exception | None = None
+                        for attempt in range(max_retries + 1):
+                            try:
+                                dl_result = await c.downloader.download(
+                                    asset_ref, target, progress_callback=_on_progress
                                 )
-                                if is_suppressed:
-                                    access_denied += 1
-                                else:
-                                    bus.publish(
-                                        ErrorEvent(
-                                            component="downloader",
-                                            error_type=type(dl_exc).__name__,
-                                            message=err_str,
-                                            asset_url=asset_ref.asset_url,
+                                # Success — update counters
+                                async with _counter_lock:
+                                    if (
+                                        dl_result
+                                        and dl_result.asset.download_status
+                                        == DOWNLOAD_STATUS_SUCCESS
+                                    ):
+                                        downloaded += 1
+                                        bus.publish(
+                                            AssetDownloadUpdate(
+                                                asset_url=asset_ref.asset_url,
+                                                status=DOWNLOAD_STATUS_SUCCESS,
+                                                bytes_downloaded=dl_result.bytes_downloaded,
+                                            )
                                         )
-                                    )
-                                    log.error(
-                                        "Download failed for %s: %s",
+                                    else:
+                                        failed += 1
+                                        failures.append(
+                                            {
+                                                "asset_url": asset_ref.asset_url,
+                                                "error": "non-success status",
+                                            }
+                                        )
+                                    await _publish_progress()
+                                return asset_ref, dl_result, None
+                            except Exception as dl_exc:
+                                last_exc = dl_exc
+                                err_str = str(dl_exc)
+                                is_transient = any(code in err_str for code in _transient_codes)
+                                if is_transient and attempt < max_retries:
+                                    backoff = 2 ** (attempt + 1)
+                                    log.debug(
+                                        "Transient error for %s (attempt %d/%d), "
+                                        "retrying in %ds: %s",
                                         asset_ref.asset_url,
-                                        dl_exc,
+                                        attempt + 1,
+                                        max_retries + 1,
+                                        backoff,
+                                        err_str,
                                     )
+                                    await asyncio.sleep(backoff)
+                                    continue
+                                # Permanent error or retries exhausted
+                                break
+
+                        # All retries failed
+                        assert last_exc is not None  # noqa: S101
+                        asset_ref.download_status = DOWNLOAD_STATUS_FAILED
+                        asset_ref.error_message = str(last_exc)
+                        err_str = str(last_exc)
+                        async with _counter_lock:
+                            failed += 1
+                            failures.append({"asset_url": asset_ref.asset_url, "error": err_str})
+                            is_suppressed = (
+                                not err_str.strip()
+                                or any(code in err_str for code in _access_codes)
+                                or any(code in err_str for code in _transient_codes)
+                            )
+                            if is_suppressed:
+                                access_denied += 1
+                            else:
+                                bus.publish(
+                                    ErrorEvent(
+                                        component="downloader",
+                                        error_type=type(last_exc).__name__,
+                                        message=err_str,
+                                        asset_url=asset_ref.asset_url,
+                                    )
+                                )
+                                log.error(
+                                    "Download failed for %s: %s",
+                                    asset_ref.asset_url,
+                                    last_exc,
+                                )
                                 await _publish_progress()
-                            return asset_ref, None, dl_exc
+                            return asset_ref, None, last_exc
 
                 async def _process_dataset(record: Any, dataset_id: str) -> None:
                     nonlocal downloaded
