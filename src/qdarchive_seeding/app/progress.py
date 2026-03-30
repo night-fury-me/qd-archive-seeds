@@ -51,6 +51,7 @@ class CountersUpdated:
     downloaded: int = 0
     failed: int = 0
     skipped: int = 0
+    access_denied: int = 0
     total_assets: int = 0
 
 

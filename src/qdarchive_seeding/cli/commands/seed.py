@@ -84,6 +84,7 @@ class CliProgressDisplay:
         # Download phase task IDs
         self._overall_id: TaskID | None = None
         self._file_id: TaskID | None = None
+        self._denied_id: TaskID | None = None
         self._total_assets: int = 0
         self._completed_assets: int = 0
 
@@ -208,6 +209,14 @@ class CliProgressDisplay:
                     self._overall_id,
                     total=self._total_assets,
                 )
+        if event.access_denied > 0 and self._progress is not None and self._denied_id is not None:
+            self._progress.update(
+                self._denied_id,
+                description=(
+                    f"[yellow]Access denied: {event.access_denied} files (restricted)[/yellow]"
+                ),
+                visible=True,
+            )
 
     def _on_metadata_collected(self, event: MetadataCollected) -> None:
         self._stop_progress()
@@ -258,6 +267,9 @@ class CliProgressDisplay:
         )
         self._overall_id = self._progress.add_task(label, total=self._total_assets or None)
         self._file_id = self._progress.add_task("Current file", total=None)
+        self._denied_id = self._progress.add_task(
+            "Access denied: 0 files", total=None, visible=False
+        )
         self._progress.start()
         self._suppress_console_logs()
 

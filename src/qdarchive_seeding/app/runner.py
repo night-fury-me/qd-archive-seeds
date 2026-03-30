@@ -159,6 +159,7 @@ class ETLRunner:
         loaded = 0
         failed = 0
         skipped = 0
+        access_denied = 0
         failures: list[dict[str, Any]] = []
         total_assets = 0
 
@@ -468,16 +469,29 @@ class ETLRunner:
                             continue
                         if dl_error is not None:
                             failed += 1
-                            failures.append({"asset_url": asset.asset_url, "error": str(dl_error)})
-                            bus.publish(
-                                ErrorEvent(
-                                    component="downloader",
-                                    error_type=type(dl_error).__name__,
-                                    message=str(dl_error),
-                                    asset_url=asset.asset_url,
-                                )
+                            err_str = str(dl_error)
+                            failures.append({"asset_url": asset.asset_url, "error": err_str})
+                            # Suppress verbose logs for access-restricted errors
+                            _access_codes = (
+                                "403",
+                                "401",
+                                "Forbidden",
+                                "Unauthorized",
+                                "login page",
                             )
-                            log.error("Download failed for %s: %s", asset.asset_url, dl_error)
+                            is_access_error = any(code in err_str for code in _access_codes)
+                            if is_access_error:
+                                access_denied += 1
+                            else:
+                                bus.publish(
+                                    ErrorEvent(
+                                        component="downloader",
+                                        error_type=type(dl_error).__name__,
+                                        message=err_str,
+                                        asset_url=asset.asset_url,
+                                    )
+                                )
+                                log.error("Download failed for %s: %s", asset.asset_url, dl_error)
                         elif dl_result is not None:
                             bus.publish(
                                 AssetDownloadUpdate(
@@ -535,9 +549,12 @@ class ETLRunner:
                             downloaded=downloaded,
                             failed=failed,
                             skipped=skipped,
+                            access_denied=access_denied,
                             total_assets=download_asset_count,
                         )
                     )
+                if access_denied > 0:
+                    log.info("Skipped %d files due to access restrictions (401/403)", access_denied)
         elif dry_run:
             skipped = total_assets
 
