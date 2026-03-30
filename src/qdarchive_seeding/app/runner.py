@@ -421,11 +421,13 @@ class ETLRunner:
                     "Bad Request",
                     "Not Found",
                     "login page",
-                    "Server disconnected",
+                )
+                _transient_codes = (
                     "name resolution",
                     "timed out",
                     "ConnectError",
                     "RemoteProtocolError",
+                    "Server disconnected",
                 )
 
                 # Concurrency lock for shared counter updates
@@ -548,10 +550,12 @@ class ETLRunner:
                                 failures.append(
                                     {"asset_url": asset_ref.asset_url, "error": err_str}
                                 )
-                                is_access_error = not err_str.strip() or any(
-                                    code in err_str for code in _access_codes
+                                is_suppressed = (
+                                    not err_str.strip()
+                                    or any(code in err_str for code in _access_codes)
+                                    or any(code in err_str for code in _transient_codes)
                                 )
-                                if is_access_error:
+                                if is_suppressed:
                                     access_denied += 1
                                 else:
                                     bus.publish(
@@ -652,7 +656,9 @@ class ETLRunner:
                 ]
                 await asyncio.gather(*dataset_tasks)
                 if access_denied > 0:
-                    log.info("Skipped %d files due to access restrictions (401/403)", access_denied)
+                    log.info(
+                        "Suppressed %d download errors (access denied / network)", access_denied
+                    )
         elif dry_run:
             skipped = total_assets
 

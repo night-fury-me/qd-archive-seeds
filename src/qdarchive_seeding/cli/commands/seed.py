@@ -227,7 +227,8 @@ class CliProgressDisplay:
             self._progress.update(
                 self._denied_id,
                 description=(
-                    f"[yellow]Access denied: {event.access_denied} files (restricted)[/yellow]"
+                    f"[yellow]Errors: {event.access_denied} files"
+                    " (access denied / network)[/yellow]"
                 ),
                 visible=True,
                 total=0,
@@ -277,7 +278,7 @@ class CliProgressDisplay:
         )
         self._overall_id = self._progress.add_task(label, total=self._total_assets or None)
         self._file_id = self._progress.add_task("Current file", total=None)
-        self._denied_id = self._progress.add_task("Access denied: 0 files", total=0, visible=False)
+        self._denied_id = self._progress.add_task("Errors: 0 files", total=0, visible=False)
         self._progress.start()
         self._suppress_console_logs()
 
