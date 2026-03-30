@@ -401,13 +401,30 @@ def _prompt_download_decision(
 
 
 def _prompt_icpsr_login(icpsr_count: int) -> bool:
-    """Notify the user about ICPSR browser session requirement."""
+    """Prompt the user for confirmation about ICPSR browser session requirement.
+
+    Returns True if the user confirms to proceed, False to skip ICPSR downloads.
+    """
+    import sys
+
     print(flush=True)
-    print(f"  ICPSR: {icpsr_count} files require an active browser session.")
-    print("  Ensure you are logged into ICPSR via institutional SSO in Chromium.")
+    print(f"  ICPSR: {icpsr_count} files require an active browser login session.")
+    print("  These files can only be downloaded if you are logged into ICPSR")
+    print("  via institutional SSO in a Chromium-based browser on this machine.")
     print("  Login URL: https://www.icpsr.umich.edu/mydata")
     print(flush=True)
-    return True
+    sys.stdout.flush()
+
+    try:
+        raw = input("Continue with ICPSR downloads? [y/N]: ").strip().lower()
+    except (ValueError, EOFError):
+        raw = ""
+
+    if raw in ("y", "yes"):
+        return True
+
+    print("  Skipping ICPSR downloads.")
+    return False
 
 
 @seed_app.command("run")
