@@ -218,12 +218,15 @@ class CliProgressDisplay:
                 completed = min(completed, self._total_assets)
             self._progress.update(self._overall_id, completed=completed)
         if event.access_denied > 0 and self._progress is not None and self._denied_id is not None:
+            # Show as text-only — no progress bar needed for a simple counter
             self._progress.update(
                 self._denied_id,
                 description=(
                     f"[yellow]Access denied: {event.access_denied} files (restricted)[/yellow]"
                 ),
                 visible=True,
+                total=0,
+                completed=0,
             )
 
     def _on_metadata_collected(self, event: MetadataCollected) -> None:
@@ -275,9 +278,7 @@ class CliProgressDisplay:
         )
         self._overall_id = self._progress.add_task(label, total=self._total_assets or None)
         self._file_id = self._progress.add_task("Current file", total=None)
-        self._denied_id = self._progress.add_task(
-            "Access denied: 0 files", total=None, visible=False
-        )
+        self._denied_id = self._progress.add_task("Access denied: 0 files", total=0, visible=False)
         self._progress.start()
         self._suppress_console_logs()
 
