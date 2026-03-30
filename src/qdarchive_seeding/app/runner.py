@@ -647,9 +647,16 @@ class ETLRunner:
                     except Exception as exc:
                         log.error("Sink update error for %s: %s", dataset_id, exc)
 
-                # Process all datasets concurrently
+                # Process datasets with limited concurrency to avoid
+                # overwhelming DNS/network resources.
+                dataset_sem = asyncio.Semaphore(5)
+
+                async def _throttled_dataset(record: Any, dataset_id: str) -> None:
+                    async with dataset_sem:
+                        await _process_dataset(record, dataset_id)
+
                 dataset_tasks = [
-                    _process_dataset(record, dataset_id)
+                    _throttled_dataset(record, dataset_id)
                     for record, dataset_id in zip(
                         records_to_download, dataset_ids_to_download, strict=True
                     )
