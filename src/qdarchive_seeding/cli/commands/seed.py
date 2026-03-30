@@ -374,22 +374,22 @@ def _prompt_download_decision(
 
 def _prompt_icpsr_login(icpsr_count: int) -> bool:
     """Prompt the user to confirm ICPSR browser login before downloading."""
-    console.print()
-    console.print(
-        f"[bold yellow]ICPSR datasets detected:[/bold yellow] "
-        f"{icpsr_count} files require an active ICPSR browser session."
-    )
-    console.print(
-        "  Please log into ICPSR via your institutional SSO in Chromium before proceeding."
-    )
-    console.print("  Login URL: https://www.icpsr.umich.edu/mydata")
-    console.print()
-    console.print("[bold]Options:[/bold]")
-    console.print("  [Y] Yes, I am logged in — proceed with ICPSR downloads")
-    console.print("  [n] No, skip ICPSR downloads (other downloads will continue)")
-    console.print()
-    choice = typer.prompt("Proceed with ICPSR downloads? (y/n)", type=str, default="y")
-    return choice.strip().lower() in ("y", "yes")
+    import sys
+
+    print(flush=True)
+    print(f"  ICPSR datasets detected: {icpsr_count} files require an active browser session.")
+    print("  Please log into ICPSR via your institutional SSO in Chromium before proceeding.")
+    print("  Login URL: https://www.icpsr.umich.edu/mydata")
+    print()
+    print("  [y] Yes, I am logged in — proceed with ICPSR downloads")
+    print("  [n] No, skip ICPSR downloads (other downloads will continue)")
+    print(flush=True)
+    sys.stdout.flush()
+    try:
+        choice = input("Proceed with ICPSR downloads? (y/n): ")
+    except EOFError:
+        return False
+    return choice.strip().lower() in ("y", "yes", "")
 
 
 @seed_app.command("run")
