@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlparse
@@ -39,6 +39,7 @@ class HarvardDataverseExtractor:
     http_client: HttpClient
     auth: AuthProvider
     options: HarvardDataverseOptions
+    _icpsr_cookie_cache: dict[str, str] = field(default_factory=dict, repr=False)
 
     async def extract(self, ctx: RunContext) -> AsyncIterator[DatasetRecord]:
         """Yield records, iterating over multiple queries if search_strategy is set."""
@@ -299,6 +300,10 @@ class HarvardDataverseExtractor:
             else:
                 assets = await self._fetch_files(ctx, global_id)
 
+        # If no files were found and origin is ICPSR, construct download URLs directly
+        if not assets and is_harvested and harvested_from:
+            assets = self._build_icpsr_assets(ctx, global_id, harvested_from)
+
         persons: list[PersonRole] = []
         for author in item.get("authors", []):
             if isinstance(author, str) and author:
@@ -330,6 +335,84 @@ class HarvardDataverseExtractor:
             assets=assets,
             raw=item,
         )
+
+    def _build_icpsr_assets(
+        self,
+        ctx: RunContext,
+        global_id: str,
+        harvested_from: str,
+    ) -> list[AssetRecord]:
+        """Build download assets for ICPSR datasets (Classic or Open)."""
+        from qdarchive_seeding.infra.extractors.icpsr_utils import (
+            ICPSR_CLASSIC_HOST,
+            ICPSR_OPEN_HOST,
+            build_classic_icpsr_download_url,
+            build_open_icpsr_download_url,
+            parse_icpsr_doi,
+        )
+
+        if harvested_from not in (ICPSR_CLASSIC_HOST, ICPSR_OPEN_HOST):
+            return []
+
+        info = parse_icpsr_doi(global_id)
+        if info is None:
+            return []
+
+        if info.icpsr_type == "classic":
+            logger.info(
+                "Classic ICPSR %s — requires manual download (zipcart2 form flow)",
+                global_id,
+            )
+            return [
+                AssetRecord(
+                    asset_url=build_classic_icpsr_download_url(info.study_id),
+                    asset_type="zip_bundle",
+                    local_filename=f"ICPSR{info.study_id}.zip",
+                    download_status="SKIPPED",
+                    metadata={"icpsr_type": "classic", "requires_manual": True},
+                )
+            ]
+
+        # Open ICPSR — can download with browser session cookies
+        download_url = build_open_icpsr_download_url(info.study_id, info.version)
+        cookie_header = self._get_icpsr_cookies(ctx, ICPSR_OPEN_HOST)
+
+        metadata: dict[str, Any] = {"icpsr_type": "open"}
+        if cookie_header:
+            metadata["auth_headers"] = {"Cookie": cookie_header}
+        else:
+            logger.warning(
+                "No browser cookies for %s — Open ICPSR downloads will likely fail. "
+                "Log into ICPSR in your browser first.",
+                ICPSR_OPEN_HOST,
+            )
+
+        logger.info("Open ICPSR %s — download URL constructed", global_id)
+        return [
+            AssetRecord(
+                asset_url=download_url,
+                asset_type="zip_bundle",
+                local_filename=f"openicpsr_{info.study_id}.zip",
+                metadata=metadata,
+            )
+        ]
+
+    def _get_icpsr_cookies(self, ctx: RunContext, domain: str) -> str:
+        """Lazily extract and cache browser cookies for ICPSR domains."""
+        if domain in self._icpsr_cookie_cache:
+            return self._icpsr_cookie_cache[domain]
+
+        ext_auth = ctx.config.external_auth.get(domain)
+        if ext_auth is None or ext_auth.type != "browser_session":
+            self._icpsr_cookie_cache[domain] = ""
+            return ""
+
+        from qdarchive_seeding.infra.http.browser_cookies import BrowserCookieExtractor
+
+        extractor = BrowserCookieExtractor(browser=ext_auth.browser)  # type: ignore[arg-type]
+        cookie_header = extractor.get_cookie_header(domain)
+        self._icpsr_cookie_cache[domain] = cookie_header
+        return cookie_header
 
     async def _resolve_origin_base_url(self, dataset_url: str) -> str | None:
         """Resolve a DOI or redirect URL to the actual Dataverse API base URL.
@@ -390,9 +473,13 @@ class HarvardDataverseExtractor:
         headers: dict[str, str] = {}
         params: dict[str, Any] = {"persistentId": persistent_id}
         # Apply auth: our own token for our Dataverse, external auth for others
+        # Also capture auth headers to store in each asset for the downloader
         origin_auth_headers: dict[str, str] = {}
         if base_url_override is None:
             headers, params = self.auth.apply(headers, params)
+            # Capture our auth headers so the downloader can apply them per-request
+            native_headers, _ = self.auth.apply({}, {})
+            origin_auth_headers = native_headers
         else:
             origin_host = urlparse(base_url_override).netloc.lower()
             ext_auth = ctx.config.external_auth.get(origin_host)

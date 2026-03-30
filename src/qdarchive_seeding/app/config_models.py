@@ -82,9 +82,10 @@ class AuthSettings(BaseConfig):
 class ExternalAuthEntry(BaseConfig):
     """Auth config for an external Dataverse host (used for harvested datasets)."""
 
-    type: Literal["api_key", "bearer"] = "api_key"
+    type: Literal["api_key", "bearer", "browser_session"] = "api_key"
     env: dict[str, str] = Field(default_factory=dict)
     header_name: str = "X-Dataverse-key"
+    browser: str = "chromium"
 
 
 class ExtractorSettings(BaseConfig):

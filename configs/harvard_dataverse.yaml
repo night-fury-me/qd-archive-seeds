@@ -188,6 +188,12 @@ external_auth:
     env:
       api_key: "NL_DATAVERSE_API_TOKEN"
     header_name: "X-Dataverse-key"
+  www.openicpsr.org:
+    type: "browser_session"
+    browser: "chromium"
+  www.icpsr.umich.edu:
+    type: "browser_session"
+    browser: "chromium"
 
 extractor:
   name: "harvard_dataverse_extractor"

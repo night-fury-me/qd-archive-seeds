@@ -150,6 +150,13 @@ def build_container(
             token = os.environ.get(ext_auth.env.get("api_key", ""), "")
             if token:
                 host_auth_map[host.lower()] = {ext_auth.header_name: token}
+        elif ext_auth.type == "browser_session":
+            from qdarchive_seeding.infra.http.browser_cookies import BrowserCookieExtractor
+
+            cookie_extractor = BrowserCookieExtractor(browser=ext_auth.browser)  # type: ignore[arg-type]
+            cookie_header = cookie_extractor.get_cookie_header(host)
+            if cookie_header:
+                host_auth_map[host.lower()] = {"Cookie": cookie_header}
 
     def _resolve_auth(asset_url: str) -> dict[str, str]:
         host = urlparse(asset_url).netloc.lower()
