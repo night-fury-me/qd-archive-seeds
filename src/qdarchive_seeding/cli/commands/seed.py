@@ -216,7 +216,12 @@ class CliProgressDisplay:
             completed = event.downloaded + event.failed + event.access_denied + event.skipped
             if self._total_assets > 0:
                 completed = min(completed, self._total_assets)
-            self._progress.update(self._overall_id, completed=completed)
+            self._completed_assets = completed
+            self._progress.update(
+                self._overall_id,
+                description=f"Downloading assets ({completed}/{self._total_assets})",
+                completed=completed,
+            )
         if event.access_denied > 0 and self._progress is not None and self._denied_id is not None:
             # Show as text-only — no progress bar needed for a simple counter
             self._progress.update(
@@ -255,14 +260,8 @@ class CliProgressDisplay:
             )
 
     def _on_asset_download(self, _event: AssetDownloadUpdate) -> None:
-        self._completed_assets += 1
-        if self._progress is not None and self._overall_id is not None:
-            total = self._total_assets or 0
-            self._progress.update(
-                self._overall_id,
-                description=f"Downloading assets ({self._completed_assets}/{total})",
-                completed=self._completed_assets,
-            )
+        # Reset the per-file progress bar for the next file;
+        # overall bar is updated by _on_counters to keep description and % in sync.
         if self._progress is not None and self._file_id is not None:
             self._progress.reset(self._file_id)
 
