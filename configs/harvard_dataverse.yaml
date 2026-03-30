@@ -156,7 +156,37 @@ external_auth:
   data.qdr.syr.edu:
     type: "api_key"
     env:
-      api_key: "QDR_API_TOKEN"
+      api_key: "SYRACUSE_DATAVERSE_API_TOKEN"
+    header_name: "X-Dataverse-key"
+  edatos.consorciomadrono.es:
+    type: "api_key"
+    env:
+      api_key: "EDATOS_DATAVERSE_API_TOKEN"
+    header_name: "X-Dataverse-key"
+  dataverse.cirad.fr:
+    type: "api_key"
+    env:
+      api_key: "CIRAD_DATAVERSE_API_TOKEN"
+    header_name: "X-Dataverse-key"
+  dataverse.nl:
+    type: "api_key"
+    env:
+      api_key: "NL_DATAVERSE_API_TOKEN"
+    header_name: "X-Dataverse-key"
+  ssh.datastations.nl:
+    type: "api_key"
+    env:
+      api_key: "NL_DATAVERSE_API_TOKEN"
+    header_name: "X-Dataverse-key"
+  lifesciences.datastations.nl:
+    type: "api_key"
+    env:
+      api_key: "NL_DATAVERSE_API_TOKEN"
+    header_name: "X-Dataverse-key"
+  phys-techsciences.datastations.nl:
+    type: "api_key"
+    env:
+      api_key: "NL_DATAVERSE_API_TOKEN"
     header_name: "X-Dataverse-key"
 
 extractor:
