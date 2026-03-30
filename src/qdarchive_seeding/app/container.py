@@ -138,7 +138,7 @@ def build_container(
         ),
     }
     download_client = httpx.AsyncClient(
-        timeout=60.0,
+        timeout=120.0,
         headers=download_headers,
         follow_redirects=True,
     )
