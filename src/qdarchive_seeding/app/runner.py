@@ -339,17 +339,21 @@ class ETLRunner:
                 skipped = total_assets
             elif collected_records:
                 downloads_root = Path(c.config.storage.downloads_root)
+                # Track assets excluded before the download phase separately
+                # so they don't inflate the progress bar's completed count.
+                pre_excluded = 0
                 if decision.exact_count is not None:
                     limit = max(1, min(len(collected_records), decision.exact_count))
                     records_to_download = collected_records[:limit]
                     dataset_ids_to_download = collected_dataset_ids[:limit]
-                    skipped += sum(len(r.assets) for r in collected_records[limit:])
+                    pre_excluded = sum(len(r.assets) for r in collected_records[limit:])
+                    skipped += pre_excluded
                 elif not decision.download_all and decision.percentage < 100:
                     limit = max(1, len(collected_records) * decision.percentage // 100)
                     records_to_download = collected_records[:limit]
                     dataset_ids_to_download = collected_dataset_ids[:limit]
-                    # Count assets from excluded datasets as skipped
-                    skipped += sum(len(r.assets) for r in collected_records[limit:])
+                    pre_excluded = sum(len(r.assets) for r in collected_records[limit:])
+                    skipped += pre_excluded
                 else:
                     records_to_download = collected_records
                     dataset_ids_to_download = collected_dataset_ids
@@ -581,7 +585,7 @@ class ETLRunner:
                             transformed=transformed,
                             downloaded=downloaded,
                             failed=failed,
-                            skipped=skipped,
+                            skipped=skipped - pre_excluded,
                             access_denied=access_denied,
                             total_assets=download_asset_count,
                         )
