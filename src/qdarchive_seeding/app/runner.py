@@ -409,7 +409,7 @@ class ETLRunner:
                 )
 
                 # Global semaphore for concurrent downloads across all datasets
-                download_sem = asyncio.Semaphore(10)
+                download_sem = asyncio.Semaphore(5)
 
                 _access_codes = (
                     "403",
