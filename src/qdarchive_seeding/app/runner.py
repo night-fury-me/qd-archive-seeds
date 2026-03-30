@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import platform
 import sys
@@ -513,7 +514,7 @@ class ETLRunner:
                                 )
 
                     # Extract ZIP bundles and update asset records
-                    for asset in record.assets:
+                    for asset in list(record.assets):
                         is_zip = asset.asset_type == "zip_bundle" or (
                             asset.local_filename or ""
                         ).lower().endswith(".zip")
@@ -529,6 +530,9 @@ class ETLRunner:
                                 log,
                             )
                             if zip_files:
+                                # Persist the original ZIP asset as SUCCESS before replacing
+                                with contextlib.suppress(Exception):
+                                    c.sink.upsert_asset(dataset_id, asset)
                                 # Replace the single ZIP asset with individual files
                                 new_assets: list[Any] = [a for a in record.assets if a is not asset]
                                 new_assets.extend(zip_files)
