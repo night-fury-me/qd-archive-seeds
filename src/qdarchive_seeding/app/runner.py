@@ -399,6 +399,7 @@ class ETLRunner:
                                 )
                                 if zip_path is not None:
                                     asset_ref.download_status = DOWNLOAD_STATUS_SUCCESS
+                                    asset_ref.asset_type = "zip_bundle"
                                     from datetime import UTC, datetime
 
                                     asset_ref.downloaded_at = datetime.now(UTC)
@@ -499,9 +500,12 @@ class ETLRunner:
 
                     # Extract ZIP bundles and update asset records
                     for asset in record.assets:
+                        is_zip = asset.asset_type == "zip_bundle" or (
+                            asset.local_filename or ""
+                        ).lower().endswith(".zip")
                         if (
                             asset.download_status == DOWNLOAD_STATUS_SUCCESS
-                            and asset.asset_type == "zip_bundle"
+                            and is_zip
                             and asset.local_dir
                             and asset.local_filename
                         ):
