@@ -210,9 +210,10 @@ class CliProgressDisplay:
                     self._overall_id,
                     total=self._total_assets,
                 )
-        # Update completed count — only assets actually attempted in the download subset
+        # Update completed count — include skipped so already-downloaded assets
+        # immediately advance the progress bar instead of leaving a gap.
         if self._progress is not None and self._overall_id is not None:
-            completed = event.downloaded + event.failed + event.access_denied
+            completed = event.downloaded + event.failed + event.access_denied + event.skipped
             if self._total_assets > 0:
                 completed = min(completed, self._total_assets)
             self._progress.update(self._overall_id, completed=completed)
@@ -416,7 +417,7 @@ def _prompt_icpsr_login(icpsr_count: int) -> bool:
     body.append("Login is optional", style="bold")
     body.append(" — the pipeline will continue either way.\n")
     body.append("If you are not logged in, ICPSR files will be ")
-    body.append("skipped", style="bold red")
+    body.append("skipped or won't be able to download", style="bold red")
     body.append("; all other downloads proceed normally.\n\n")
     body.append("To log in:\n")
     body.append("  1. Open a Chromium-based browser on this machine\n")
