@@ -516,59 +516,75 @@ class ETLRunner:
                     )
                     c.filesystem.ensure_dir(target_dir)
 
+                    async def _publish_progress() -> None:
+                        """Publish current counter state to the progress bus."""
+                        bus.publish(
+                            CountersUpdated(
+                                extracted=extracted,
+                                transformed=transformed,
+                                downloaded=downloaded,
+                                failed=failed,
+                                skipped=skipped - pre_excluded,
+                                access_denied=access_denied,
+                                total_assets=download_asset_count,
+                            )
+                        )
+
                     tasks = [
                         _download_one(asset, target_dir, download_sem) for asset in record.assets
                     ]
                     results = await asyncio.gather(*tasks)
 
-                    # Accumulate local counters then update shared state once
-                    local_downloaded = 0
-                    local_failed = 0
-                    local_skipped = 0
-                    local_access_denied = 0
-
                     for asset, dl_result, dl_error in results:
-                        if asset.download_status == DOWNLOAD_STATUS_SKIPPED:
-                            local_skipped += 1
-                            continue
-                        if dl_error is not None:
-                            local_failed += 1
-                            err_str = str(dl_error)
-                            failures.append({"asset_url": asset.asset_url, "error": err_str})
-                            is_access_error = not err_str.strip() or any(
-                                code in err_str for code in _access_codes
-                            )
-                            if is_access_error:
-                                local_access_denied += 1
-                            else:
+                        # Update shared counters per-asset for real-time progress
+                        async with _counter_lock:
+                            if asset.download_status == DOWNLOAD_STATUS_SKIPPED:
+                                skipped += 1
+                                await _publish_progress()
+                                continue
+                            if dl_error is not None:
+                                failed += 1
+                                err_str = str(dl_error)
+                                failures.append({"asset_url": asset.asset_url, "error": err_str})
+                                is_access_error = not err_str.strip() or any(
+                                    code in err_str for code in _access_codes
+                                )
+                                if is_access_error:
+                                    access_denied += 1
+                                else:
+                                    bus.publish(
+                                        ErrorEvent(
+                                            component="downloader",
+                                            error_type=type(dl_error).__name__,
+                                            message=err_str,
+                                            asset_url=asset.asset_url,
+                                        )
+                                    )
+                                    log.error(
+                                        "Download failed for %s: %s",
+                                        asset.asset_url,
+                                        dl_error,
+                                    )
+                            elif dl_result is not None:
                                 bus.publish(
-                                    ErrorEvent(
-                                        component="downloader",
-                                        error_type=type(dl_error).__name__,
-                                        message=err_str,
+                                    AssetDownloadUpdate(
                                         asset_url=asset.asset_url,
+                                        status=dl_result.asset.download_status
+                                        or DOWNLOAD_STATUS_SUCCESS,
+                                        bytes_downloaded=dl_result.bytes_downloaded,
                                     )
                                 )
-                                log.error("Download failed for %s: %s", asset.asset_url, dl_error)
-                        elif dl_result is not None:
-                            bus.publish(
-                                AssetDownloadUpdate(
-                                    asset_url=asset.asset_url,
-                                    status=dl_result.asset.download_status
-                                    or DOWNLOAD_STATUS_SUCCESS,
-                                    bytes_downloaded=dl_result.bytes_downloaded,
-                                )
-                            )
-                            if dl_result.asset.download_status == DOWNLOAD_STATUS_SUCCESS:
-                                local_downloaded += 1
-                            else:
-                                local_failed += 1
-                                failures.append(
-                                    {
-                                        "asset_url": asset.asset_url,
-                                        "error": "non-success status",
-                                    }
-                                )
+                                if dl_result.asset.download_status == DOWNLOAD_STATUS_SUCCESS:
+                                    downloaded += 1
+                                else:
+                                    failed += 1
+                                    failures.append(
+                                        {
+                                            "asset_url": asset.asset_url,
+                                            "error": "non-success status",
+                                        }
+                                    )
+                            await _publish_progress()
 
                     # Extract ZIP bundles and update asset records
                     for asset in list(record.assets):
@@ -592,7 +608,9 @@ class ETLRunner:
                                 new_assets: list[Any] = [a for a in record.assets if a is not asset]
                                 new_assets.extend(zip_files)
                                 record.assets = new_assets
-                                local_downloaded += len(zip_files) - 1
+                                async with _counter_lock:
+                                    downloaded += len(zip_files) - 1
+                                    await _publish_progress()
 
                     # Update sink with download results
                     try:
@@ -600,24 +618,6 @@ class ETLRunner:
                             c.sink.upsert_asset(dataset_id, asset)
                     except Exception as exc:
                         log.error("Sink update error for %s: %s", dataset_id, exc)
-
-                    # Update shared counters and publish progress
-                    async with _counter_lock:
-                        downloaded += local_downloaded
-                        failed += local_failed
-                        skipped += local_skipped
-                        access_denied += local_access_denied
-                        bus.publish(
-                            CountersUpdated(
-                                extracted=extracted,
-                                transformed=transformed,
-                                downloaded=downloaded,
-                                failed=failed,
-                                skipped=skipped - pre_excluded,
-                                access_denied=access_denied,
-                                total_assets=download_asset_count,
-                            )
-                        )
 
                 # Process all datasets concurrently
                 dataset_tasks = [
