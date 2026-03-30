@@ -115,7 +115,7 @@ auth:
   placement: "header"
   header_name: "X-Dataverse-key"
   env:
-    api_key: "SYRACUSE_QDR_TOKEN"
+    api_key: "QDR_API_TOKEN"
 
 extractor:
   name: "syracuse_qdr_extractor"

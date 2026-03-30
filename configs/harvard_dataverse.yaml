@@ -156,7 +156,7 @@ external_auth:
   data.qdr.syr.edu:
     type: "api_key"
     env:
-      api_key: "SYRACUSE_QDR_TOKEN"
+      api_key: "QDR_API_TOKEN"
     header_name: "X-Dataverse-key"
 
 extractor:
