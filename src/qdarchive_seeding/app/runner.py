@@ -4,10 +4,11 @@ import asyncio
 import logging
 import platform
 import sys
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from qdarchive_seeding.app.config_models import PipelineConfig
@@ -50,6 +51,47 @@ class DownloadDecision:
     exact_count: int | None = None  # if set, download exactly this many datasets
 
 
+def _extract_zip_bundle(
+    zip_path: Path,
+    target_dir: Path,
+    log: logging.Logger,
+) -> list[Any]:
+    """Extract a ZIP bundle and return AssetRecords for individual files."""
+    from qdarchive_seeding.core.entities import AssetRecord
+
+    if not zip_path.exists() or not zipfile.is_zipfile(zip_path):
+        log.warning("Not a valid ZIP file: %s", zip_path)
+        return []
+
+    extracted: list[AssetRecord] = []
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(target_dir)
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                file_path = target_dir / info.filename
+                file_type = PurePosixPath(info.filename).suffix.lstrip(".") or None
+                extracted.append(
+                    AssetRecord(
+                        asset_url=zip_path.name,
+                        local_dir=str(file_path.parent),
+                        local_filename=file_path.name,
+                        file_type=file_type,
+                        size_bytes=info.file_size,
+                        download_status=DOWNLOAD_STATUS_SUCCESS,
+                        downloaded_at=datetime.now(UTC),
+                    )
+                )
+        # Remove the ZIP after successful extraction
+        zip_path.unlink()
+        log.info("Extracted %d files from %s", len(extracted), zip_path.name)
+    except Exception as exc:
+        log.error("Failed to extract ZIP %s: %s", zip_path, exc)
+        return []
+    return extracted
+
+
 class ETLRunner:
     def __init__(self, container: Container) -> None:
         self._c = container
@@ -63,6 +105,7 @@ class ETLRunner:
         fresh_extract: bool = False,
         download_decision: DownloadDecision | None = None,
         confirm_callback: Callable[[int, int, int], DownloadDecision] | None = None,
+        icpsr_confirm_callback: Callable[[int], bool] | None = None,
     ) -> RunInfo:
         c = self._c
         run_id = c.run_id
@@ -270,6 +313,22 @@ class ETLRunner:
                     )
                 )
 
+                # Check for ICPSR datasets and prompt user if callback provided
+                skip_icpsr = False
+                icpsr_count = sum(
+                    1
+                    for r in records_to_download
+                    for a in r.assets
+                    if "openicpsr.org" in a.asset_url or "icpsr.umich.edu" in a.asset_url
+                )
+                if (
+                    icpsr_count > 0
+                    and icpsr_confirm_callback is not None
+                    and not icpsr_confirm_callback(icpsr_count)
+                ):
+                    skip_icpsr = True
+                    log.info("User skipped ICPSR downloads (%d assets)", icpsr_count)
+
                 # Use semaphore for concurrent downloads within each record
                 download_sem = asyncio.Semaphore(5)
 
@@ -282,6 +341,13 @@ class ETLRunner:
                         if ctx.cancelled:
                             return asset_ref, None, None
                         if c.policy.should_skip_asset(asset_ref):
+                            asset_ref.download_status = DOWNLOAD_STATUS_SKIPPED
+                            return asset_ref, None, None
+                        # Skip ICPSR assets if user declined
+                        if skip_icpsr and (
+                            "openicpsr.org" in asset_ref.asset_url
+                            or "icpsr.umich.edu" in asset_ref.asset_url
+                        ):
                             asset_ref.download_status = DOWNLOAD_STATUS_SKIPPED
                             return asset_ref, None, None
                         try:
@@ -374,6 +440,28 @@ class ETLRunner:
                                         "error": "non-success status",
                                     }
                                 )
+
+                    # Extract ZIP bundles and update asset records
+                    for asset in record.assets:
+                        if (
+                            asset.download_status == DOWNLOAD_STATUS_SUCCESS
+                            and asset.asset_type == "zip_bundle"
+                            and asset.local_dir
+                            and asset.local_filename
+                        ):
+                            zip_files = _extract_zip_bundle(
+                                Path(asset.local_dir) / asset.local_filename,
+                                Path(asset.local_dir),
+                                log,
+                            )
+                            if zip_files:
+                                # Replace the single ZIP asset with individual files
+                                new_assets: list[Any] = [
+                                    a for a in record.assets if a is not asset
+                                ]
+                                new_assets.extend(zip_files)
+                                record.assets = new_assets
+                                downloaded += len(zip_files) - 1
 
                     # Update sink with download results
                     try:

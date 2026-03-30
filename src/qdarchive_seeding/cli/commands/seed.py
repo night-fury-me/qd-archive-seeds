@@ -372,6 +372,22 @@ def _prompt_download_decision(
         return DownloadDecision(download_all=False, percentage=0)
 
 
+def _prompt_icpsr_login(icpsr_count: int) -> bool:
+    """Prompt the user to confirm ICPSR browser login before downloading."""
+    console.print()
+    console.print(
+        f"[bold yellow]ICPSR datasets detected:[/bold yellow] "
+        f"{icpsr_count} files require an active ICPSR browser session."
+    )
+    console.print(
+        "  Please ensure you are logged into ICPSR via your institutional SSO "
+        "in Chromium before proceeding."
+    )
+    console.print("  Login URL: [link]https://www.icpsr.umich.edu/mydata[/link]")
+    console.print()
+    return typer.confirm("Are you logged into ICPSR in your browser?", default=True)
+
+
 @seed_app.command("run")
 def run_pipeline(
     config: Annotated[Path, typer.Option("--config", help="Path to YAML config file")],
@@ -424,6 +440,7 @@ def run_pipeline(
             metadata_only=metadata_only,
             fresh_extract=fresh_extract,
             confirm_callback=_prompt_download_decision if not no_confirm else None,
+            icpsr_confirm_callback=_prompt_icpsr_login if not no_confirm else None,
         )
     )
 
