@@ -158,6 +158,11 @@ external_auth:
     env:
       api_key: "SYRACUSE_DATAVERSE_API_TOKEN"
     header_name: "X-Dataverse-key"
+  borealisdata.ca:
+    type: "api_key"
+    env:
+      api_key: "BORIALIS_DATAVERSE_API_TOKEN"
+    header_name: "X-Dataverse-key"
   edatos.consorciomadrono.es:
     type: "api_key"
     env:
@@ -226,7 +231,7 @@ sink:
 http:
   timeout_seconds: 15
   max_retries: 5
-  rate_limit_per_second: 0.5
+  rate_limit_per_second: 10
 
 logging:
   level: "INFO"
