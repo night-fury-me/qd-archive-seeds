@@ -315,8 +315,6 @@ class ETLRunner:
                 log.info("Download skipped by user")
                 skipped = total_assets
             elif collected_records:
-                bus.publish(StageChanged("download"))
-
                 downloads_root = Path(c.config.storage.downloads_root)
                 if decision.exact_count is not None:
                     limit = max(1, min(len(collected_records), decision.exact_count))
@@ -333,21 +331,6 @@ class ETLRunner:
                     records_to_download = collected_records
                     dataset_ids_to_download = collected_dataset_ids
 
-                # Compute asset count for the download subset
-                download_asset_count = sum(len(r.assets) for r in records_to_download)
-                log.info(
-                    "Phase 2: Downloading %d assets for %d datasets",
-                    download_asset_count,
-                    len(records_to_download),
-                )
-                bus.publish(
-                    CountersUpdated(
-                        extracted=extracted,
-                        transformed=transformed,
-                        total_assets=download_asset_count,
-                    )
-                )
-
                 # Check for ICPSR datasets and prompt user if callback provided
                 skip_icpsr = False
                 icpsr_count = sum(
@@ -363,6 +346,24 @@ class ETLRunner:
                 ):
                     skip_icpsr = True
                     log.info("User skipped ICPSR downloads (%d assets)", icpsr_count)
+
+                # Publish stage change and counters after all prompts are done
+                bus.publish(StageChanged("download"))
+
+                # Compute asset count for the download subset
+                download_asset_count = sum(len(r.assets) for r in records_to_download)
+                log.info(
+                    "Phase 2: Downloading %d assets for %d datasets",
+                    download_asset_count,
+                    len(records_to_download),
+                )
+                bus.publish(
+                    CountersUpdated(
+                        extracted=extracted,
+                        transformed=transformed,
+                        total_assets=download_asset_count,
+                    )
+                )
 
                 # Use semaphore for concurrent downloads within each record
                 download_sem = asyncio.Semaphore(5)
