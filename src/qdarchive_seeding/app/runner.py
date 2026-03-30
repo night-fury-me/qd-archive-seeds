@@ -101,11 +101,34 @@ def _extract_zip_bundle(
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(target_dir)
+
+            # Detect single top-level directory and flatten it
+            top_level_dirs = {
+                PurePosixPath(info.filename).parts[0]
+                for info in zf.infolist()
+                if len(PurePosixPath(info.filename).parts) > 1
+            }
+            single_subdir = (
+                (target_dir / next(iter(top_level_dirs))) if len(top_level_dirs) == 1 else None
+            )
+            if single_subdir and single_subdir.is_dir():
+                import shutil
+
+                for child in list(single_subdir.iterdir()):
+                    shutil.move(str(child), str(target_dir / child.name))
+                single_subdir.rmdir()
+                log.debug("Flattened single top-level directory: %s", single_subdir.name)
+
             for info in zf.infolist():
                 if info.is_dir():
                     continue
-                file_path = target_dir / info.filename
-                file_type = PurePosixPath(info.filename).suffix.lstrip(".") or None
+                # Strip the top-level directory prefix if we flattened
+                filename = info.filename
+                if single_subdir is not None:
+                    parts = PurePosixPath(filename).parts
+                    filename = str(PurePosixPath(*parts[1:])) if len(parts) > 1 else filename
+                file_path = target_dir / filename
+                file_type = PurePosixPath(filename).suffix.lstrip(".") or None
                 extracted.append(
                     AssetRecord(
                         asset_url=zip_path.name,
