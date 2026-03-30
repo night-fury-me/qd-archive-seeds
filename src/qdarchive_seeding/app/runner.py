@@ -476,8 +476,10 @@ class ETLRunner:
                             _access_codes = (
                                 "403",
                                 "401",
+                                "400",
                                 "Forbidden",
                                 "Unauthorized",
+                                "Bad Request",
                                 "login page",
                             )
                             is_access_error = any(code in err_str for code in _access_codes)
