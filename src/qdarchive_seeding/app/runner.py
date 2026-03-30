@@ -411,16 +411,51 @@ class ETLRunner:
                 # Global semaphore for concurrent downloads across all datasets
                 download_sem = asyncio.Semaphore(10)
 
+                _access_codes = (
+                    "403",
+                    "401",
+                    "400",
+                    "404",
+                    "Forbidden",
+                    "Unauthorized",
+                    "Bad Request",
+                    "Not Found",
+                    "login page",
+                    "Server disconnected",
+                )
+
+                # Concurrency lock for shared counter updates
+                _counter_lock = asyncio.Lock()
+
+                async def _publish_progress() -> None:
+                    """Publish current counter state to the progress bus."""
+                    bus.publish(
+                        CountersUpdated(
+                            extracted=extracted,
+                            transformed=transformed,
+                            downloaded=downloaded,
+                            failed=failed,
+                            skipped=skipped - pre_excluded,
+                            access_denied=access_denied,
+                            total_assets=download_asset_count,
+                        )
+                    )
+
                 async def _download_one(
                     asset_ref: Any,
                     target: Path,
                     sem: asyncio.Semaphore,
                 ) -> tuple[Any, Any | None, Exception | None]:
+                    nonlocal downloaded, failed, skipped, access_denied
+
                     async with sem:
                         if ctx.cancelled:
                             return asset_ref, None, None
                         if c.policy.should_skip_asset(asset_ref):
                             asset_ref.download_status = DOWNLOAD_STATUS_SKIPPED
+                            async with _counter_lock:
+                                skipped += 1
+                                await _publish_progress()
                             return asset_ref, None, None
                         # Skip ICPSR assets if user declined
                         if skip_icpsr and (
@@ -428,6 +463,9 @@ class ETLRunner:
                             or "icpsr.umich.edu" in asset_ref.asset_url
                         ):
                             asset_ref.download_status = DOWNLOAD_STATUS_SKIPPED
+                            async with _counter_lock:
+                                skipped += 1
+                                await _publish_progress()
                             return asset_ref, None, None
                         try:
                             # Classic ICPSR: 3-step form flow (sync, run in thread)
@@ -449,9 +487,15 @@ class ETLRunner:
                                     from datetime import UTC, datetime
 
                                     asset_ref.downloaded_at = datetime.now(UTC)
+                                    async with _counter_lock:
+                                        downloaded += 1
+                                        await _publish_progress()
                                 else:
                                     asset_ref.download_status = DOWNLOAD_STATUS_FAILED
                                     asset_ref.error_message = "ICPSR form flow failed"
+                                    async with _counter_lock:
+                                        failed += 1
+                                        await _publish_progress()
                                 return asset_ref, None, None
 
                             # Per-asset progress callback avoids shared state
@@ -467,30 +511,63 @@ class ETLRunner:
                             dl_result = await c.downloader.download(
                                 asset_ref, target, progress_callback=_on_progress
                             )
+                            # Update counters immediately
+                            async with _counter_lock:
+                                if (
+                                    dl_result
+                                    and dl_result.asset.download_status == DOWNLOAD_STATUS_SUCCESS
+                                ):
+                                    downloaded += 1
+                                    bus.publish(
+                                        AssetDownloadUpdate(
+                                            asset_url=asset_ref.asset_url,
+                                            status=DOWNLOAD_STATUS_SUCCESS,
+                                            bytes_downloaded=dl_result.bytes_downloaded,
+                                        )
+                                    )
+                                else:
+                                    failed += 1
+                                    failures.append(
+                                        {
+                                            "asset_url": asset_ref.asset_url,
+                                            "error": "non-success status",
+                                        }
+                                    )
+                                await _publish_progress()
                             return asset_ref, dl_result, None
                         except Exception as dl_exc:
                             asset_ref.download_status = DOWNLOAD_STATUS_FAILED
                             asset_ref.error_message = str(dl_exc)
+                            err_str = str(dl_exc)
+                            async with _counter_lock:
+                                failed += 1
+                                failures.append(
+                                    {"asset_url": asset_ref.asset_url, "error": err_str}
+                                )
+                                is_access_error = not err_str.strip() or any(
+                                    code in err_str for code in _access_codes
+                                )
+                                if is_access_error:
+                                    access_denied += 1
+                                else:
+                                    bus.publish(
+                                        ErrorEvent(
+                                            component="downloader",
+                                            error_type=type(dl_exc).__name__,
+                                            message=err_str,
+                                            asset_url=asset_ref.asset_url,
+                                        )
+                                    )
+                                    log.error(
+                                        "Download failed for %s: %s",
+                                        asset_ref.asset_url,
+                                        dl_exc,
+                                    )
+                                await _publish_progress()
                             return asset_ref, None, dl_exc
 
-                _access_codes = (
-                    "403",
-                    "401",
-                    "400",
-                    "404",
-                    "Forbidden",
-                    "Unauthorized",
-                    "Bad Request",
-                    "Not Found",
-                    "login page",
-                    "Server disconnected",
-                )
-
-                # Concurrency lock for shared counter updates
-                _counter_lock = asyncio.Lock()
-
                 async def _process_dataset(record: Any, dataset_id: str) -> None:
-                    nonlocal downloaded, failed, skipped, access_denied
+                    nonlocal downloaded
 
                     if ctx.cancelled:
                         return
@@ -503,7 +580,6 @@ class ETLRunner:
                         prior_statuses = c.sink.get_file_statuses(dataset_id)
                         for asset in record.assets:
                             fname = asset.local_filename or asset.asset_url.rsplit("/", 1)[-1]
-                            # Try asset_url first (most reliable), then file_name
                             status = prior_statuses.get(asset.asset_url) or prior_statuses.get(
                                 fname
                             )
@@ -522,75 +598,11 @@ class ETLRunner:
                     )
                     c.filesystem.ensure_dir(target_dir)
 
-                    async def _publish_progress() -> None:
-                        """Publish current counter state to the progress bus."""
-                        bus.publish(
-                            CountersUpdated(
-                                extracted=extracted,
-                                transformed=transformed,
-                                downloaded=downloaded,
-                                failed=failed,
-                                skipped=skipped - pre_excluded,
-                                access_denied=access_denied,
-                                total_assets=download_asset_count,
-                            )
-                        )
-
                     tasks = [
                         _download_one(asset, target_dir, download_sem) for asset in record.assets
                     ]
-                    results = await asyncio.gather(*tasks)
-
-                    for asset, dl_result, dl_error in results:
-                        # Update shared counters per-asset for real-time progress
-                        async with _counter_lock:
-                            if asset.download_status == DOWNLOAD_STATUS_SKIPPED:
-                                skipped += 1
-                                await _publish_progress()
-                                continue
-                            if dl_error is not None:
-                                failed += 1
-                                err_str = str(dl_error)
-                                failures.append({"asset_url": asset.asset_url, "error": err_str})
-                                is_access_error = not err_str.strip() or any(
-                                    code in err_str for code in _access_codes
-                                )
-                                if is_access_error:
-                                    access_denied += 1
-                                else:
-                                    bus.publish(
-                                        ErrorEvent(
-                                            component="downloader",
-                                            error_type=type(dl_error).__name__,
-                                            message=err_str,
-                                            asset_url=asset.asset_url,
-                                        )
-                                    )
-                                    log.error(
-                                        "Download failed for %s: %s",
-                                        asset.asset_url,
-                                        dl_error,
-                                    )
-                            elif dl_result is not None:
-                                bus.publish(
-                                    AssetDownloadUpdate(
-                                        asset_url=asset.asset_url,
-                                        status=dl_result.asset.download_status
-                                        or DOWNLOAD_STATUS_SUCCESS,
-                                        bytes_downloaded=dl_result.bytes_downloaded,
-                                    )
-                                )
-                                if dl_result.asset.download_status == DOWNLOAD_STATUS_SUCCESS:
-                                    downloaded += 1
-                                else:
-                                    failed += 1
-                                    failures.append(
-                                        {
-                                            "asset_url": asset.asset_url,
-                                            "error": "non-success status",
-                                        }
-                                    )
-                            await _publish_progress()
+                    # Counter updates happen inside _download_one for real-time progress
+                    await asyncio.gather(*tasks)
 
                     # Extract ZIP bundles and update asset records
                     for asset in list(record.assets):
