@@ -51,6 +51,39 @@ class DownloadDecision:
     exact_count: int | None = None  # if set, download exactly this many datasets
 
 
+_icpsr_cookie_cache: dict[str, str] | None = None
+
+
+def _get_icpsr_browser_cookies(config: PipelineConfig) -> dict[str, str]:
+    """Extract and cache ICPSR browser cookies for Classic ICPSR downloads."""
+    global _icpsr_cookie_cache  # noqa: PLW0603
+    if _icpsr_cookie_cache is not None:
+        return _icpsr_cookie_cache
+
+    ext_auth = config.external_auth.get("www.icpsr.umich.edu")
+    if ext_auth is None or ext_auth.type != "browser_session":
+        _icpsr_cookie_cache = {}
+        return _icpsr_cookie_cache
+
+    try:
+        import browser_cookie3  # type: ignore[import-untyped]
+
+        loader = {"chromium": browser_cookie3.chromium, "chrome": browser_cookie3.chrome}.get(
+            ext_auth.browser, browser_cookie3.chromium
+        )
+        cookie_jar = loader(domain_name=".icpsr.umich.edu")
+        _icpsr_cookie_cache = {
+            c.name: c.value
+            for c in cookie_jar
+            if c.value and not c.name.lower().startswith(("__cf", "cf_", "_cf"))
+        }
+    except Exception:
+        _icpsr_cookie_cache = {}
+        logger.warning("Failed to extract ICPSR browser cookies")
+
+    return _icpsr_cookie_cache
+
+
 def _extract_zip_bundle(
     zip_path: Path,
     target_dir: Path,
@@ -351,6 +384,29 @@ class ETLRunner:
                             asset_ref.download_status = DOWNLOAD_STATUS_SKIPPED
                             return asset_ref, None, None
                         try:
+                            # Classic ICPSR: 3-step form flow (sync, run in thread)
+                            if "zipcart2" in asset_ref.asset_url:
+                                from qdarchive_seeding.infra.storage.icpsr_downloader import (
+                                    download_classic_icpsr,
+                                )
+
+                                icpsr_cookies = _get_icpsr_browser_cookies(c.config)
+                                zip_path = await asyncio.to_thread(
+                                    download_classic_icpsr,
+                                    asset_ref,
+                                    target,
+                                    icpsr_cookies,
+                                )
+                                if zip_path is not None:
+                                    asset_ref.download_status = DOWNLOAD_STATUS_SUCCESS
+                                    from datetime import UTC, datetime
+
+                                    asset_ref.downloaded_at = datetime.now(UTC)
+                                else:
+                                    asset_ref.download_status = DOWNLOAD_STATUS_FAILED
+                                    asset_ref.error_message = "ICPSR form flow failed"
+                                return asset_ref, None, None
+
                             # Per-asset progress callback avoids shared state
                             def _on_progress(bytes_so_far: int, total_bytes: int | None) -> None:
                                 bus.publish(
@@ -456,9 +512,7 @@ class ETLRunner:
                             )
                             if zip_files:
                                 # Replace the single ZIP asset with individual files
-                                new_assets: list[Any] = [
-                                    a for a in record.assets if a is not asset
-                                ]
+                                new_assets: list[Any] = [a for a in record.assets if a is not asset]
                                 new_assets.extend(zip_files)
                                 record.assets = new_assets
                                 downloaded += len(zip_files) - 1
