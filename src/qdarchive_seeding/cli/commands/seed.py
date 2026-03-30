@@ -209,9 +209,11 @@ class CliProgressDisplay:
                     self._overall_id,
                     total=self._total_assets,
                 )
-        # Update completed count (downloaded + failed + skipped + access_denied)
+        # Update completed count — only assets actually attempted in the download subset
         if self._progress is not None and self._overall_id is not None:
-            completed = event.downloaded + event.failed + event.skipped + event.access_denied
+            completed = event.downloaded + event.failed + event.access_denied
+            if self._total_assets > 0:
+                completed = min(completed, self._total_assets)
             self._progress.update(self._overall_id, completed=completed)
         if event.access_denied > 0 and self._progress is not None and self._denied_id is not None:
             self._progress.update(
