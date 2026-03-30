@@ -55,6 +55,8 @@ class GenericRestExtractor:
         headers: dict[str, str] = {}
         params = dict(ctx.config.source.params)
         headers, params = self.auth.apply(headers, params)
+        # Capture auth headers so the downloader can apply them per-request
+        auth_hdrs, _ = self.auth.apply({}, {})
 
         pagination_type = (
             ctx.config.source.pagination.type if ctx.config.source.pagination else None
@@ -92,7 +94,10 @@ class GenericRestExtractor:
                     title=item.get("title"),
                     description=item.get("description"),
                     assets=[
-                        AssetRecord(asset_url=str(asset))
+                        AssetRecord(
+                            asset_url=str(asset),
+                            metadata={"auth_headers": auth_hdrs} if auth_hdrs else None,
+                        )
                         for asset in item.get("assets", [])
                         if asset is not None
                     ],

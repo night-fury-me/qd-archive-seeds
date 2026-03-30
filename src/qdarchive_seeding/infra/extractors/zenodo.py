@@ -395,6 +395,9 @@ class ZenodoExtractor:
 
         metadata = item.get("metadata", {})
         files = item.get("files", []) if self.options.include_files else []
+        # Capture auth headers so the downloader can apply them per-request
+        auth_headers, _ = self.auth.apply({}, {})
+        asset_meta = {"auth_headers": auth_headers} if auth_headers else None
         assets = [
             AssetRecord(
                 asset_url=f.get("links", {}).get("self", ""),
@@ -403,6 +406,7 @@ class ZenodoExtractor:
                 if f.get("key")
                 else None,
                 size_bytes=f.get("size"),
+                metadata=asset_meta,
             )
             for f in files
             if f

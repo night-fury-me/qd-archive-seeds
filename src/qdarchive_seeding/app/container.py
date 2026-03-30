@@ -131,9 +131,9 @@ def build_container(
     checksum_factory = registries.checksums.get("default")
     checksum = checksum_factory(config.storage.checksum)
     download_headers: dict[str, str] = {"User-Agent": "qdarchive-seeding/0.1"}
-    # Apply auth headers to download client so authenticated file access works
-    auth_headers, _ = auth.apply({}, {})
-    download_headers.update(auth_headers)
+    # Auth is NOT set as default headers — it's applied per-request via
+    # asset.metadata["auth_headers"] so that external hosts don't receive
+    # our token. The extractor sets auth_headers for each asset.
     download_client = httpx.AsyncClient(
         timeout=60.0,
         headers=download_headers,

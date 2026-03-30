@@ -240,12 +240,16 @@ class SyracuseQdrExtractor:
             result = await self._fetch_dataset_files(base_url, dataset_endpoint, global_id, headers)
             if result is not None:
                 file_list, license_name = result
+                # Capture auth headers so the downloader can apply them per-request
+                auth_headers, _ = self.auth.apply({}, {})
+                asset_meta = {"auth_headers": auth_headers} if auth_headers else None
                 assets = [
                     AssetRecord(
                         asset_url=f"{base_url}/access/datafile/{df['id']}",
                         local_filename=df.get("filename", ""),
                         file_type=_extract_extension(df.get("filename", "")),
                         size_bytes=df.get("filesize"),
+                        metadata=asset_meta,
                     )
                     for df in file_list
                     if df.get("id") is not None
