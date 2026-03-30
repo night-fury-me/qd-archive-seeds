@@ -407,20 +407,29 @@ def _prompt_icpsr_login(icpsr_count: int) -> bool:
     Non-blocking: always returns True to proceed with downloads.
     The user can log in now or just press Enter to continue without logging in.
     """
-    import sys
+    from rich.panel import Panel
+    from rich.text import Text
 
-    print(flush=True)
-    print(f"  ICPSR: {icpsr_count} files require an active browser login session.")
-    print("  These files can only be downloaded if you are logged into ICPSR")
-    print("  via institutional SSO in a Chromium-based browser on this machine.")
-    print("  Login URL: https://www.icpsr.umich.edu/mydata")
-    print()
-    print("  You can log in now if needed, then come back and press Enter.")
-    print(flush=True)
-    sys.stdout.flush()
+    body = Text()
+    body.append(f"{icpsr_count} files", style="bold yellow")
+    body.append(" are hosted on ICPSR and require an active browser login session.\n\n")
+    body.append("Login is optional", style="bold")
+    body.append(" — the pipeline will continue either way.\n")
+    body.append("If you are not logged in, ICPSR files will be ")
+    body.append("skipped", style="bold red")
+    body.append("; all other downloads proceed normally.\n\n")
+    body.append("To log in:\n")
+    body.append("  1. Open a Chromium-based browser on this machine\n")
+    body.append("  2. Go to ")
+    body.append("https://www.icpsr.umich.edu/mydata", style="bold underline cyan")
+    body.append("\n  3. Sign in via institutional SSO\n")
+    body.append("  4. Come back here and press Enter\n")
+
+    console.print()
+    console.print(Panel(body, title="ICPSR Browser Login", border_style="yellow", expand=False))
 
     with contextlib.suppress(EOFError):
-        input("Press Enter to continue... ")
+        console.input("[dim]Press Enter to continue...[/dim] ")
 
     return True
 
