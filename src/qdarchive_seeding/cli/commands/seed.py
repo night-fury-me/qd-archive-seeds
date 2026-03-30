@@ -383,23 +383,13 @@ def _prompt_download_decision(
 
 
 def _prompt_icpsr_login(icpsr_count: int) -> bool:
-    """Prompt the user to confirm ICPSR browser login before downloading."""
-    import sys
-
+    """Notify the user about ICPSR browser session requirement."""
     print(flush=True)
-    print(f"  ICPSR datasets detected: {icpsr_count} files require an active browser session.")
-    print("  Please log into ICPSR via your institutional SSO in Chromium before proceeding.")
+    print(f"  ICPSR: {icpsr_count} files require an active browser session.")
+    print("  Ensure you are logged into ICPSR via institutional SSO in Chromium.")
     print("  Login URL: https://www.icpsr.umich.edu/mydata")
-    print()
-    print("  [y] Yes, I am logged in — proceed with ICPSR downloads")
-    print("  [n] No, skip ICPSR downloads (other downloads will continue)")
     print(flush=True)
-    sys.stdout.flush()
-    try:
-        choice = input("Proceed with ICPSR downloads? (y/n): ")
-    except EOFError:
-        return False
-    return choice.strip().lower() in ("y", "yes", "")
+    return True
 
 
 @seed_app.command("run")
