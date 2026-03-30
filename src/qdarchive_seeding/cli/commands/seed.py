@@ -335,37 +335,47 @@ def _prompt_download_decision(
     """Prompt the user for a download decision after metadata collection.
 
     Called synchronously by the runner between Phase 1 and Phase 2.
+    Uses plain print/input to avoid Rich/typer stdin interference.
     """
-    size_str = _format_size(total_size_bytes)
-    console.print()
-    console.print(
-        f"[bold]Found {total_projects} datasets, {total_files} files, ~{size_str}.[/bold]"
-    )
-    console.print("[bold]Download options:[/bold]")
-    console.print("  [1] Download all datasets")
-    console.print("  [2] Download a percentage of datasets")
-    console.print("  [3] Download an exact number of datasets")
-    console.print("  [4] Skip download (metadata only)")
-    console.print()
+    import sys
 
-    choice = typer.prompt("Choose an option", type=int, default=1)
+    size_str = _format_size(total_size_bytes)
+    print(flush=True)
+    print(f"Found {total_projects} datasets, {total_files} files, ~{size_str}.")
+    print("Download options:")
+    print("  [1] Download all datasets")
+    print("  [2] Download a percentage of datasets")
+    print("  [3] Download an exact number of datasets")
+    print("  [4] Skip download (metadata only)")
+    print(flush=True)
+    sys.stdout.flush()
+
+    try:
+        raw = input("Choose an option [1]: ").strip()
+        choice = int(raw) if raw else 1
+    except (ValueError, EOFError):
+        choice = 1
 
     if choice == 1:
         return DownloadDecision(download_all=True, percentage=100)
     elif choice == 2:
-        pct = typer.prompt(
-            f"Percentage of {total_projects} datasets to download (1-100)",
-            type=int,
-            default=100,
-        )
+        try:
+            raw = input(
+                f"Percentage of {total_projects} datasets to download (1-100) [100]: "
+            ).strip()
+            pct = int(raw) if raw else 100
+        except (ValueError, EOFError):
+            pct = 100
         pct = max(1, min(100, pct))
         return DownloadDecision(download_all=False, percentage=pct)
     elif choice == 3:
-        count = typer.prompt(
-            f"Number of datasets to download (1-{total_projects})",
-            type=int,
-            default=total_projects,
-        )
+        try:
+            raw = input(
+                f"Number of datasets to download (1-{total_projects}) [{total_projects}]: "
+            ).strip()
+            count = int(raw) if raw else total_projects
+        except (ValueError, EOFError):
+            count = total_projects
         count = max(1, min(total_projects, count))
         return DownloadDecision(download_all=False, exact_count=count)
     else:
