@@ -115,8 +115,24 @@ def _extract_zip_bundle(
                 import shutil
 
                 for child in list(single_subdir.iterdir()):
-                    shutil.move(str(child), str(target_dir / child.name))
-                single_subdir.rmdir()
+                    dest = target_dir / child.name
+                    if dest.exists():
+                        # Merge: if both are dirs, move contents; otherwise skip
+                        if child.is_dir() and dest.is_dir():
+                            for sub in child.rglob("*"):
+                                if sub.is_file():
+                                    rel = sub.relative_to(child)
+                                    sub_dest = dest / rel
+                                    sub_dest.parent.mkdir(parents=True, exist_ok=True)
+                                    if not sub_dest.exists():
+                                        shutil.move(str(sub), str(sub_dest))
+                            shutil.rmtree(child)
+                        # else: destination file already exists, skip
+                    else:
+                        shutil.move(str(child), str(dest))
+                # Remove subdir if now empty
+                with contextlib.suppress(OSError):
+                    single_subdir.rmdir()
                 log.debug("Flattened single top-level directory: %s", single_subdir.name)
 
             for info in zf.infolist():
