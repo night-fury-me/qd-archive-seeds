@@ -422,6 +422,10 @@ class ETLRunner:
                     "Not Found",
                     "login page",
                     "Server disconnected",
+                    "name resolution",
+                    "timed out",
+                    "ConnectError",
+                    "RemoteProtocolError",
                 )
 
                 # Concurrency lock for shared counter updates
