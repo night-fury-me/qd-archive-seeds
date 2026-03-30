@@ -22,6 +22,9 @@ from qdarchive_seeding.infra.storage.paths import safe_filename
 ProgressCallback = Callable[[int, int | None], None]
 """Called with (bytes_downloaded_so_far, total_bytes_or_none)."""
 
+AuthResolver = Callable[[str], dict[str, str]]
+"""Given an asset URL, return auth headers to apply (empty dict if none)."""
+
 
 @dataclass(slots=True)
 class DownloadResult:
@@ -36,6 +39,7 @@ class Downloader:
     checksum: ChecksumComputer
     chunk_size_bytes: int = DEFAULT_CHUNK_SIZE_BYTES
     on_progress: ProgressCallback | None = field(default=None, repr=False)
+    auth_resolver: AuthResolver | None = field(default=None, repr=False)
 
     async def download(
         self,
@@ -50,8 +54,11 @@ class Downloader:
         final_path = target_dir / filename
 
         headers: dict[str, str] = {}
-        # Apply per-asset auth headers (e.g. external Dataverse tokens)
-        if asset.metadata and "auth_headers" in asset.metadata:
+        # Resolve auth headers by URL domain (works for DB-loaded assets too)
+        if self.auth_resolver is not None:
+            headers.update(self.auth_resolver(asset.asset_url))
+        # Fallback: per-asset auth from metadata (set during extraction)
+        elif asset.metadata and "auth_headers" in asset.metadata:
             headers.update(asset.metadata["auth_headers"])
         mode = "w+b"
         downloaded = 0

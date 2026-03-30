@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
@@ -131,16 +132,32 @@ def build_container(
     checksum_factory = registries.checksums.get("default")
     checksum = checksum_factory(config.storage.checksum)
     download_headers: dict[str, str] = {"User-Agent": "qdarchive-seeding/0.1"}
-    # Auth is NOT set as default headers — it's applied per-request via
-    # asset.metadata["auth_headers"] so that external hosts don't receive
-    # our token. The extractor sets auth_headers for each asset.
     download_client = httpx.AsyncClient(
         timeout=60.0,
         headers=download_headers,
         follow_redirects=True,
     )
+
+    # Build auth resolver: maps asset URL domain → auth headers at download time.
+    # This works for both in-memory and DB-loaded assets (no metadata needed).
+    primary_auth_headers, _ = auth.apply({}, {})
+    primary_host = urlparse(config.source.base_url).netloc.lower()
+    host_auth_map: dict[str, dict[str, str]] = {}
+    if primary_auth_headers and primary_host:
+        host_auth_map[primary_host] = primary_auth_headers
+    for host, ext_auth in config.external_auth.items():
+        if ext_auth.type == "api_key":
+            token = os.environ.get(ext_auth.env.get("api_key", ""), "")
+            if token:
+                host_auth_map[host.lower()] = {ext_auth.header_name: token}
+
+    def _resolve_auth(asset_url: str) -> dict[str, str]:
+        host = urlparse(asset_url).netloc.lower()
+        return host_auth_map.get(host, {})
+
     downloader_factory = registries.downloaders.get("default")
     downloader = downloader_factory(download_client, checksum, chunk_size)
+    downloader.auth_resolver = _resolve_auth
 
     sink = _build_sink(config, registries)
     policy = _build_policy(
