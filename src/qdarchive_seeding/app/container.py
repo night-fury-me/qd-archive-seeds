@@ -131,7 +131,12 @@ def build_container(
     chunk_size = config.storage.chunk_size_bytes or DEFAULT_CHUNK_SIZE_BYTES
     checksum_factory = registries.checksums.get("default")
     checksum = checksum_factory(config.storage.checksum)
-    download_headers: dict[str, str] = {"User-Agent": "qdarchive-seeding/0.1"}
+    download_headers: dict[str, str] = {
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        ),
+    }
     download_client = httpx.AsyncClient(
         timeout=60.0,
         headers=download_headers,

@@ -6,6 +6,9 @@ from typing import Literal
 
 logger = logging.getLogger(__name__)
 
+# Cloudflare bot-protection cookies trigger 403 when sent from non-browser clients
+_CLOUDFLARE_COOKIE_PREFIXES = ("__cf", "cf_", "_cf")
+
 
 @dataclass(slots=True)
 class BrowserCookieExtractor:
@@ -45,7 +48,11 @@ class BrowserCookieExtractor:
 
         try:
             cookie_jar = loader(domain_name=f".{domain.lstrip('.')}")
-            cookies = {c.name: c.value for c in cookie_jar if c.value}
+            cookies = {
+                c.name: c.value
+                for c in cookie_jar
+                if c.value and not c.name.lower().startswith(_CLOUDFLARE_COOKIE_PREFIXES)
+            }
             if not cookies:
                 logger.info("No cookies found for %s in %s", domain, self.browser)
                 return ""
