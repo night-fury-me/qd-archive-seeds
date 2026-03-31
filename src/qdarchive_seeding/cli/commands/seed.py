@@ -150,14 +150,15 @@ class CliProgressDisplay:
                 BarColumn(),
                 TextColumn("{task.completed}/{task.total}"),
                 TimeElapsedColumn(),
-                console=console,
             )
             self._query_id = self._progress.add_task("Queries: starting...", total=0, completed=0)
             self._slice_id = self._progress.add_task(
                 "Date slices: n/a", total=0, completed=0, visible=False
             )
             self._page_id = self._progress.add_task("Pages: waiting...", total=0, completed=0)
-            self._progress.start()
+            self._log_lines.clear()
+            self._live = Live(self._build_layout(), console=console, refresh_per_second=4)
+            self._live.start()
             self._suppress_console_logs()
         elif event.stage == "download":
             self._start_download_progress(label)
@@ -344,19 +345,23 @@ class CliProgressDisplay:
     def _log_to_panel(self, line: str) -> None:
         """Append a message to the fixed log panel and refresh the Live display."""
         self._log_lines.append(line)
+        self._refresh_live()
+
+    def _refresh_live(self) -> None:
+        """Refresh the Live display with current layout."""
         if self._live is not None:
             self._live.update(self._build_layout())
 
     def _build_layout(self) -> Group:
         """Build the Live renderable: log panel on top, progress bars below."""
-        # Pad log lines so the panel height is always fixed
         lines = list(self._log_lines)
         while len(lines) < self._LOG_PANEL_LINES:
             lines.append("")
         log_text = Text.from_markup("\n".join(lines))
+        title = "[bold]Download Log[/bold]" if self._overall_id is not None else "[bold]Log[/bold]"
         log_panel = Panel(
             log_text,
-            title="[bold]Download Log[/bold]",
+            title=title,
             border_style="dim",
             height=self._LOG_PANEL_LINES + 2,  # +2 for border
         )
