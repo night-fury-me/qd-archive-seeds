@@ -179,6 +179,7 @@ class ETLRunner:
         download_decision: DownloadDecision | None = None,
         confirm_callback: Callable[[int, int, int], DownloadDecision] | None = None,
         icpsr_confirm_callback: Callable[[int], bool] | None = None,
+        icpsr_terms_url_callback: Callable[[str], None] | None = None,
     ) -> RunInfo:
         c = self._c
         run_id = c.run_id
@@ -491,6 +492,18 @@ class ETLRunner:
                                     target,
                                     icpsr_cookies,
                                 )
+                                if zip_path is None and icpsr_terms_url_callback is not None:
+                                    # Prompt user with the full URL and retry once
+                                    await asyncio.to_thread(
+                                        icpsr_terms_url_callback, asset_ref.asset_url
+                                    )
+                                    icpsr_cookies = _get_icpsr_browser_cookies(c.config)
+                                    zip_path = await asyncio.to_thread(
+                                        download_classic_icpsr,
+                                        asset_ref,
+                                        target,
+                                        icpsr_cookies,
+                                    )
                                 if zip_path is not None:
                                     asset_ref.download_status = DOWNLOAD_STATUS_SUCCESS
                                     asset_ref.asset_type = "zip_bundle"

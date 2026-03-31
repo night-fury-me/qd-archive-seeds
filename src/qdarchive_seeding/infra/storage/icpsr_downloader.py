@@ -82,8 +82,9 @@ def download_classic_icpsr(
         if "text/html" in content_type:
             logger.error(
                 "ICPSR still returned HTML after terms acceptance for study %s "
-                "(may require additional agreements)",
+                "(may require additional agreements): %s",
                 study_id,
+                url,
             )
             return None
 
