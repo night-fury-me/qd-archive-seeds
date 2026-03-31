@@ -127,6 +127,10 @@ class CheckpointManager:
             q.failed_pages.remove(page)
             self._save()
 
+    def completed_count(self) -> int:
+        """Return the number of queries marked as completed."""
+        return sum(1 for q in self._queries.values() if q.completed)
+
     def has_unresolved_failures(self) -> bool:
         return any(q.failed_pages for q in self._queries.values())
 

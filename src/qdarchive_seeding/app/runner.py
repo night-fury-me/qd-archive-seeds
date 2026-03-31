@@ -915,7 +915,7 @@ class ETLRunner:
         if c.checkpoint.has_unresolved_failures():
             log.warning("Checkpoint retained: unresolved extraction page failures remain")
         else:
-            completed_count = sum(1 for q in c.checkpoint._queries.values() if q.completed)
+            completed_count = c.checkpoint.completed_count()
             log.info(
                 "Checkpoint preserved: %d completed queries available for skip on next run",
                 completed_count,
