@@ -726,17 +726,23 @@ class ETLRunner:
 
                         # All retries failed
                         assert last_exc is not None  # noqa: S101
-                        asset_ref.download_status = DOWNLOAD_STATUS_FAILED
-                        asset_ref.error_message = str(last_exc)
                         err_str = str(last_exc)
+                        is_permanent = any(code in err_str for code in _access_codes)
+                        # Permanent access errors (403, 401, etc.) → SKIPPED so
+                        # they are never retried; transient/unknown → FAILED.
+                        final_status = (
+                            DOWNLOAD_STATUS_SKIPPED if is_permanent else DOWNLOAD_STATUS_FAILED
+                        )
+                        asset_ref.download_status = final_status
+                        asset_ref.error_message = err_str
+                        is_suppressed = (
+                            not err_str.strip()
+                            or is_permanent
+                            or any(code in err_str for code in _transient_codes)
+                        )
                         async with _counter_lock:
                             failed += 1
                             failures.append({"asset_url": asset_ref.asset_url, "error": err_str})
-                            is_suppressed = (
-                                not err_str.strip()
-                                or any(code in err_str for code in _access_codes)
-                                or any(code in err_str for code in _transient_codes)
-                            )
                             if is_suppressed:
                                 access_denied += 1
                             else:
@@ -757,8 +763,8 @@ class ETLRunner:
                             bus.publish(
                                 AssetDownloadUpdate(
                                     asset_url=asset_ref.asset_url,
-                                    status=DOWNLOAD_STATUS_FAILED,
-                                    error_message=str(last_exc),
+                                    status=final_status,
+                                    error_message=err_str,
                                 )
                             )
                             return asset_ref, None, last_exc
