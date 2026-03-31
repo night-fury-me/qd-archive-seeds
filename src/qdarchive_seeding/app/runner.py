@@ -458,7 +458,8 @@ class ETLRunner:
                         if ctx.cancelled:
                             return asset_ref, None, None
                         if c.policy.should_skip_asset(asset_ref):
-                            asset_ref.download_status = DOWNLOAD_STATUS_SKIPPED
+                            if asset_ref.download_status != DOWNLOAD_STATUS_SUCCESS:
+                                asset_ref.download_status = DOWNLOAD_STATUS_SKIPPED
                             async with _counter_lock:
                                 skipped += 1
                                 await _publish_progress()
