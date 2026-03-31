@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
 
@@ -27,6 +27,19 @@ class Sink(Protocol):
     def upsert_asset(self, dataset_id: str, asset: AssetRecord) -> None: ...
 
     def close(self) -> None: ...
+
+
+@runtime_checkable
+class ResumableSink(Protocol):
+    """Sink that supports resume by querying previously stored state."""
+
+    def get_existing_dataset_ids(self, repository_id: int) -> set[str]: ...
+
+    def get_pending_download_datasets(
+        self, repository_id: int | None = None
+    ) -> list[tuple[str, DatasetRecord, list[AssetRecord]]]: ...
+
+    def get_file_statuses(self, dataset_id: str) -> dict[str, str]: ...
 
 
 class Downloader(Protocol):

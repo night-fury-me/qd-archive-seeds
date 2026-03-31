@@ -32,6 +32,7 @@ from qdarchive_seeding.core.constants import (
     DOWNLOAD_STATUS_SUCCESS,
 )
 from qdarchive_seeding.core.entities import DatasetRecord, RunInfo
+from qdarchive_seeding.core.interfaces import ResumableSink
 
 logger = logging.getLogger(__name__)
 
@@ -232,7 +233,7 @@ class ETLRunner:
             log.info("Phase 1: Collecting metadata (source=%s)", c.config.source.name)
 
             # Pre-populate seen_ids from sink for resume support
-            if hasattr(c.sink, "get_existing_dataset_ids") and c.config.source.repository_id:
+            if isinstance(c.sink, ResumableSink) and c.config.source.repository_id:
                 existing_ids = c.sink.get_existing_dataset_ids(c.config.source.repository_id)
                 if existing_ids:
                     log.info("Resume: loaded %d existing dataset IDs from sink", len(existing_ids))
@@ -337,7 +338,7 @@ class ETLRunner:
         # ===== Phase 2: Download =====
         if "download" in phases and not metadata_only and not dry_run:
             # Load previously-extracted datasets from DB that still need downloading
-            if hasattr(c.sink, "get_pending_download_datasets"):
+            if isinstance(c.sink, ResumableSink):
                 pending = c.sink.get_pending_download_datasets(
                     repository_id=c.config.source.repository_id
                 )
@@ -795,7 +796,7 @@ class ETLRunner:
                     # can skip already-downloaded files on resume.
                     # Prioritize asset_url match (reliable) over file_name (may differ).
                     # Skip UNKNOWN statuses as they indicate unresolved entries.
-                    if hasattr(c.sink, "get_file_statuses"):
+                    if isinstance(c.sink, ResumableSink):
                         prior_statuses = c.sink.get_file_statuses(dataset_id)
                         for asset in record.assets:
                             fname = asset.local_filename or asset.asset_url.rsplit("/", 1)[-1]
