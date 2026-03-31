@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS files (
   size_bytes INTEGER,
   status TEXT NOT NULL DEFAULT 'UNKNOWN'
     CHECK(status IN ('UNKNOWN', 'SUCCESS', 'FAILED', 'SKIPPED', 'RESUMABLE')),
+  error_message TEXT,
   FOREIGN KEY (project_id) REFERENCES projects(id)
 );
 
@@ -77,6 +78,7 @@ DROP TABLE IF EXISTS datasets;
 _MIGRATION_ADD_FILE_COLUMNS = [
     ("asset_url", "ALTER TABLE files ADD COLUMN asset_url TEXT"),
     ("size_bytes", "ALTER TABLE files ADD COLUMN size_bytes INTEGER"),
+    ("error_message", "ALTER TABLE files ADD COLUMN error_message TEXT"),
 ]
 
 _MIGRATION_ADD_PROJECT_COLUMNS = [
@@ -231,18 +233,29 @@ class SQLiteSink(BaseSink):
         file_name = asset.local_filename or asset.asset_url.rsplit("/", 1)[-1]
         file_type = asset.file_type or (file_name.rsplit(".", 1)[-1] if "." in file_name else None)
         status = asset.download_status or "UNKNOWN"
+        error_message = asset.error_message if status == "FAILED" else None
         self._conn.execute(
             """
-            INSERT INTO files (project_id, file_name, file_type, asset_url, size_bytes, status)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO files
+              (project_id, file_name, file_type, asset_url, size_bytes, status, error_message)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(project_id, file_name)
             DO UPDATE SET
               file_type=excluded.file_type,
               asset_url=COALESCE(excluded.asset_url, asset_url),
               size_bytes=COALESCE(excluded.size_bytes, size_bytes),
-              status=excluded.status
+              status=excluded.status,
+              error_message=excluded.error_message
             """,
-            (project_id, file_name, file_type, asset.asset_url, asset.size_bytes, status),
+            (
+                project_id,
+                file_name,
+                file_type,
+                asset.asset_url,
+                asset.size_bytes,
+                status,
+                error_message,
+            ),
         )
         self._conn.commit()
 
