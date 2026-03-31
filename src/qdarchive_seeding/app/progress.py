@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -125,19 +126,23 @@ Callback = Callable[[ProgressEvent], None]
 class ProgressBus:
     def __init__(self) -> None:
         self._subscribers: list[Callback] = []
+        self._lock = threading.Lock()
 
     def publish(self, event: ProgressEvent) -> None:
-        for callback in self._subscribers:
+        with self._lock:
+            subscribers = list(self._subscribers)
+        for callback in subscribers:
             try:
                 callback(event)
             except Exception:
                 logger.debug("Subscriber exception ignored", exc_info=True)
 
     def subscribe(self, callback: Callback) -> Callable[[], None]:
-        self._subscribers.append(callback)
+        with self._lock:
+            self._subscribers.append(callback)
 
         def unsubscribe() -> None:
-            with contextlib.suppress(ValueError):
+            with self._lock, contextlib.suppress(ValueError):
                 self._subscribers.remove(callback)
 
         return unsubscribe
