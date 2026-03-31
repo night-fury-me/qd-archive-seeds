@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import platform
 import sys
 import zipfile
@@ -87,6 +88,20 @@ def _get_icpsr_browser_cookies(
     return _icpsr_cookie_cache[domain]
 
 
+def _validate_zip_members(zf: zipfile.ZipFile, target_dir: Path) -> None:
+    """Reject ZIPs containing path-traversal entries or oversized files."""
+    resolved_target = target_dir.resolve()
+    for member in zf.infolist():
+        member_path = (target_dir / member.filename).resolve()
+        if (
+            not str(member_path).startswith(str(resolved_target) + os.sep)
+            and member_path != resolved_target
+        ):
+            raise ValueError(f"Path traversal detected: {member.filename}")
+        if member.file_size > 500 * 1024 * 1024:  # 500 MB per file
+            raise ValueError(f"File too large: {member.filename} ({member.file_size} bytes)")
+
+
 def _extract_zip_bundle(
     zip_path: Path,
     target_dir: Path,
@@ -102,6 +117,7 @@ def _extract_zip_bundle(
     extracted: list[AssetRecord] = []
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
+            _validate_zip_members(zf, target_dir)
             zf.extractall(target_dir)
 
             # Detect single top-level directory and flatten it
