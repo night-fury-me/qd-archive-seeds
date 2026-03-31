@@ -203,7 +203,7 @@ class CliProgressDisplay:
         )
 
     def _on_counters(self, event: CountersUpdated) -> None:
-        if event.total_assets > 0 and self._total_assets == 0:
+        if event.total_assets > 0:
             self._total_assets = event.total_assets
             if self._progress is not None and self._overall_id is not None:
                 self._progress.update(
@@ -213,7 +213,7 @@ class CliProgressDisplay:
         # Update completed count — include skipped so already-downloaded assets
         # immediately advance the progress bar instead of leaving a gap.
         if self._progress is not None and self._overall_id is not None:
-            completed = event.downloaded + event.failed + event.access_denied + event.skipped
+            completed = event.downloaded + event.failed + event.skipped
             if self._total_assets > 0:
                 completed = min(completed, self._total_assets)
             self._completed_assets = completed

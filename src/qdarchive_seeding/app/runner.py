@@ -609,7 +609,7 @@ class ETLRunner:
                             return asset_ref, None, last_exc
 
                 async def _process_dataset(record: Any, dataset_id: str) -> None:
-                    nonlocal downloaded
+                    nonlocal downloaded, download_asset_count
 
                     if ctx.cancelled:
                         return
@@ -669,7 +669,9 @@ class ETLRunner:
                                 new_assets.extend(zip_files)
                                 record.assets = new_assets
                                 async with _counter_lock:
-                                    downloaded += len(zip_files) - 1
+                                    extra = len(zip_files) - 1
+                                    downloaded += extra
+                                    download_asset_count += extra
                                     await _publish_progress()
 
                     # Update sink with download results (skip policy-skipped assets
