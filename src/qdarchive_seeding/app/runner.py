@@ -543,8 +543,6 @@ class ETLRunner:
                                 if zip_path is not None:
                                     asset_ref.download_status = DOWNLOAD_STATUS_SUCCESS
                                     asset_ref.asset_type = "zip_bundle"
-                                    from datetime import UTC, datetime
-
                                     asset_ref.downloaded_at = datetime.now(UTC)
                                     async with _counter_lock:
                                         downloaded += 1
@@ -623,8 +621,6 @@ class ETLRunner:
                                 if zip_path is not None:
                                     asset_ref.download_status = DOWNLOAD_STATUS_SUCCESS
                                     asset_ref.asset_type = "zip_bundle"
-                                    from datetime import UTC, datetime
-
                                     asset_ref.downloaded_at = datetime.now(UTC)
                                     async with _counter_lock:
                                         downloaded += 1
