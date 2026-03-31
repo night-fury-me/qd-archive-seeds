@@ -91,6 +91,58 @@ def download_classic_icpsr(
         return _save_zip(r3.content, target_dir, study_id, asset)
 
 
+def download_open_icpsr(
+    asset: AssetRecord,
+    target_dir: Path,
+    cookies: dict[str, str],
+) -> Path | None:
+    """Download an Open ICPSR project ZIP with browser cookies.
+
+    Open ICPSR uses a direct download URL that requires an authenticated
+    session (no multi-step form flow like Classic ICPSR).
+
+    Returns the path to the downloaded ZIP, or None on failure.
+    """
+    url = asset.asset_url
+    # Extract project ID from URL path: /openicpsr/project/{id}/...
+    project_match = re.search(r"/project/(\d+)/", url)
+    project_id = project_match.group(1) if project_match else "unknown"
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    with httpx.Client(
+        cookies=cookies,
+        headers={"User-Agent": _BROWSER_UA},
+        follow_redirects=True,
+        timeout=120.0,
+    ) as client:
+        r = client.get(url)
+        if r.status_code != 200:
+            logger.error(
+                "Open ICPSR returned %d for project %s: %s", r.status_code, project_id, url
+            )
+            return None
+
+        content_type = r.headers.get("content-type", "")
+        if "text/html" in content_type:
+            logger.error(
+                "Open ICPSR returned HTML for project %s "
+                "(authentication required or access restricted): %s",
+                project_id,
+                url,
+            )
+            return None
+
+        filename = f"openicpsr_{project_id}.zip"
+        filepath = target_dir / filename
+        filepath.write_bytes(r.content)
+        asset.local_dir = str(target_dir)
+        asset.local_filename = filename
+        asset.size_bytes = len(r.content)
+        logger.info("Downloaded Open ICPSR project %s (%d bytes)", project_id, len(r.content))
+        return filepath
+
+
 def _save_zip(
     content: bytes,
     target_dir: Path,

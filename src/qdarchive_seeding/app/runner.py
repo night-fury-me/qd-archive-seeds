@@ -52,19 +52,24 @@ class DownloadDecision:
     exact_count: int | None = None  # if set, download exactly this many datasets
 
 
-_icpsr_cookie_cache: dict[str, str] | None = None
+_icpsr_cookie_cache: dict[str, dict[str, str]] = {}
 
 
-def _get_icpsr_browser_cookies(config: PipelineConfig) -> dict[str, str]:
-    """Extract and cache ICPSR browser cookies for Classic ICPSR downloads."""
+def _get_icpsr_browser_cookies(
+    config: PipelineConfig, domain: str = "www.icpsr.umich.edu"
+) -> dict[str, str]:
+    """Extract and cache browser cookies for an ICPSR domain."""
     global _icpsr_cookie_cache  # noqa: PLW0603
-    if _icpsr_cookie_cache is not None:
-        return _icpsr_cookie_cache
+    if domain in _icpsr_cookie_cache:
+        return _icpsr_cookie_cache[domain]
 
-    ext_auth = config.external_auth.get("www.icpsr.umich.edu")
+    ext_auth = config.external_auth.get(domain)
     if ext_auth is None or ext_auth.type != "browser_session":
-        _icpsr_cookie_cache = {}
-        return _icpsr_cookie_cache
+        _icpsr_cookie_cache[domain] = {}
+        return _icpsr_cookie_cache[domain]
+
+    # Cookie domain for browser lookup (leading dot matches subdomains)
+    cookie_domain = "." + domain.removeprefix("www.")
 
     try:
         import browser_cookie3  # type: ignore[import-untyped]
@@ -72,17 +77,17 @@ def _get_icpsr_browser_cookies(config: PipelineConfig) -> dict[str, str]:
         loader = {"chromium": browser_cookie3.chromium, "chrome": browser_cookie3.chrome}.get(
             ext_auth.browser, browser_cookie3.chromium
         )
-        cookie_jar = loader(domain_name=".icpsr.umich.edu")
-        _icpsr_cookie_cache = {
+        cookie_jar = loader(domain_name=cookie_domain)
+        _icpsr_cookie_cache[domain] = {
             c.name: c.value
             for c in cookie_jar
             if c.value and not c.name.lower().startswith(("__cf", "cf_", "_cf"))
         }
     except Exception:
-        _icpsr_cookie_cache = {}
-        logger.warning("Failed to extract ICPSR browser cookies")
+        _icpsr_cookie_cache[domain] = {}
+        logger.warning("Failed to extract browser cookies for %s", domain)
 
-    return _icpsr_cookie_cache
+    return _icpsr_cookie_cache[domain]
 
 
 def _extract_zip_bundle(
@@ -496,6 +501,7 @@ class ETLRunner:
                                     await asyncio.to_thread(
                                         icpsr_terms_url_callback, asset_ref.asset_url
                                     )
+                                    _icpsr_cookie_cache.pop("www.icpsr.umich.edu", None)
                                     icpsr_cookies = _get_icpsr_browser_cookies(c.config)
                                     zip_path = await asyncio.to_thread(
                                         download_classic_icpsr,
@@ -521,6 +527,59 @@ class ETLRunner:
                             except Exception as icpsr_exc:
                                 asset_ref.download_status = DOWNLOAD_STATUS_FAILED
                                 asset_ref.error_message = str(icpsr_exc)
+                                async with _counter_lock:
+                                    failed += 1
+                                    await _publish_progress()
+                            return asset_ref, None, None
+
+                        # Open ICPSR: direct download with browser cookies
+                        if "openicpsr.org" in asset_ref.asset_url:
+                            try:
+                                from qdarchive_seeding.infra.storage.icpsr_downloader import (
+                                    download_open_icpsr,
+                                )
+
+                                open_cookies = _get_icpsr_browser_cookies(
+                                    c.config, domain="www.openicpsr.org"
+                                )
+                                zip_path = await asyncio.to_thread(
+                                    download_open_icpsr,
+                                    asset_ref,
+                                    target,
+                                    open_cookies,
+                                )
+                                if zip_path is None and icpsr_terms_url_callback is not None:
+                                    await asyncio.to_thread(
+                                        icpsr_terms_url_callback, asset_ref.asset_url
+                                    )
+                                    _icpsr_cookie_cache.pop("www.openicpsr.org", None)
+                                    open_cookies = _get_icpsr_browser_cookies(
+                                        c.config, domain="www.openicpsr.org"
+                                    )
+                                    zip_path = await asyncio.to_thread(
+                                        download_open_icpsr,
+                                        asset_ref,
+                                        target,
+                                        open_cookies,
+                                    )
+                                if zip_path is not None:
+                                    asset_ref.download_status = DOWNLOAD_STATUS_SUCCESS
+                                    asset_ref.asset_type = "zip_bundle"
+                                    from datetime import UTC, datetime
+
+                                    asset_ref.downloaded_at = datetime.now(UTC)
+                                    async with _counter_lock:
+                                        downloaded += 1
+                                        await _publish_progress()
+                                else:
+                                    asset_ref.download_status = DOWNLOAD_STATUS_FAILED
+                                    asset_ref.error_message = "Open ICPSR download failed"
+                                    async with _counter_lock:
+                                        failed += 1
+                                        await _publish_progress()
+                            except Exception as open_exc:
+                                asset_ref.download_status = DOWNLOAD_STATUS_FAILED
+                                asset_ref.error_message = str(open_exc)
                                 async with _counter_lock:
                                     failed += 1
                                     await _publish_progress()
