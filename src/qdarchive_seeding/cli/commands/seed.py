@@ -287,9 +287,11 @@ class CliProgressDisplay:
         if filename:
             size = _format_size(event.bytes_downloaded) if event.bytes_downloaded else ""
             status_style = "green" if event.status == "SUCCESS" else "red"
+            url_suffix = f"\n    [dim]{event.asset_url}[/dim]" if event.status != "SUCCESS" else ""
             self._progress.console.print(
                 f"  [{status_style}]{event.status}[/{status_style}] {filename}"
                 + (f" ({size})" if size else "")
+                + url_suffix
             )
 
     def _start_download_progress(self, label: str) -> None:
@@ -356,13 +358,17 @@ class CliProgressDisplay:
 
     def _stop_progress(self) -> None:
         if self._progress is not None:
+            # Clean up any orphaned file task bars
+            for task_id in self._file_tasks.values():
+                self._progress.remove_task(task_id)
+            self._file_tasks.clear()
+            self._file_names.clear()
             self._progress.stop()
             self._progress = None
             self._query_id = None
             self._slice_id = None
             self._page_id = None
             self._overall_id = None
-            self._file_id = None
         self._restore_console_logs()
 
 
