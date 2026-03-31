@@ -4,13 +4,18 @@ import asyncio
 import contextlib
 import logging
 import sqlite3
+from collections import deque
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
 
 import typer
-from rich.console import Console
+from rich.console import Console, Group
+from rich.live import Live
+from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TextColumn, TimeElapsedColumn
 from rich.table import Table
+from rich.text import Text
 
 from qdarchive_seeding.app.config_loader import load_config
 from qdarchive_seeding.app.container import build_container
@@ -51,23 +56,33 @@ _LEVEL_STYLES: dict[str, str] = {
 
 
 class _ProgressConsoleHandler(logging.Handler):
-    """Logging handler that prints above progress bars via progress.console.log().
+    """Logging handler that routes messages to a callback or progress.console.log().
 
-    Works like tqdm.write — the progress bars stay pinned at the bottom
-    while log messages scroll above them.
+    During download phase with Live display, routes to the log panel callback.
+    During metadata phase, routes to progress.console.log().
     """
 
-    def __init__(self, progress: Progress, level: int = logging.NOTSET) -> None:
+    def __init__(
+        self,
+        progress: Progress,
+        level: int = logging.NOTSET,
+        log_callback: Callable[[str], None] | None = None,
+    ) -> None:
         super().__init__(level)
         self._progress = progress
+        self._log_callback = log_callback
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
             style = _LEVEL_STYLES.get(record.levelname, "")
             component = getattr(record, "component", record.name.rsplit(".", 1)[-1])
             msg = record.getMessage()
+            line = f"[{style}]{record.levelname:<8}[/{style}] [dim]{component}[/dim] │ {msg}"
+            if self._log_callback is not None:
+                self._log_callback(line)
+                return
             self._progress.console.log(
-                f"[{style}]{record.levelname:<8}[/{style}] [dim]{component}[/dim] │ {msg}",
+                line,
                 markup=True,
             )
         except Exception:
@@ -77,8 +92,11 @@ class _ProgressConsoleHandler(logging.Handler):
 class CliProgressDisplay:
     """Progress display with bars for metadata queries, pages, and downloads."""
 
+    _LOG_PANEL_LINES = 10
+
     def __init__(self) -> None:
         self._progress: Progress | None = None
+        self._live: Live | None = None
         # Metadata phase task IDs
         self._query_id: TaskID | None = None
         self._slice_id: TaskID | None = None
@@ -93,6 +111,8 @@ class CliProgressDisplay:
         self._url_to_slot: dict[str, int] = {}  # asset_url -> slot_index
         self._file_names: dict[str, str] = {}  # asset_url -> display name
         self._total_assets: int = 0
+        # Log panel (download phase only)
+        self._log_lines: deque[str] = deque(maxlen=self._LOG_PANEL_LINES)
         self._completed_assets: int = 0
 
     def __call__(self, event: ProgressEvent) -> None:
@@ -182,23 +202,11 @@ class CliProgressDisplay:
             self._progress.update(self._page_id, description="Pages", total=None)
 
     def _on_error(self, event: ErrorEvent) -> None:
-        """Print errors through the progress bar's console to avoid corruption."""
-        if self._progress is not None:
-            from rich.panel import Panel
-
-            msg = event.message
-            if len(msg) > 120:
-                msg = msg[:117] + "..."
-            url_line = f"\n[dim]{event.asset_url}[/dim]" if event.asset_url else ""
-            self._progress.console.print(
-                Panel(
-                    f"{msg}{url_line}",
-                    title=f"[bold red]ERROR[/bold red] [dim]{event.component}[/dim]",
-                    border_style="red",
-                    expand=False,
-                    padding=(0, 1),
-                )
-            )
+        """Log errors to the download log panel."""
+        msg = event.message
+        if len(msg) > 80:
+            msg = msg[:77] + "..."
+        self._log_to_panel(f"[bold red]ERROR[/bold red] [dim]{event.component}[/dim] {msg}")
 
     def _on_page_progress(self, event: PageProgress) -> None:
         if self._progress is None or self._page_id is None:
@@ -322,27 +330,37 @@ class CliProgressDisplay:
         if filename:
             size = _format_size(event.bytes_downloaded) if event.bytes_downloaded else ""
             if event.status != "SUCCESS":
-                from rich.panel import Panel
-
                 reason = event.error_message or "unknown error"
-                if len(reason) > 120:
-                    reason = reason[:117] + "..."
-                self._progress.console.print(
-                    Panel(
-                        f"{filename}"
-                        + (f" ({size})" if size else "")
-                        + f"\n[dim]{event.asset_url}[/dim]"
-                        + f"\n[dim italic]{reason}[/dim italic]",
-                        title="[bold red]FAILED[/bold red]",
-                        border_style="red",
-                        expand=False,
-                        padding=(0, 1),
-                    )
+                if len(reason) > 60:
+                    reason = reason[:57] + "..."
+                self._log_to_panel(
+                    f"[red]FAILED[/red] {filename}"
+                    + (f" ({size})" if size else "")
+                    + f" — [dim]{reason}[/dim]"
                 )
             else:
-                self._progress.console.print(
-                    f"  [green]SUCCESS[/green] {filename}" + (f" ({size})" if size else "")
-                )
+                self._log_to_panel(f"[green]OK[/green] {filename}" + (f" ({size})" if size else ""))
+
+    def _log_to_panel(self, line: str) -> None:
+        """Append a message to the fixed log panel and refresh the Live display."""
+        self._log_lines.append(line)
+        if self._live is not None:
+            self._live.update(self._build_layout())
+
+    def _build_layout(self) -> Group:
+        """Build the Live renderable: log panel on top, progress bars below."""
+        # Pad log lines so the panel height is always fixed
+        lines = list(self._log_lines)
+        while len(lines) < self._LOG_PANEL_LINES:
+            lines.append("")
+        log_text = Text.from_markup("\n".join(lines))
+        log_panel = Panel(
+            log_text,
+            title="[bold]Download Log[/bold]",
+            border_style="dim",
+            height=self._LOG_PANEL_LINES + 2,  # +2 for border
+        )
+        return Group(log_panel, self._progress)  # type: ignore[arg-type]
 
     def _start_download_progress(self, label: str) -> None:
         self._stop_progress()
@@ -352,7 +370,6 @@ class CliProgressDisplay:
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TimeElapsedColumn(),
-            console=console,
         )
         self._overall_id = self._progress.add_task(label, total=self._total_assets or None)
         self._denied_id = self._progress.add_task("Errors: 0 files", total=0, visible=False)
@@ -363,7 +380,9 @@ class CliProgressDisplay:
         self._slot_to_url = {}
         self._url_to_slot = {}
         self._file_names = {}
-        self._progress.start()
+        self._log_lines.clear()
+        self._live = Live(self._build_layout(), console=console, refresh_per_second=4)
+        self._live.start()
         self._suppress_console_logs()
 
     def _suppress_console_logs(self) -> None:
@@ -396,7 +415,8 @@ class CliProgressDisplay:
                     handler.setLevel(logging.CRITICAL + 1)
 
                     # Install proxy with the original level
-                    proxy = _ProgressConsoleHandler(progress_ref, orig_level)
+                    log_cb = self._log_to_panel if self._live is not None else None
+                    proxy = _ProgressConsoleHandler(progress_ref, orig_level, log_callback=log_cb)
                     for f in handler.filters:
                         proxy.addFilter(f)
                     lgr.addHandler(proxy)
@@ -412,17 +432,21 @@ class CliProgressDisplay:
         self._suppressed = []
 
     def _stop_progress(self) -> None:
-        if self._progress is not None:
-            self._slot_to_url.clear()
-            self._url_to_slot.clear()
-            self._file_names.clear()
+        if self._live is not None:
+            self._live.stop()
+            self._live = None
+        elif self._progress is not None:
+            # Metadata phase uses progress.start() directly (no Live wrapper)
             self._progress.stop()
-            self._progress = None
-            self._query_id = None
-            self._slice_id = None
-            self._page_id = None
-            self._overall_id = None
-            self._file_slot_ids = []
+        self._progress = None
+        self._slot_to_url.clear()
+        self._url_to_slot.clear()
+        self._file_names.clear()
+        self._query_id = None
+        self._slice_id = None
+        self._page_id = None
+        self._overall_id = None
+        self._file_slot_ids = []
         self._restore_console_logs()
 
 
