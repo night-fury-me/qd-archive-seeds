@@ -38,6 +38,7 @@ from qdarchive_seeding.core.exceptions import ConfigError
 
 seed_app = typer.Typer(help="Seed pipeline commands.")
 console = Console()
+_active_live: Live | None = None  # module-level ref for pause/resume around prompts
 
 _STAGE_LABELS: dict[str, str] = {
     "metadata_collection": "Collecting metadata",
@@ -159,6 +160,8 @@ class CliProgressDisplay:
             self._log_lines.clear()
             self._live = Live(self._build_layout(), console=console, refresh_per_second=4)
             self._live.start()
+            global _active_live  # noqa: PLW0603
+            _active_live = self._live
             self._suppress_console_logs()
         elif event.stage == "download":
             self._start_download_progress(label)
@@ -392,6 +395,8 @@ class CliProgressDisplay:
         self._log_lines.clear()
         self._live = Live(self._build_layout(), console=console, refresh_per_second=4)
         self._live.start()
+        global _active_live  # noqa: PLW0603
+        _active_live = self._live
         self._suppress_console_logs()
 
     def _suppress_console_logs(self) -> None:
@@ -441,9 +446,11 @@ class CliProgressDisplay:
         self._suppressed = []
 
     def _stop_progress(self) -> None:
+        global _active_live  # noqa: PLW0603
         if self._live is not None:
             self._live.stop()
             self._live = None
+            _active_live = None
         elif self._progress is not None:
             # Metadata phase uses progress.start() directly (no Live wrapper)
             self._progress.stop()
@@ -550,25 +557,36 @@ def _prompt_icpsr_login(icpsr_count: int) -> bool:
     body.append("\n  3. Sign in via institutional SSO\n")
     body.append("  4. Come back here and press Enter\n")
 
-    console.print()
-    console.print(Panel(body, title="ICPSR Browser Login", border_style="yellow", expand=False))
-
-    with contextlib.suppress(EOFError):
-        console.input("[dim]Press Enter to continue...[/dim] ")
+    if _active_live is not None:
+        _active_live.stop()
+    try:
+        console.print()
+        console.print(Panel(body, title="ICPSR Browser Login", border_style="yellow", expand=False))
+        with contextlib.suppress(EOFError):
+            console.input("[dim]Press Enter to continue...[/dim] ")
+    finally:
+        if _active_live is not None:
+            _active_live.start()
 
     return True
 
 
 def _prompt_icpsr_terms_url(url: str) -> None:
     """Show the ICPSR URL that requires manual agreement and wait for Enter."""
-    console.print(
-        f"\n[yellow]ICPSR manual agreement required:[/yellow]\n"
-        f"  [bold underline cyan]{url}[/bold underline cyan]\n"
-        f"[dim]Accept the terms in your browser, then press Enter to retry "
-        f"(or just press Enter to skip).[/dim]"
-    )
-    with contextlib.suppress(EOFError):
-        input()
+    if _active_live is not None:
+        _active_live.stop()
+    try:
+        console.print(
+            f"\n[yellow]ICPSR manual agreement required:[/yellow]\n"
+            f"  [bold underline cyan]{url}[/bold underline cyan]\n"
+            f"[dim]Accept the terms in your browser, then press Enter to retry "
+            f"(or just press Enter to skip).[/dim]"
+        )
+        with contextlib.suppress(EOFError):
+            input()
+    finally:
+        if _active_live is not None:
+            _active_live.start()
 
 
 @seed_app.command("run")
