@@ -64,6 +64,14 @@ class AssetDownloadUpdate:
 
 
 @dataclass(frozen=True, slots=True)
+class AssetDownloadStarted:
+    """Emitted when a file download begins."""
+
+    asset_url: str
+    filename: str
+
+
+@dataclass(frozen=True, slots=True)
 class AssetDownloadProgress:
     """Emitted during streaming to report byte-level progress for the current asset."""
 
@@ -102,6 +110,7 @@ ProgressEvent = (
     | PageProgress
     | DateSliceProgress
     | CountersUpdated
+    | AssetDownloadStarted
     | AssetDownloadUpdate
     | AssetDownloadProgress
     | ErrorEvent

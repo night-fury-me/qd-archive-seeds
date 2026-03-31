@@ -16,6 +16,7 @@ from qdarchive_seeding.app.config_models import PipelineConfig
 from qdarchive_seeding.app.container import Container
 from qdarchive_seeding.app.progress import (
     AssetDownloadProgress,
+    AssetDownloadStarted,
     AssetDownloadUpdate,
     Completed,
     CountersUpdated,
@@ -482,6 +483,19 @@ class ETLRunner:
                         # Delay between downloads to avoid overwhelming the server
                         await asyncio.sleep(1.0)
 
+                        # Notify UI that this file download is starting
+                        _start_filename = (
+                            asset_ref.local_filename
+                            or asset_ref.asset_url.rsplit("/", 1)[-1].split("?")[0]
+                            or "file"
+                        )
+                        bus.publish(
+                            AssetDownloadStarted(
+                                asset_url=asset_ref.asset_url,
+                                filename=_start_filename,
+                            )
+                        )
+
                         # Classic ICPSR: 3-step form flow (no retry)
                         if "zipcart2" in asset_ref.asset_url:
                             try:
@@ -518,18 +532,37 @@ class ETLRunner:
                                     async with _counter_lock:
                                         downloaded += 1
                                         await _publish_progress()
+                                    bus.publish(
+                                        AssetDownloadUpdate(
+                                            asset_url=asset_ref.asset_url,
+                                            status=DOWNLOAD_STATUS_SUCCESS,
+                                            bytes_downloaded=asset_ref.size_bytes or 0,
+                                        )
+                                    )
                                 else:
                                     asset_ref.download_status = DOWNLOAD_STATUS_FAILED
                                     asset_ref.error_message = "ICPSR form flow failed"
                                     async with _counter_lock:
                                         failed += 1
                                         await _publish_progress()
+                                    bus.publish(
+                                        AssetDownloadUpdate(
+                                            asset_url=asset_ref.asset_url,
+                                            status=DOWNLOAD_STATUS_FAILED,
+                                        )
+                                    )
                             except Exception as icpsr_exc:
                                 asset_ref.download_status = DOWNLOAD_STATUS_FAILED
                                 asset_ref.error_message = str(icpsr_exc)
                                 async with _counter_lock:
                                     failed += 1
                                     await _publish_progress()
+                                bus.publish(
+                                    AssetDownloadUpdate(
+                                        asset_url=asset_ref.asset_url,
+                                        status=DOWNLOAD_STATUS_FAILED,
+                                    )
+                                )
                             return asset_ref, None, None
 
                         # Open ICPSR: direct download with browser cookies
@@ -577,18 +610,37 @@ class ETLRunner:
                                     async with _counter_lock:
                                         downloaded += 1
                                         await _publish_progress()
+                                    bus.publish(
+                                        AssetDownloadUpdate(
+                                            asset_url=asset_ref.asset_url,
+                                            status=DOWNLOAD_STATUS_SUCCESS,
+                                            bytes_downloaded=asset_ref.size_bytes or 0,
+                                        )
+                                    )
                                 else:
                                     asset_ref.download_status = DOWNLOAD_STATUS_FAILED
                                     asset_ref.error_message = "Open ICPSR download failed"
                                     async with _counter_lock:
                                         failed += 1
                                         await _publish_progress()
+                                    bus.publish(
+                                        AssetDownloadUpdate(
+                                            asset_url=asset_ref.asset_url,
+                                            status=DOWNLOAD_STATUS_FAILED,
+                                        )
+                                    )
                             except Exception as open_exc:
                                 asset_ref.download_status = DOWNLOAD_STATUS_FAILED
                                 asset_ref.error_message = str(open_exc)
                                 async with _counter_lock:
                                     failed += 1
                                     await _publish_progress()
+                                bus.publish(
+                                    AssetDownloadUpdate(
+                                        asset_url=asset_ref.asset_url,
+                                        status=DOWNLOAD_STATUS_FAILED,
+                                    )
+                                )
                             return asset_ref, None, None
 
                         # Per-asset progress callback
@@ -638,6 +690,12 @@ class ETLRunner:
                                                 "asset_url": asset_ref.asset_url,
                                                 "error": "non-success status",
                                             }
+                                        )
+                                        bus.publish(
+                                            AssetDownloadUpdate(
+                                                asset_url=asset_ref.asset_url,
+                                                status=DOWNLOAD_STATUS_FAILED,
+                                            )
                                         )
                                     await _publish_progress()
                                 return asset_ref, dl_result, None
@@ -691,6 +749,12 @@ class ETLRunner:
                                     last_exc,
                                 )
                                 await _publish_progress()
+                            bus.publish(
+                                AssetDownloadUpdate(
+                                    asset_url=asset_ref.asset_url,
+                                    status=DOWNLOAD_STATUS_FAILED,
+                                )
+                            )
                             return asset_ref, None, last_exc
 
                 async def _process_dataset(record: Any, dataset_id: str) -> None:

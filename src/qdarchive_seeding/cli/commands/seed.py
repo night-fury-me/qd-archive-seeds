@@ -16,6 +16,7 @@ from qdarchive_seeding.app.config_loader import load_config
 from qdarchive_seeding.app.container import build_container
 from qdarchive_seeding.app.progress import (
     AssetDownloadProgress,
+    AssetDownloadStarted,
     AssetDownloadUpdate,
     Completed,
     CountersUpdated,
@@ -101,6 +102,8 @@ class CliProgressDisplay:
             self._on_page_progress(event)
         elif isinstance(event, CountersUpdated):
             self._on_counters(event)
+        elif isinstance(event, AssetDownloadStarted):
+            self._on_download_started(event)
         elif isinstance(event, AssetDownloadProgress):
             self._on_stream_progress(event)
         elif isinstance(event, AssetDownloadUpdate):
@@ -246,31 +249,31 @@ class CliProgressDisplay:
         table.add_row("Estimated total size", _format_size(event.total_size_bytes))
         console.print(table)
 
+    def _on_download_started(self, event: AssetDownloadStarted) -> None:
+        if self._progress is None:
+            return
+        filename = event.filename
+        if len(filename) > 40:
+            filename = filename[:37] + "..."
+        task_id = self._progress.add_task(f"[dim]{filename}[/dim]", total=None, completed=0)
+        self._file_tasks[event.asset_url] = task_id
+        self._file_names[event.asset_url] = filename
+
     def _on_stream_progress(self, event: AssetDownloadProgress) -> None:
         if self._progress is None:
             return
-        filename = event.filename or event.asset_url.rsplit("/", 1)[-1].split("?")[0] or "file"
-        if len(filename) > 40:
-            filename = filename[:37] + "..."
-        # Create a task for this file if it doesn't exist yet
-        if event.asset_url not in self._file_tasks:
-            task_id = self._progress.add_task(
-                f"[dim]{filename}[/dim]", total=event.total_bytes, completed=0
-            )
-            self._file_tasks[event.asset_url] = task_id
-            self._file_names[event.asset_url] = filename
-        task_id = self._file_tasks[event.asset_url]
+        task_id = self._file_tasks.get(event.asset_url)
+        if task_id is None:
+            return
         if event.total_bytes is not None:
             self._progress.update(
                 task_id,
-                description=f"[dim]{filename}[/dim]",
                 completed=event.bytes_downloaded,
                 total=event.total_bytes,
             )
         else:
             self._progress.update(
                 task_id,
-                description=f"[dim]{filename}[/dim]",
                 completed=event.bytes_downloaded,
             )
 
