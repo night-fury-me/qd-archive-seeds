@@ -181,17 +181,17 @@ external_auth:
   ssh.datastations.nl:
     type: "api_key"
     env:
-      api_key: "NL_DATAVERSE_API_TOKEN"
+      api_key: "SSH_DATASTATIONS_API_TOKEN"
     header_name: "X-Dataverse-key"
   lifesciences.datastations.nl:
     type: "api_key"
     env:
-      api_key: "NL_DATAVERSE_API_TOKEN"
+      api_key: "LIFESCIENCES_DATASTATIONS_API_TOKEN"
     header_name: "X-Dataverse-key"
   phys-techsciences.datastations.nl:
     type: "api_key"
     env:
-      api_key: "NL_DATAVERSE_API_TOKEN"
+      api_key: "PHYSTECHSCIENCES_DATASTATIONS_API_TOKEN"
     header_name: "X-Dataverse-key"
   heidata.uni-heidelberg.de:
     type: "api_key"
