@@ -27,7 +27,7 @@ dependencies = [
   "typer[all]>=0.12",
   "pymysql>=1.1",
   "pymongo>=4.7",
-
+  "browser-cookie3",
 ]
 
 [dependency-groups]
