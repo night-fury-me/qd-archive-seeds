@@ -84,7 +84,8 @@ class CliProgressDisplay:
         self._page_id: TaskID | None = None
         # Download phase task IDs
         self._overall_id: TaskID | None = None
-        self._file_id: TaskID | None = None
+        self._file_tasks: dict[str, TaskID] = {}  # asset_url -> task_id
+        self._file_names: dict[str, str] = {}  # asset_url -> display name
         self._denied_id: TaskID | None = None
         self._total_assets: int = 0
         self._completed_assets: int = 0
@@ -246,31 +247,47 @@ class CliProgressDisplay:
         console.print(table)
 
     def _on_stream_progress(self, event: AssetDownloadProgress) -> None:
-        if self._progress is None or self._file_id is None:
+        if self._progress is None:
             return
         filename = event.filename or event.asset_url.rsplit("/", 1)[-1].split("?")[0] or "file"
         if len(filename) > 40:
             filename = filename[:37] + "..."
+        # Create a task for this file if it doesn't exist yet
+        if event.asset_url not in self._file_tasks:
+            task_id = self._progress.add_task(
+                f"[dim]{filename}[/dim]", total=event.total_bytes, completed=0
+            )
+            self._file_tasks[event.asset_url] = task_id
+            self._file_names[event.asset_url] = filename
+        task_id = self._file_tasks[event.asset_url]
         if event.total_bytes is not None:
             self._progress.update(
-                self._file_id,
+                task_id,
                 description=f"[dim]{filename}[/dim]",
                 completed=event.bytes_downloaded,
                 total=event.total_bytes,
             )
         else:
             self._progress.update(
-                self._file_id,
+                task_id,
                 description=f"[dim]{filename}[/dim]",
                 completed=event.bytes_downloaded,
             )
 
-    def _on_asset_download(self, _event: AssetDownloadUpdate) -> None:
-        # Reset the per-file progress bar for the next file;
-        # overall bar is updated by _on_counters to keep description and % in sync.
-        if self._progress is not None and self._file_id is not None:
-            self._progress.reset(self._file_id)
-            self._progress.update(self._file_id, description="[dim]waiting…[/dim]")
+    def _on_asset_download(self, event: AssetDownloadUpdate) -> None:
+        if self._progress is None:
+            return
+        task_id = self._file_tasks.pop(event.asset_url, None)
+        filename = self._file_names.pop(event.asset_url, None)
+        if task_id is not None:
+            self._progress.remove_task(task_id)
+        if filename:
+            size = _format_size(event.bytes_downloaded) if event.bytes_downloaded else ""
+            status_style = "green" if event.status == "SUCCESS" else "red"
+            self._progress.console.print(
+                f"  [{status_style}]{event.status}[/{status_style}] {filename}"
+                + (f" ({size})" if size else "")
+            )
 
     def _start_download_progress(self, label: str) -> None:
         self._stop_progress()
@@ -283,8 +300,9 @@ class CliProgressDisplay:
             console=console,
         )
         self._overall_id = self._progress.add_task(label, total=self._total_assets or None)
-        self._file_id = self._progress.add_task("Current file", total=None)
         self._denied_id = self._progress.add_task("Errors: 0 files", total=0, visible=False)
+        self._file_tasks = {}
+        self._file_names = {}
         self._progress.start()
         self._suppress_console_logs()
 
