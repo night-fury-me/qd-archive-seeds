@@ -436,24 +436,12 @@ def _prompt_icpsr_login(icpsr_count: int) -> bool:
     return True
 
 
-def _prompt_icpsr_terms_url(url: str) -> None:
-    """Show the ICPSR URL that requires manual agreement and wait for Enter."""
-    from rich.panel import Panel
-    from rich.text import Text
-
-    body = Text()
-    body.append("Download failed — this study requires additional agreements.\n\n")
-    body.append("Please open this URL in your browser and accept the terms:\n")
-    body.append(f"  {url}", style="bold underline cyan")
-    body.append("\n\nAfter accepting, press Enter to retry the download.")
-
-    console.print()
+def _notify_icpsr_terms_url(url: str) -> None:
+    """Show the ICPSR URL that requires manual agreement (non-blocking)."""
     console.print(
-        Panel(body, title="ICPSR Manual Agreement Required", border_style="yellow", expand=False)
+        f"[yellow]ICPSR manual agreement required:[/yellow] [bold underline cyan]{url}[/bold "
+        f"underline cyan]"
     )
-
-    with contextlib.suppress(EOFError):
-        console.input("[dim]Press Enter to retry...[/dim] ")
 
 
 @seed_app.command("run")
@@ -509,7 +497,7 @@ def run_pipeline(
             fresh_extract=fresh_extract,
             confirm_callback=_prompt_download_decision if not no_confirm else None,
             icpsr_confirm_callback=_prompt_icpsr_login if not no_confirm else None,
-            icpsr_terms_url_callback=_prompt_icpsr_terms_url if not no_confirm else None,
+            icpsr_terms_url_callback=_notify_icpsr_terms_url,
         )
     )
 
