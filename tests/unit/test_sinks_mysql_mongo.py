@@ -22,6 +22,8 @@ def test_mysql_sink_executes_schema_and_upserts(monkeypatch: object) -> None:
             return None
 
     class DummyConn:
+        open = True
+
         def cursor(self) -> DummyCursor:
             return DummyCursor()
 
@@ -29,7 +31,7 @@ def test_mysql_sink_executes_schema_and_upserts(monkeypatch: object) -> None:
             return None
 
         def close(self) -> None:
-            return None
+            self.open = False
 
     def fake_connect(**kwargs: Any) -> DummyConn:
         calls.append(kwargs)
@@ -43,7 +45,7 @@ def test_mysql_sink_executes_schema_and_upserts(monkeypatch: object) -> None:
     asset = AssetRecord(asset_url="https://example.com/file.pdf")
     sink.upsert_asset(dataset_id, asset)
 
-    assert len(calls) >= 3
+    assert len(calls) >= 1  # persistent connection reused across operations
     assert calls[0]["host"] == "h"
     assert any("CREATE TABLE" in sql for sql in executed)
 
