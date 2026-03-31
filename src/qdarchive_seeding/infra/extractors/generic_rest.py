@@ -7,6 +7,7 @@ from typing import Any
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
 from qdarchive_seeding.core.interfaces import AuthProvider, HttpClient, RunContext
+from qdarchive_seeding.infra.http.auth import apply_auth_async
 from qdarchive_seeding.infra.http.pagination import (
     CursorPagination,
     OffsetPagination,
@@ -54,9 +55,9 @@ class GenericRestExtractor:
 
         headers: dict[str, str] = {}
         params = dict(ctx.config.source.params)
-        headers, params = self.auth.apply(headers, params)
+        headers, params = await apply_auth_async(self.auth, headers, params)
         # Capture auth headers so the downloader can apply them per-request
-        auth_hdrs, _ = self.auth.apply({}, {})
+        auth_hdrs, _ = await apply_auth_async(self.auth, {}, {})
 
         pagination_type = (
             ctx.config.source.pagination.type if ctx.config.source.pagination else None

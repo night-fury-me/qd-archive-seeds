@@ -16,6 +16,7 @@ from qdarchive_seeding.core.constants import (
 )
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord, PersonRole
 from qdarchive_seeding.core.interfaces import AuthProvider, HttpClient, RunContext
+from qdarchive_seeding.infra.http.auth import apply_auth_async
 from qdarchive_seeding.infra.http.pagination import PagePagination
 
 logger = logging.getLogger(__name__)
@@ -235,7 +236,7 @@ class ZenodoExtractor:
         params["q"] = query
         if extra_params:
             params.update(extra_params)
-        headers, params = self.auth.apply(headers, params)
+        headers, params = await apply_auth_async(self.auth, headers, params)
 
         pagination = ctx.config.source.pagination
         paginator = PagePagination(
@@ -465,7 +466,7 @@ async def _probe_total(
     """Probe the total hit count for a query using size=1 (cheapest request)."""
     headers: dict[str, str] = {}
     params = {**base_params, "size": 1, "page": 1}
-    headers, params = auth.apply(headers, params)
+    headers, params = await apply_auth_async(auth, headers, params)
     try:
         resp = await http_client.get(url, headers=headers, params=params)
         total: int = resp.json().get("hits", {}).get("total", 0)

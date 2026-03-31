@@ -16,6 +16,7 @@ from qdarchive_seeding.core.constants import (
 )
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord, PersonRole
 from qdarchive_seeding.core.interfaces import AuthProvider, HttpClient, RunContext
+from qdarchive_seeding.infra.http.auth import apply_auth_async
 from qdarchive_seeding.infra.storage.paths import safe_filename
 
 logger = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ class HarvardDataverseExtractor:
 
         headers: dict[str, str] = {}
         params: dict[str, Any] = {"q": query, "type": "dataset"}
-        headers, params = self.auth.apply(headers, params)
+        headers, params = await apply_auth_async(self.auth, headers, params)
 
         source_cfg = ctx.config.source
         per_page = self.options.per_page
@@ -477,9 +478,9 @@ class HarvardDataverseExtractor:
         # Also capture auth headers to store in each asset for the downloader
         origin_auth_headers: dict[str, str] = {}
         if base_url_override is None:
-            headers, params = self.auth.apply(headers, params)
+            headers, params = await apply_auth_async(self.auth, headers, params)
             # Capture our auth headers so the downloader can apply them per-request
-            native_headers, _ = self.auth.apply({}, {})
+            native_headers, _ = await apply_auth_async(self.auth, {}, {})
             origin_auth_headers = native_headers
         else:
             origin_host = urlparse(base_url_override).netloc.lower()

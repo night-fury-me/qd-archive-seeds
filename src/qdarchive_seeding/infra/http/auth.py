@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -7,6 +8,15 @@ from typing import Any
 import httpx
 
 from qdarchive_seeding.core.interfaces import AuthProvider
+
+
+async def apply_auth_async(
+    auth: AuthProvider, headers: dict[str, str], params: dict[str, Any]
+) -> tuple[dict[str, str], dict[str, Any]]:
+    """Apply auth in async context, offloading blocking I/O to a thread."""
+    if isinstance(auth, OAuth2ClientCredentials):
+        return await asyncio.to_thread(auth.apply, headers, params)
+    return auth.apply(headers, params)
 
 
 @dataclass(slots=True)

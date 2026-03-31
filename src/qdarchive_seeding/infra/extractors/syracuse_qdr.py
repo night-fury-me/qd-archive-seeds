@@ -12,6 +12,7 @@ from qdarchive_seeding.core.constants import (
 )
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord, PersonRole
 from qdarchive_seeding.core.interfaces import AuthProvider, HttpClient, RunContext
+from qdarchive_seeding.infra.http.auth import apply_auth_async
 from qdarchive_seeding.infra.http.pagination import OffsetPagination
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ class SyracuseQdrExtractor:
         headers: dict[str, str] = {}
         params = dict(ctx.config.source.params)
         params["q"] = query
-        headers, params = self.auth.apply(headers, params)
+        headers, params = await apply_auth_async(self.auth, headers, params)
 
         pagination = ctx.config.source.pagination
         paginator = OffsetPagination(
@@ -241,7 +242,7 @@ class SyracuseQdrExtractor:
             if result is not None:
                 file_list, license_name = result
                 # Capture auth headers so the downloader can apply them per-request
-                auth_headers, _ = self.auth.apply({}, {})
+                auth_headers, _ = await apply_auth_async(self.auth, {}, {})
                 asset_meta = {"auth_headers": auth_headers} if auth_headers else None
                 assets = [
                     AssetRecord(
