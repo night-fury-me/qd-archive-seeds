@@ -184,8 +184,20 @@ class CliProgressDisplay:
     def _on_error(self, event: ErrorEvent) -> None:
         """Print errors through the progress bar's console to avoid corruption."""
         if self._progress is not None:
-            self._progress.console.log(
-                f"[bold red] ERROR   [/bold red] [dim]{event.component}[/dim] │ {event.message}"
+            from rich.panel import Panel
+
+            msg = event.message
+            if len(msg) > 120:
+                msg = msg[:117] + "..."
+            url_line = f"\n[dim]{event.asset_url}[/dim]" if event.asset_url else ""
+            self._progress.console.print(
+                Panel(
+                    f"{msg}{url_line}",
+                    title=f"[bold red]ERROR[/bold red] [dim]{event.component}[/dim]",
+                    border_style="red",
+                    expand=False,
+                    padding=(0, 1),
+                )
             )
 
     def _on_page_progress(self, event: PageProgress) -> None:
@@ -309,21 +321,27 @@ class CliProgressDisplay:
             )
         if filename:
             size = _format_size(event.bytes_downloaded) if event.bytes_downloaded else ""
-            status_style = "green" if event.status == "SUCCESS" else "red"
             if event.status != "SUCCESS":
+                from rich.panel import Panel
+
                 reason = event.error_message or "unknown error"
-                if len(reason) > 80:
-                    reason = reason[:77] + "..."
+                if len(reason) > 120:
+                    reason = reason[:117] + "..."
                 self._progress.console.print(
-                    f"  [{status_style}]{event.status}[/{status_style}] {filename}"
-                    + (f" ({size})" if size else "")
-                    + f"\n    [dim]{event.asset_url}[/dim]"
-                    + f"\n    [dim italic]{reason}[/dim italic]"
+                    Panel(
+                        f"{filename}"
+                        + (f" ({size})" if size else "")
+                        + f"\n[dim]{event.asset_url}[/dim]"
+                        + f"\n[dim italic]{reason}[/dim italic]",
+                        title="[bold red]FAILED[/bold red]",
+                        border_style="red",
+                        expand=False,
+                        padding=(0, 1),
+                    )
                 )
             else:
                 self._progress.console.print(
-                    f"  [{status_style}]{event.status}[/{status_style}] {filename}"
-                    + (f" ({size})" if size else "")
+                    f"  [green]SUCCESS[/green] {filename}" + (f" ({size})" if size else "")
                 )
 
     def _start_download_progress(self, label: str) -> None:
