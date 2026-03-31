@@ -70,6 +70,7 @@ class AssetDownloadProgress:
     asset_url: str
     bytes_downloaded: int
     total_bytes: int | None = None
+    filename: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

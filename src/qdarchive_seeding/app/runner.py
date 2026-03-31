@@ -592,12 +592,19 @@ class ETLRunner:
                             return asset_ref, None, None
 
                         # Per-asset progress callback
+                        _asset_filename = (
+                            asset_ref.local_filename
+                            or asset_ref.asset_url.rsplit("/", 1)[-1].split("?")[0]
+                            or "file"
+                        )
+
                         def _on_progress(bytes_so_far: int, total_bytes: int | None) -> None:
                             bus.publish(
                                 AssetDownloadProgress(
                                     asset_url=asset_ref.asset_url,
                                     bytes_downloaded=bytes_so_far,
                                     total_bytes=total_bytes,
+                                    filename=_asset_filename,
                                 )
                             )
 

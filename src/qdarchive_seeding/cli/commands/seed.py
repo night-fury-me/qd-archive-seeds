@@ -248,8 +248,7 @@ class CliProgressDisplay:
     def _on_stream_progress(self, event: AssetDownloadProgress) -> None:
         if self._progress is None or self._file_id is None:
             return
-        # Extract a short label from the URL
-        filename = event.asset_url.rsplit("/", 1)[-1].split("?")[0] or "file"
+        filename = event.filename or event.asset_url.rsplit("/", 1)[-1].split("?")[0] or "file"
         if len(filename) > 40:
             filename = filename[:37] + "..."
         if event.total_bytes is not None:
