@@ -102,6 +102,13 @@ class Downloader:
     ) -> DownloadResult:
         async with self.client.stream("GET", asset.asset_url, headers=headers) as response:
             response.raise_for_status()
+            # Detect login/error pages served instead of actual files
+            content_type = response.headers.get("content-type", "")
+            if "text/html" in content_type:
+                raise ValueError(
+                    f"Expected file download but got HTML response (likely a login page) "
+                    f"for {asset.asset_url}"
+                )
             content_length = response.headers.get("content-length")
             total_bytes = int(content_length) if content_length else None
             with open(temp_path, mode) as raw_fh:
