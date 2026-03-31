@@ -78,11 +78,7 @@ def _get_icpsr_browser_cookies(
             ext_auth.browser, browser_cookie3.chromium
         )
         cookie_jar = loader(domain_name=cookie_domain)
-        _icpsr_cookie_cache[domain] = {
-            c.name: c.value
-            for c in cookie_jar
-            if c.value and not c.name.lower().startswith(("__cf", "cf_", "_cf"))
-        }
+        _icpsr_cookie_cache[domain] = {c.name: c.value for c in cookie_jar if c.value}
     except Exception:
         _icpsr_cookie_cache[domain] = {}
         logger.warning("Failed to extract browser cookies for %s", domain)
