@@ -187,6 +187,65 @@ class ETLRunner:
         self._c = container
         self._icpsr_cookie_cache: dict[str, dict[str, str]] = {}
 
+    async def _download_classic_icpsr(
+        self,
+        asset: Any,
+        target_dir: Path,
+        config: PipelineConfig,
+        terms_callback: Callable[..., Any] | None,
+        prompt_lock: asyncio.Lock,
+    ) -> Path | None:
+        """Orchestrate Classic ICPSR download with cookie refresh and terms prompt."""
+        from qdarchive_seeding.infra.storage.icpsr_downloader import download_classic_icpsr
+
+        cookies = _get_icpsr_browser_cookies(config, self._icpsr_cookie_cache)
+        zip_path = await asyncio.to_thread(
+            download_classic_icpsr, asset, target_dir, cookies
+        )
+        if zip_path is None and terms_callback is not None:
+            async with prompt_lock:
+                await asyncio.to_thread(terms_callback, asset.asset_url)
+                self._icpsr_cookie_cache.pop("www.icpsr.umich.edu", None)
+                cookies = _get_icpsr_browser_cookies(config, self._icpsr_cookie_cache)
+                zip_path = await asyncio.to_thread(
+                    download_classic_icpsr, asset, target_dir, cookies
+                )
+        return zip_path
+
+    async def _download_open_icpsr(
+        self,
+        asset: Any,
+        target_dir: Path,
+        config: PipelineConfig,
+        terms_callback: Callable[..., Any] | None,
+        prompt_lock: asyncio.Lock,
+    ) -> Path | None:
+        """Orchestrate Open ICPSR download with dual-cookie refresh and terms prompt."""
+        from qdarchive_seeding.infra.storage.icpsr_downloader import download_open_icpsr
+
+        open_cookies = _get_icpsr_browser_cookies(
+            config, self._icpsr_cookie_cache, domain="www.openicpsr.org"
+        )
+        classic_cookies = _get_icpsr_browser_cookies(config, self._icpsr_cookie_cache)
+        zip_path = await asyncio.to_thread(
+            download_open_icpsr, asset, target_dir, open_cookies, classic_cookies
+        )
+        if zip_path is None and terms_callback is not None:
+            async with prompt_lock:
+                await asyncio.to_thread(terms_callback, asset.asset_url)
+                self._icpsr_cookie_cache.pop("www.openicpsr.org", None)
+                self._icpsr_cookie_cache.pop("www.icpsr.umich.edu", None)
+                open_cookies = _get_icpsr_browser_cookies(
+                    config, self._icpsr_cookie_cache, domain="www.openicpsr.org"
+                )
+                classic_cookies = _get_icpsr_browser_cookies(
+                    config, self._icpsr_cookie_cache
+                )
+                zip_path = await asyncio.to_thread(
+                    download_open_icpsr, asset, target_dir, open_cookies, classic_cookies
+                )
+        return zip_path
+
     async def run(
         self,
         *,
@@ -512,37 +571,25 @@ class ETLRunner:
                             )
                         )
 
-                        # Classic ICPSR: 3-step form flow (no retry)
-                        if "zipcart2" in asset_ref.asset_url:
+                        # ICPSR downloads (Classic zipcart2 or Open ICPSR)
+                        _is_icpsr = (
+                            "zipcart2" in asset_ref.asset_url
+                            or "openicpsr.org" in asset_ref.asset_url
+                        )
+                        if _is_icpsr:
                             try:
-                                from qdarchive_seeding.infra.storage.icpsr_downloader import (
-                                    download_classic_icpsr,
-                                )
-
-                                icpsr_cookies = _get_icpsr_browser_cookies(
-                                        c.config, self._icpsr_cookie_cache
+                                if "zipcart2" in asset_ref.asset_url:
+                                    zip_path = await self._download_classic_icpsr(
+                                        asset_ref, target, c.config,
+                                        icpsr_terms_url_callback, _icpsr_prompt_lock,
                                     )
-                                zip_path = await asyncio.to_thread(
-                                    download_classic_icpsr,
-                                    asset_ref,
-                                    target,
-                                    icpsr_cookies,
-                                )
-                                if zip_path is None and icpsr_terms_url_callback is not None:
-                                    async with _icpsr_prompt_lock:
-                                        await asyncio.to_thread(
-                                            icpsr_terms_url_callback, asset_ref.asset_url
-                                        )
-                                        self._icpsr_cookie_cache.pop("www.icpsr.umich.edu", None)
-                                        icpsr_cookies = _get_icpsr_browser_cookies(
-                                        c.config, self._icpsr_cookie_cache
+                                    fail_msg = "ICPSR form flow failed"
+                                else:
+                                    zip_path = await self._download_open_icpsr(
+                                        asset_ref, target, c.config,
+                                        icpsr_terms_url_callback, _icpsr_prompt_lock,
                                     )
-                                        zip_path = await asyncio.to_thread(
-                                            download_classic_icpsr,
-                                            asset_ref,
-                                            target,
-                                            icpsr_cookies,
-                                        )
+                                    fail_msg = "Open ICPSR download failed"
                                 if zip_path is not None:
                                     asset_ref.download_status = DOWNLOAD_STATUS_SUCCESS
                                     asset_ref.asset_type = "zip_bundle"
@@ -559,7 +606,7 @@ class ETLRunner:
                                     )
                                 else:
                                     asset_ref.download_status = DOWNLOAD_STATUS_FAILED
-                                    asset_ref.error_message = "ICPSR form flow failed"
+                                    asset_ref.error_message = fail_msg
                                     async with _counter_lock:
                                         failed += 1
                                         await _publish_progress()
@@ -567,7 +614,7 @@ class ETLRunner:
                                         AssetDownloadUpdate(
                                             asset_url=asset_ref.asset_url,
                                             status=DOWNLOAD_STATUS_FAILED,
-                                            error_message="ICPSR form flow failed",
+                                            error_message=fail_msg,
                                         )
                                     )
                             except Exception as icpsr_exc:
@@ -581,89 +628,6 @@ class ETLRunner:
                                         asset_url=asset_ref.asset_url,
                                         status=DOWNLOAD_STATUS_FAILED,
                                         error_message=str(icpsr_exc),
-                                    )
-                                )
-                            return asset_ref, None, None
-
-                        # Open ICPSR: direct download with browser cookies
-                        if "openicpsr.org" in asset_ref.asset_url:
-                            try:
-                                from qdarchive_seeding.infra.storage.icpsr_downloader import (
-                                    download_open_icpsr,
-                                )
-
-                                open_cookies = _get_icpsr_browser_cookies(
-                                    c.config, self._icpsr_cookie_cache, domain="www.openicpsr.org"
-                                )
-                                classic_cookies = _get_icpsr_browser_cookies(
-                                        c.config, self._icpsr_cookie_cache
-                                    )
-                                zip_path = await asyncio.to_thread(
-                                    download_open_icpsr,
-                                    asset_ref,
-                                    target,
-                                    open_cookies,
-                                    classic_cookies,
-                                )
-                                if zip_path is None and icpsr_terms_url_callback is not None:
-                                    async with _icpsr_prompt_lock:
-                                        await asyncio.to_thread(
-                                            icpsr_terms_url_callback, asset_ref.asset_url
-                                        )
-                                        self._icpsr_cookie_cache.pop("www.openicpsr.org", None)
-                                        self._icpsr_cookie_cache.pop("www.icpsr.umich.edu", None)
-                                        open_cookies = _get_icpsr_browser_cookies(
-                                            c.config, self._icpsr_cookie_cache,
-                                            domain="www.openicpsr.org",
-                                        )
-                                        classic_cookies = _get_icpsr_browser_cookies(
-                                        c.config, self._icpsr_cookie_cache
-                                    )
-                                        zip_path = await asyncio.to_thread(
-                                            download_open_icpsr,
-                                            asset_ref,
-                                            target,
-                                            open_cookies,
-                                            classic_cookies,
-                                        )
-                                if zip_path is not None:
-                                    asset_ref.download_status = DOWNLOAD_STATUS_SUCCESS
-                                    asset_ref.asset_type = "zip_bundle"
-                                    asset_ref.downloaded_at = datetime.now(UTC)
-                                    async with _counter_lock:
-                                        downloaded += 1
-                                        await _publish_progress()
-                                    bus.publish(
-                                        AssetDownloadUpdate(
-                                            asset_url=asset_ref.asset_url,
-                                            status=DOWNLOAD_STATUS_SUCCESS,
-                                            bytes_downloaded=asset_ref.size_bytes or 0,
-                                        )
-                                    )
-                                else:
-                                    asset_ref.download_status = DOWNLOAD_STATUS_FAILED
-                                    asset_ref.error_message = "Open ICPSR download failed"
-                                    async with _counter_lock:
-                                        failed += 1
-                                        await _publish_progress()
-                                    bus.publish(
-                                        AssetDownloadUpdate(
-                                            asset_url=asset_ref.asset_url,
-                                            status=DOWNLOAD_STATUS_FAILED,
-                                            error_message="Open ICPSR download failed",
-                                        )
-                                    )
-                            except Exception as open_exc:
-                                asset_ref.download_status = DOWNLOAD_STATUS_FAILED
-                                asset_ref.error_message = str(open_exc)
-                                async with _counter_lock:
-                                    failed += 1
-                                    await _publish_progress()
-                                bus.publish(
-                                    AssetDownloadUpdate(
-                                        asset_url=asset_ref.asset_url,
-                                        status=DOWNLOAD_STATUS_FAILED,
-                                        error_message=str(open_exc),
                                     )
                                 )
                             return asset_ref, None, None
