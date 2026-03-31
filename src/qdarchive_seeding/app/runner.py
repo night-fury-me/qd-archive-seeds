@@ -55,21 +55,19 @@ class DownloadDecision:
     exact_count: int | None = None  # if set, download exactly this many datasets
 
 
-_icpsr_cookie_cache: dict[str, dict[str, str]] = {}
-
-
 def _get_icpsr_browser_cookies(
-    config: PipelineConfig, domain: str = "www.icpsr.umich.edu"
+    config: PipelineConfig,
+    cache: dict[str, dict[str, str]],
+    domain: str = "www.icpsr.umich.edu",
 ) -> dict[str, str]:
     """Extract and cache browser cookies for an ICPSR domain."""
-    global _icpsr_cookie_cache  # noqa: PLW0603
-    if domain in _icpsr_cookie_cache:
-        return _icpsr_cookie_cache[domain]
+    if domain in cache:
+        return cache[domain]
 
     ext_auth = config.external_auth.get(domain)
     if ext_auth is None or ext_auth.type != "browser_session":
-        _icpsr_cookie_cache[domain] = {}
-        return _icpsr_cookie_cache[domain]
+        cache[domain] = {}
+        return cache[domain]
 
     # Cookie domain for browser lookup (leading dot matches subdomains)
     cookie_domain = "." + domain.removeprefix("www.")
@@ -81,12 +79,12 @@ def _get_icpsr_browser_cookies(
             ext_auth.browser, browser_cookie3.chromium
         )
         cookie_jar = loader(domain_name=cookie_domain)
-        _icpsr_cookie_cache[domain] = {c.name: c.value for c in cookie_jar if c.value}
+        cache[domain] = {c.name: c.value for c in cookie_jar if c.value}
     except Exception:
-        _icpsr_cookie_cache[domain] = {}
+        cache[domain] = {}
         logger.warning("Failed to extract browser cookies for %s", domain)
 
-    return _icpsr_cookie_cache[domain]
+    return cache[domain]
 
 
 def _validate_zip_members(zf: zipfile.ZipFile, target_dir: Path) -> None:
@@ -187,6 +185,7 @@ def _extract_zip_bundle(
 class ETLRunner:
     def __init__(self, container: Container) -> None:
         self._c = container
+        self._icpsr_cookie_cache: dict[str, dict[str, str]] = {}
 
     async def run(
         self,
@@ -520,7 +519,9 @@ class ETLRunner:
                                     download_classic_icpsr,
                                 )
 
-                                icpsr_cookies = _get_icpsr_browser_cookies(c.config)
+                                icpsr_cookies = _get_icpsr_browser_cookies(
+                                        c.config, self._icpsr_cookie_cache
+                                    )
                                 zip_path = await asyncio.to_thread(
                                     download_classic_icpsr,
                                     asset_ref,
@@ -532,8 +533,10 @@ class ETLRunner:
                                         await asyncio.to_thread(
                                             icpsr_terms_url_callback, asset_ref.asset_url
                                         )
-                                        _icpsr_cookie_cache.pop("www.icpsr.umich.edu", None)
-                                        icpsr_cookies = _get_icpsr_browser_cookies(c.config)
+                                        self._icpsr_cookie_cache.pop("www.icpsr.umich.edu", None)
+                                        icpsr_cookies = _get_icpsr_browser_cookies(
+                                        c.config, self._icpsr_cookie_cache
+                                    )
                                         zip_path = await asyncio.to_thread(
                                             download_classic_icpsr,
                                             asset_ref,
@@ -590,9 +593,11 @@ class ETLRunner:
                                 )
 
                                 open_cookies = _get_icpsr_browser_cookies(
-                                    c.config, domain="www.openicpsr.org"
+                                    c.config, self._icpsr_cookie_cache, domain="www.openicpsr.org"
                                 )
-                                classic_cookies = _get_icpsr_browser_cookies(c.config)
+                                classic_cookies = _get_icpsr_browser_cookies(
+                                        c.config, self._icpsr_cookie_cache
+                                    )
                                 zip_path = await asyncio.to_thread(
                                     download_open_icpsr,
                                     asset_ref,
@@ -605,12 +610,15 @@ class ETLRunner:
                                         await asyncio.to_thread(
                                             icpsr_terms_url_callback, asset_ref.asset_url
                                         )
-                                        _icpsr_cookie_cache.pop("www.openicpsr.org", None)
-                                        _icpsr_cookie_cache.pop("www.icpsr.umich.edu", None)
+                                        self._icpsr_cookie_cache.pop("www.openicpsr.org", None)
+                                        self._icpsr_cookie_cache.pop("www.icpsr.umich.edu", None)
                                         open_cookies = _get_icpsr_browser_cookies(
-                                            c.config, domain="www.openicpsr.org"
+                                            c.config, self._icpsr_cookie_cache,
+                                            domain="www.openicpsr.org",
                                         )
-                                        classic_cookies = _get_icpsr_browser_cookies(c.config)
+                                        classic_cookies = _get_icpsr_browser_cookies(
+                                        c.config, self._icpsr_cookie_cache
+                                    )
                                         zip_path = await asyncio.to_thread(
                                             download_open_icpsr,
                                             asset_ref,
