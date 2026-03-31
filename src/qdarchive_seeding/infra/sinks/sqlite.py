@@ -244,8 +244,14 @@ class SQLiteSink(BaseSink):
               file_type=excluded.file_type,
               asset_url=COALESCE(excluded.asset_url, asset_url),
               size_bytes=COALESCE(excluded.size_bytes, size_bytes),
-              status=excluded.status,
-              error_message=excluded.error_message
+              status=CASE
+                WHEN excluded.status = 'UNKNOWN' THEN files.status
+                ELSE excluded.status
+              END,
+              error_message=CASE
+                WHEN excluded.status = 'UNKNOWN' THEN files.error_message
+                ELSE excluded.error_message
+              END
             """,
             (
                 project_id,
