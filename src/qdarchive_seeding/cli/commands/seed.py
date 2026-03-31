@@ -85,9 +85,13 @@ class CliProgressDisplay:
         self._page_id: TaskID | None = None
         # Download phase task IDs
         self._overall_id: TaskID | None = None
-        self._file_tasks: dict[str, TaskID] = {}  # asset_url -> task_id
-        self._file_names: dict[str, str] = {}  # asset_url -> display name
         self._denied_id: TaskID | None = None
+        # Fixed pool of file slots (avoids jumping when bars are added/removed)
+        self._max_file_slots = 5
+        self._file_slot_ids: list[TaskID] = []  # pre-created task IDs
+        self._slot_to_url: dict[int, str] = {}  # slot_index -> asset_url
+        self._url_to_slot: dict[str, int] = {}  # asset_url -> slot_index
+        self._file_names: dict[str, str] = {}  # asset_url -> display name
         self._total_assets: int = 0
         self._completed_assets: int = 0
 
@@ -255,16 +259,28 @@ class CliProgressDisplay:
         filename = event.filename
         if len(filename) > 40:
             filename = filename[:37] + "..."
-        task_id = self._progress.add_task(f"[dim]{filename}[/dim]", total=None, completed=0)
-        self._file_tasks[event.asset_url] = task_id
         self._file_names[event.asset_url] = filename
+        # Find a free slot
+        for i in range(self._max_file_slots):
+            if i not in self._slot_to_url:
+                self._slot_to_url[i] = event.asset_url
+                self._url_to_slot[event.asset_url] = i
+                self._progress.reset(self._file_slot_ids[i])
+                self._progress.update(
+                    self._file_slot_ids[i],
+                    description=f"[dim]{filename}[/dim]",
+                    total=None,
+                    completed=0,
+                )
+                return
 
     def _on_stream_progress(self, event: AssetDownloadProgress) -> None:
         if self._progress is None:
             return
-        task_id = self._file_tasks.get(event.asset_url)
-        if task_id is None:
+        slot = self._url_to_slot.get(event.asset_url)
+        if slot is None:
             return
+        task_id = self._file_slot_ids[slot]
         if event.total_bytes is not None:
             self._progress.update(
                 task_id,
@@ -280,10 +296,17 @@ class CliProgressDisplay:
     def _on_asset_download(self, event: AssetDownloadUpdate) -> None:
         if self._progress is None:
             return
-        task_id = self._file_tasks.pop(event.asset_url, None)
+        slot = self._url_to_slot.pop(event.asset_url, None)
         filename = self._file_names.pop(event.asset_url, None)
-        if task_id is not None:
-            self._progress.remove_task(task_id)
+        if slot is not None:
+            self._slot_to_url.pop(slot, None)
+            self._progress.reset(self._file_slot_ids[slot])
+            self._progress.update(
+                self._file_slot_ids[slot],
+                description="[dim]—[/dim]",
+                total=0,
+                completed=0,
+            )
         if filename:
             size = _format_size(event.bytes_downloaded) if event.bytes_downloaded else ""
             status_style = "green" if event.status == "SUCCESS" else "red"
@@ -315,7 +338,12 @@ class CliProgressDisplay:
         )
         self._overall_id = self._progress.add_task(label, total=self._total_assets or None)
         self._denied_id = self._progress.add_task("Errors: 0 files", total=0, visible=False)
-        self._file_tasks = {}
+        self._file_slot_ids = [
+            self._progress.add_task("[dim]—[/dim]", total=0, completed=0)
+            for _ in range(self._max_file_slots)
+        ]
+        self._slot_to_url = {}
+        self._url_to_slot = {}
         self._file_names = {}
         self._progress.start()
         self._suppress_console_logs()
@@ -367,10 +395,8 @@ class CliProgressDisplay:
 
     def _stop_progress(self) -> None:
         if self._progress is not None:
-            # Clean up any orphaned file task bars
-            for task_id in self._file_tasks.values():
-                self._progress.remove_task(task_id)
-            self._file_tasks.clear()
+            self._slot_to_url.clear()
+            self._url_to_slot.clear()
             self._file_names.clear()
             self._progress.stop()
             self._progress = None
@@ -378,6 +404,7 @@ class CliProgressDisplay:
             self._slice_id = None
             self._page_id = None
             self._overall_id = None
+            self._file_slot_ids = []
         self._restore_console_logs()
 
 
