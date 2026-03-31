@@ -422,8 +422,11 @@ def _prompt_icpsr_login(icpsr_count: int) -> bool:
     body.append("; all other downloads proceed normally.\n\n")
     body.append("To log in:\n")
     body.append("  1. Open a Chromium-based browser on this machine\n")
-    body.append("  2. Go to ")
+    body.append("  2. Log in to both:\n")
+    body.append("     - ")
     body.append("https://www.icpsr.umich.edu/mydata", style="bold underline cyan")
+    body.append("\n     - ")
+    body.append("https://www.openicpsr.org/openicpsr/", style="bold underline cyan")
     body.append("\n  3. Sign in via institutional SSO\n")
     body.append("  4. Come back here and press Enter\n")
 
