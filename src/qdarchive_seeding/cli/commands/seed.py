@@ -287,12 +287,21 @@ class CliProgressDisplay:
         if filename:
             size = _format_size(event.bytes_downloaded) if event.bytes_downloaded else ""
             status_style = "green" if event.status == "SUCCESS" else "red"
-            url_suffix = f"\n    [dim]{event.asset_url}[/dim]" if event.status != "SUCCESS" else ""
-            self._progress.console.print(
-                f"  [{status_style}]{event.status}[/{status_style}] {filename}"
-                + (f" ({size})" if size else "")
-                + url_suffix
-            )
+            if event.status != "SUCCESS":
+                reason = event.error_message or "unknown error"
+                if len(reason) > 80:
+                    reason = reason[:77] + "..."
+                self._progress.console.print(
+                    f"  [{status_style}]{event.status}[/{status_style}] {filename}"
+                    + (f" ({size})" if size else "")
+                    + f"\n    [dim]{event.asset_url}[/dim]"
+                    + f"\n    [dim italic]{reason}[/dim italic]"
+                )
+            else:
+                self._progress.console.print(
+                    f"  [{status_style}]{event.status}[/{status_style}] {filename}"
+                    + (f" ({size})" if size else "")
+                )
 
     def _start_download_progress(self, label: str) -> None:
         self._stop_progress()

@@ -549,6 +549,7 @@ class ETLRunner:
                                         AssetDownloadUpdate(
                                             asset_url=asset_ref.asset_url,
                                             status=DOWNLOAD_STATUS_FAILED,
+                                            error_message="ICPSR form flow failed",
                                         )
                                     )
                             except Exception as icpsr_exc:
@@ -561,6 +562,7 @@ class ETLRunner:
                                     AssetDownloadUpdate(
                                         asset_url=asset_ref.asset_url,
                                         status=DOWNLOAD_STATUS_FAILED,
+                                        error_message=str(icpsr_exc),
                                     )
                                 )
                             return asset_ref, None, None
@@ -627,6 +629,7 @@ class ETLRunner:
                                         AssetDownloadUpdate(
                                             asset_url=asset_ref.asset_url,
                                             status=DOWNLOAD_STATUS_FAILED,
+                                            error_message="Open ICPSR download failed",
                                         )
                                     )
                             except Exception as open_exc:
@@ -639,6 +642,7 @@ class ETLRunner:
                                     AssetDownloadUpdate(
                                         asset_url=asset_ref.asset_url,
                                         status=DOWNLOAD_STATUS_FAILED,
+                                        error_message=str(open_exc),
                                     )
                                 )
                             return asset_ref, None, None
@@ -695,6 +699,7 @@ class ETLRunner:
                                             AssetDownloadUpdate(
                                                 asset_url=asset_ref.asset_url,
                                                 status=DOWNLOAD_STATUS_FAILED,
+                                                error_message="non-success status",
                                             )
                                         )
                                     await _publish_progress()
@@ -753,6 +758,7 @@ class ETLRunner:
                                 AssetDownloadUpdate(
                                     asset_url=asset_ref.asset_url,
                                     status=DOWNLOAD_STATUS_FAILED,
+                                    error_message=str(last_exc),
                                 )
                             )
                             return asset_ref, None, last_exc

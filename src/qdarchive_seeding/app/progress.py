@@ -61,6 +61,7 @@ class AssetDownloadUpdate:
     status: str
     bytes_downloaded: int = 0
     total_bytes: int | None = None
+    error_message: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
