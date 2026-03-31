@@ -470,11 +470,12 @@ def _format_size(size_bytes: int) -> str:
     """Format byte count as human-readable string."""
     if size_bytes <= 0:
         return "unknown"
+    size = float(size_bytes)
     for unit in ("B", "KB", "MB", "GB", "TB"):
-        if size_bytes < 1024:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024  # type: ignore[assignment]
-    return f"{size_bytes:.1f} PB"
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} PB"
 
 
 def _prompt_download_decision(

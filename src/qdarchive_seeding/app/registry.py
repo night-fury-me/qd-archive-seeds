@@ -111,12 +111,16 @@ def _build_bearer_auth(config: Any) -> AuthProvider:
 def _build_oauth2_auth(config: Any) -> AuthProvider:
     from qdarchive_seeding.infra.http.auth import OAuth2ClientCredentials
 
-    token_url = config.auth.env.get("token_url", "")
+    token_url_key = config.auth.env.get("token_url", "")
     client_id_key = config.auth.env.get("client_id", "")
     client_secret_key = config.auth.env.get("client_secret", "")
     scope = config.auth.env.get("scope", "")
+    token_url = os.environ.get(token_url_key, token_url_key)
+    if "://" not in token_url:
+        msg = f"OAuth2 token_url env var '{token_url_key}' is not set or is not a valid URL"
+        raise ValueError(msg)
     return OAuth2ClientCredentials(
-        token_url=os.environ.get(token_url, token_url),
+        token_url=token_url,
         client_id=os.environ.get(client_id_key, ""),
         client_secret=os.environ.get(client_secret_key, ""),
         scope=os.environ.get(scope, scope),

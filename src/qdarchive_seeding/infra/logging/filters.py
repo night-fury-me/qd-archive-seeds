@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 
 
-@dataclass(slots=True)
+@dataclass
 class ContextFilter(logging.Filter):
     run_id: str | None = None
     pipeline_id: str | None = None

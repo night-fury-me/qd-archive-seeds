@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -147,5 +148,9 @@ class PipelineConfig(BaseConfig):
             if "pre_transforms" not in data:
                 data["pre_transforms"] = data.pop("transforms")
             else:
+                logging.getLogger(__name__).warning(
+                    "Both 'transforms' and 'pre_transforms' specified; "
+                    "ignoring deprecated 'transforms' key"
+                )
                 data.pop("transforms")
         return data
