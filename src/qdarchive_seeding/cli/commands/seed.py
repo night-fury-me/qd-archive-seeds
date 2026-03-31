@@ -332,13 +332,14 @@ class CliProgressDisplay:
             size = _format_size(event.bytes_downloaded) if event.bytes_downloaded else ""
             if event.status != "SUCCESS":
                 reason = event.error_message or "unknown error"
-                if len(reason) > 60:
-                    reason = reason[:57] + "..."
+                if len(reason) > 80:
+                    reason = reason[:77] + "..."
                 self._log_to_panel(
                     f"[red]FAILED[/red] {filename}"
                     + (f" ({size})" if size else "")
                     + f" — [dim]{reason}[/dim]"
                 )
+                self._log_to_panel(f"  [dim]{event.asset_url}[/dim]")
             else:
                 self._log_to_panel(f"[green]OK[/green] {filename}" + (f" ({size})" if size else ""))
 
@@ -358,12 +359,15 @@ class CliProgressDisplay:
         while len(lines) < self._LOG_PANEL_LINES:
             lines.append("")
         log_text = Text.from_markup("\n".join(lines))
+        log_text.no_wrap = True
+        log_text.overflow = "ellipsis"
         title = "[bold]Download Log[/bold]" if self._overall_id is not None else "[bold]Log[/bold]"
         log_panel = Panel(
             log_text,
             title=title,
             border_style="dim",
             height=self._LOG_PANEL_LINES + 2,  # +2 for border
+            expand=True,
         )
         return Group(log_panel, self._progress)  # type: ignore[arg-type]
 
