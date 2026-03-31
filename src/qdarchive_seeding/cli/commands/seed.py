@@ -436,12 +436,16 @@ def _prompt_icpsr_login(icpsr_count: int) -> bool:
     return True
 
 
-def _notify_icpsr_terms_url(url: str) -> None:
-    """Show the ICPSR URL that requires manual agreement (non-blocking)."""
+def _prompt_icpsr_terms_url(url: str) -> None:
+    """Show the ICPSR URL that requires manual agreement and wait for Enter."""
     console.print(
-        f"[yellow]ICPSR manual agreement required:[/yellow] [bold underline cyan]{url}[/bold "
-        f"underline cyan]"
+        f"\n[yellow]ICPSR manual agreement required:[/yellow]\n"
+        f"  [bold underline cyan]{url}[/bold underline cyan]\n"
+        f"[dim]Accept the terms in your browser, then press Enter to retry "
+        f"(or just press Enter to skip).[/dim]"
     )
+    with contextlib.suppress(EOFError):
+        input()
 
 
 @seed_app.command("run")
@@ -497,7 +501,7 @@ def run_pipeline(
             fresh_extract=fresh_extract,
             confirm_callback=_prompt_download_decision if not no_confirm else None,
             icpsr_confirm_callback=_prompt_icpsr_login if not no_confirm else None,
-            icpsr_terms_url_callback=_notify_icpsr_terms_url,
+            icpsr_terms_url_callback=_prompt_icpsr_terms_url if not no_confirm else None,
         )
     )
 
