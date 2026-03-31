@@ -16,6 +16,7 @@ from qdarchive_seeding.core.constants import (
 )
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord, PersonRole
 from qdarchive_seeding.core.interfaces import AuthProvider, HttpClient, RunContext
+from qdarchive_seeding.infra.storage.paths import safe_filename
 
 logger = logging.getLogger(__name__)
 
@@ -506,11 +507,12 @@ class HarvardDataverseExtractor:
         assets: list[AssetRecord] = []
         for file_entry in data:
             data_file = file_entry.get("dataFile", {})
-            filename = data_file.get("filename", "")
+            raw_filename = data_file.get("filename", "")
             file_id = data_file.get("id")
-            if not filename or not file_id:
+            if not raw_filename or not file_id:
                 continue
 
+            filename = safe_filename(raw_filename)
             download_url = f"{base_url}/access/datafile/{file_id}"
             file_type = PurePosixPath(filename).suffix.lstrip(".") if filename else None
 
