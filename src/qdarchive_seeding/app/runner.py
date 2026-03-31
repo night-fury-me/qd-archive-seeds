@@ -270,8 +270,9 @@ class ETLRunner:
                         for asset in record.assets:
                             c.sink.upsert_asset(dataset_id, asset)
                         loaded += 1
-                        collected_records.append(record)
-                        collected_dataset_ids.append(dataset_id)
+                        if dataset_id not in collected_dataset_ids:
+                            collected_records.append(record)
+                            collected_dataset_ids.append(dataset_id)
                     except Exception as exc:
                         log.error("Sink error for record %s: %s", record.source_dataset_id, exc)
                         bus.publish(
@@ -438,6 +439,8 @@ class ETLRunner:
 
                 # Concurrency lock for shared counter updates
                 _counter_lock = asyncio.Lock()
+                # Serialize ICPSR prompts so only one shows at a time
+                _icpsr_prompt_lock = asyncio.Lock()
 
                 async def _publish_progress() -> None:
                     """Publish current counter state to the progress bus."""
@@ -498,17 +501,18 @@ class ETLRunner:
                                     icpsr_cookies,
                                 )
                                 if zip_path is None and icpsr_terms_url_callback is not None:
-                                    await asyncio.to_thread(
-                                        icpsr_terms_url_callback, asset_ref.asset_url
-                                    )
-                                    _icpsr_cookie_cache.pop("www.icpsr.umich.edu", None)
-                                    icpsr_cookies = _get_icpsr_browser_cookies(c.config)
-                                    zip_path = await asyncio.to_thread(
-                                        download_classic_icpsr,
-                                        asset_ref,
-                                        target,
-                                        icpsr_cookies,
-                                    )
+                                    async with _icpsr_prompt_lock:
+                                        await asyncio.to_thread(
+                                            icpsr_terms_url_callback, asset_ref.asset_url
+                                        )
+                                        _icpsr_cookie_cache.pop("www.icpsr.umich.edu", None)
+                                        icpsr_cookies = _get_icpsr_browser_cookies(c.config)
+                                        zip_path = await asyncio.to_thread(
+                                            download_classic_icpsr,
+                                            asset_ref,
+                                            target,
+                                            icpsr_cookies,
+                                        )
                                 if zip_path is not None:
                                     asset_ref.download_status = DOWNLOAD_STATUS_SUCCESS
                                     asset_ref.asset_type = "zip_bundle"
@@ -542,26 +546,32 @@ class ETLRunner:
                                 open_cookies = _get_icpsr_browser_cookies(
                                     c.config, domain="www.openicpsr.org"
                                 )
+                                classic_cookies = _get_icpsr_browser_cookies(c.config)
                                 zip_path = await asyncio.to_thread(
                                     download_open_icpsr,
                                     asset_ref,
                                     target,
                                     open_cookies,
+                                    classic_cookies,
                                 )
                                 if zip_path is None and icpsr_terms_url_callback is not None:
-                                    await asyncio.to_thread(
-                                        icpsr_terms_url_callback, asset_ref.asset_url
-                                    )
-                                    _icpsr_cookie_cache.pop("www.openicpsr.org", None)
-                                    open_cookies = _get_icpsr_browser_cookies(
-                                        c.config, domain="www.openicpsr.org"
-                                    )
-                                    zip_path = await asyncio.to_thread(
-                                        download_open_icpsr,
-                                        asset_ref,
-                                        target,
-                                        open_cookies,
-                                    )
+                                    async with _icpsr_prompt_lock:
+                                        await asyncio.to_thread(
+                                            icpsr_terms_url_callback, asset_ref.asset_url
+                                        )
+                                        _icpsr_cookie_cache.pop("www.openicpsr.org", None)
+                                        _icpsr_cookie_cache.pop("www.icpsr.umich.edu", None)
+                                        open_cookies = _get_icpsr_browser_cookies(
+                                            c.config, domain="www.openicpsr.org"
+                                        )
+                                        classic_cookies = _get_icpsr_browser_cookies(c.config)
+                                        zip_path = await asyncio.to_thread(
+                                            download_open_icpsr,
+                                            asset_ref,
+                                            target,
+                                            open_cookies,
+                                            classic_cookies,
+                                        )
                                 if zip_path is not None:
                                     asset_ref.download_status = DOWNLOAD_STATUS_SUCCESS
                                     asset_ref.asset_type = "zip_bundle"

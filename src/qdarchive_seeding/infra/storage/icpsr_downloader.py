@@ -95,11 +95,13 @@ def download_open_icpsr(
     asset: AssetRecord,
     target_dir: Path,
     cookies: dict[str, str],
+    extra_cookies: dict[str, str] | None = None,
 ) -> Path | None:
     """Download an Open ICPSR project ZIP with browser cookies.
 
-    Open ICPSR uses a direct download URL that requires an authenticated
-    session (no multi-step form flow like Classic ICPSR).
+    Open ICPSR shares SSO with Classic ICPSR, so cookies from both
+    domains may be needed.  A Referer header pointing to the project
+    page is included because the server may check it.
 
     Returns the path to the downloaded ZIP, or None on failure.
     """
@@ -110,9 +112,12 @@ def download_open_icpsr(
 
     target_dir.mkdir(parents=True, exist_ok=True)
 
+    merged_cookies = {**(extra_cookies or {}), **cookies}
+    referer = f"https://www.openicpsr.org/openicpsr/project/{project_id}"
+
     with httpx.Client(
-        cookies=cookies,
-        headers={"User-Agent": _BROWSER_UA},
+        cookies=merged_cookies,
+        headers={"User-Agent": _BROWSER_UA, "Referer": referer},
         follow_redirects=True,
         timeout=120.0,
     ) as client:
