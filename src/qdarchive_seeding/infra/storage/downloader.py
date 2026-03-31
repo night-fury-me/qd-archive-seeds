@@ -41,6 +41,9 @@ class Downloader:
     on_progress: ProgressCallback | None = field(default=None, repr=False)
     auth_resolver: AuthResolver | None = field(default=None, repr=False)
 
+    async def close(self) -> None:
+        await self.client.aclose()
+
     async def download(
         self,
         asset: AssetRecord,
