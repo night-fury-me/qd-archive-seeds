@@ -132,10 +132,7 @@ def build_container(
     checksum_factory = registries.checksums.get("default")
     checksum = checksum_factory(config.storage.checksum)
     download_headers: dict[str, str] = {
-        "User-Agent": (
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        ),
+        "User-Agent": "qdarchive-seeding/0.1",
     }
     download_client = httpx.AsyncClient(
         timeout=120.0,
