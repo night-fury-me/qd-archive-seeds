@@ -12,6 +12,7 @@ from qdarchive_seeding.core.constants import (
 )
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord, PersonRole
 from qdarchive_seeding.core.interfaces import AuthProvider, HttpClient, RunContext
+from qdarchive_seeding.infra.extractors._utils import extract_year as _extract_year
 from qdarchive_seeding.infra.http.auth import apply_auth_async
 from qdarchive_seeding.infra.http.pagination import OffsetPagination
 
@@ -329,16 +330,6 @@ class SyracuseQdrExtractor:
 
         logger.debug("Dataset %s: %d files", persistent_id, len(datafiles))
         return datafiles, license_name
-
-
-def _extract_year(published_at: object) -> int | None:
-    """Extract year from an ISO timestamp like ``2023-11-01T18:47:35Z``."""
-    if not published_at or not isinstance(published_at, str):
-        return None
-    try:
-        return int(published_at[:4])
-    except (ValueError, IndexError):
-        return None
 
 
 def _first_author(authors: object) -> str | None:

@@ -115,6 +115,9 @@ class CliProgressDisplay:
         # Log panel (download phase only)
         self._log_lines: deque[str] = deque(maxlen=self._LOG_PANEL_LINES)
         self._completed_assets: int = 0
+        # Console log suppression state (populated by _suppress_console_logs)
+        self._suppressed: list[tuple[logging.Logger, logging.Handler, int]] = []
+        self._proxy_handlers: list[tuple[logging.Logger, logging.Handler]] = []
 
     def __call__(self, event: ProgressEvent) -> None:
         if isinstance(event, StageChanged):
@@ -405,8 +408,8 @@ class CliProgressDisplay:
         This ensures logs appear above the progress bars (like tqdm.write)
         instead of corrupting them.
         """
-        self._suppressed: list[tuple[logging.Logger, logging.Handler, int]] = []
-        self._proxy_handlers: list[tuple[logging.Logger, logging.Handler]] = []
+        self._suppressed.clear()
+        self._proxy_handlers.clear()
         if self._progress is None:
             return
         progress_ref = self._progress
@@ -438,10 +441,10 @@ class CliProgressDisplay:
 
     def _restore_console_logs(self) -> None:
         """Remove proxies and restore original RichHandler levels."""
-        for lgr, proxy in getattr(self, "_proxy_handlers", []):
+        for lgr, proxy in self._proxy_handlers:
             lgr.removeHandler(proxy)
         self._proxy_handlers = []
-        for _lgr, handler, level in getattr(self, "_suppressed", []):
+        for _lgr, handler, level in self._suppressed:
             handler.setLevel(level)
         self._suppressed = []
 

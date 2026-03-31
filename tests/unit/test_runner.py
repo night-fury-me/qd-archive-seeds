@@ -123,6 +123,7 @@ class _Downloader:
         *,
         progress_callback: object = None,
     ):
+        assert progress_callback is not None, "progress_callback must be provided"
         cb = progress_callback or self.on_progress
         if cb is not None:
             cb(1, 1)

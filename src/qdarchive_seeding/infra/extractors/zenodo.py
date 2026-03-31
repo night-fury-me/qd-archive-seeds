@@ -16,6 +16,7 @@ from qdarchive_seeding.core.constants import (
 )
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord, PersonRole
 from qdarchive_seeding.core.interfaces import AuthProvider, HttpClient, RunContext
+from qdarchive_seeding.infra.extractors._utils import extract_year as _extract_year
 from qdarchive_seeding.infra.http.auth import apply_auth_async
 from qdarchive_seeding.infra.http.pagination import PagePagination
 
@@ -451,7 +452,10 @@ class ZenodoExtractor:
 
 
 def _batched(items: list[str], size: int) -> list[list[str]]:
-    """Split *items* into sub-lists of at most *size* elements."""
+    """Split *items* into sub-lists of at most *size* elements.
+
+    # TODO: replace with itertools.batched when min Python is 3.12
+    """
     if not items:
         return []
     return [items[i : i + size] for i in range(0, len(items), size)]
@@ -534,13 +538,3 @@ def _extract_license(value: object) -> str | None:
     if isinstance(value, dict):
         return str(value.get("id", value.get("title", "")))
     return str(value)
-
-
-def _extract_year(publication_date: object) -> int | None:
-    """Extract year as int from a publication_date string like '2024-01-15'."""
-    if not publication_date or not isinstance(publication_date, str):
-        return None
-    try:
-        return int(publication_date[:4])
-    except (ValueError, IndexError):
-        return None
