@@ -199,9 +199,7 @@ class ETLRunner:
         from qdarchive_seeding.infra.storage.icpsr_downloader import download_classic_icpsr
 
         cookies = _get_icpsr_browser_cookies(config, self._icpsr_cookie_cache)
-        zip_path = await asyncio.to_thread(
-            download_classic_icpsr, asset, target_dir, cookies
-        )
+        zip_path = await asyncio.to_thread(download_classic_icpsr, asset, target_dir, cookies)
         if zip_path is None and terms_callback is not None:
             async with prompt_lock:
                 await asyncio.to_thread(terms_callback, asset.asset_url)
@@ -238,9 +236,7 @@ class ETLRunner:
                 open_cookies = _get_icpsr_browser_cookies(
                     config, self._icpsr_cookie_cache, domain="www.openicpsr.org"
                 )
-                classic_cookies = _get_icpsr_browser_cookies(
-                    config, self._icpsr_cookie_cache
-                )
+                classic_cookies = _get_icpsr_browser_cookies(config, self._icpsr_cookie_cache)
                 zip_path = await asyncio.to_thread(
                     download_open_icpsr, asset, target_dir, open_cookies, classic_cookies
                 )
@@ -580,14 +576,20 @@ class ETLRunner:
                             try:
                                 if "zipcart2" in asset_ref.asset_url:
                                     zip_path = await self._download_classic_icpsr(
-                                        asset_ref, target, c.config,
-                                        icpsr_terms_url_callback, _icpsr_prompt_lock,
+                                        asset_ref,
+                                        target,
+                                        c.config,
+                                        icpsr_terms_url_callback,
+                                        _icpsr_prompt_lock,
                                     )
                                     fail_msg = "ICPSR form flow failed"
                                 else:
                                     zip_path = await self._download_open_icpsr(
-                                        asset_ref, target, c.config,
-                                        icpsr_terms_url_callback, _icpsr_prompt_lock,
+                                        asset_ref,
+                                        target,
+                                        c.config,
+                                        icpsr_terms_url_callback,
+                                        _icpsr_prompt_lock,
                                     )
                                     fail_msg = "Open ICPSR download failed"
                                 if zip_path is not None:

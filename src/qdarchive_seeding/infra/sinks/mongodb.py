@@ -19,9 +19,7 @@ class MongoDBSink(BaseSink):
 
     def __post_init__(self) -> None:
         db = self._ensure_connected()
-        db["datasets"].create_index(
-            [("source_name", 1), ("source_dataset_id", 1)], unique=True
-        )
+        db["datasets"].create_index([("source_name", 1), ("source_dataset_id", 1)], unique=True)
         db["assets"].create_index("asset_url", unique=True)
 
     def _ensure_connected(self) -> Database[dict[str, Any]]:
