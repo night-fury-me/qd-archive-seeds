@@ -437,6 +437,8 @@ class ETLRunner:
                 _counter_lock = asyncio.Lock()
                 # Serialize ICPSR prompts so only one shows at a time
                 _icpsr_prompt_lock = asyncio.Lock()
+                # Track downloaded asset URLs to skip cross-dataset duplicates
+                _downloaded_urls: set[str] = set()
 
                 async def _publish_progress() -> None:
                     """Publish current counter state to the progress bus."""
@@ -469,6 +471,14 @@ class ETLRunner:
                                 skipped += 1
                                 await _publish_progress()
                             return asset_ref, None, None
+                        # Skip cross-dataset duplicate assets
+                        if asset_ref.asset_url in _downloaded_urls:
+                            asset_ref.download_status = DOWNLOAD_STATUS_SKIPPED
+                            async with _counter_lock:
+                                skipped += 1
+                                await _publish_progress()
+                            return asset_ref, None, None
+                        _downloaded_urls.add(asset_ref.asset_url)
                         # Skip ICPSR assets if user declined
                         if skip_icpsr and (
                             "openicpsr.org" in asset_ref.asset_url
