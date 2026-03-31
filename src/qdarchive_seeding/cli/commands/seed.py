@@ -248,15 +248,21 @@ class CliProgressDisplay:
     def _on_stream_progress(self, event: AssetDownloadProgress) -> None:
         if self._progress is None or self._file_id is None:
             return
+        # Extract a short label from the URL
+        filename = event.asset_url.rsplit("/", 1)[-1].split("?")[0] or "file"
+        if len(filename) > 40:
+            filename = filename[:37] + "..."
         if event.total_bytes is not None:
             self._progress.update(
                 self._file_id,
+                description=f"[dim]{filename}[/dim]",
                 completed=event.bytes_downloaded,
                 total=event.total_bytes,
             )
         else:
             self._progress.update(
                 self._file_id,
+                description=f"[dim]{filename}[/dim]",
                 completed=event.bytes_downloaded,
             )
 
@@ -265,6 +271,7 @@ class CliProgressDisplay:
         # overall bar is updated by _on_counters to keep description and % in sync.
         if self._progress is not None and self._file_id is not None:
             self._progress.reset(self._file_id)
+            self._progress.update(self._file_id, description="[dim]waiting…[/dim]")
 
     def _start_download_progress(self, label: str) -> None:
         self._stop_progress()
