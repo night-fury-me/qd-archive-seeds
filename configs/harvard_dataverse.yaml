@@ -193,6 +193,41 @@ external_auth:
     env:
       api_key: "NL_DATAVERSE_API_TOKEN"
     header_name: "X-Dataverse-key"
+  heidata.uni-heidelberg.de:
+    type: "api_key"
+    env:
+      api_key: "HEIDELBERG_DATAVERSE_API_TOKEN"
+    header_name: "X-Dataverse-key"
+  data.cifor.org:
+    type: "api_key"
+    env:
+      api_key: "CIFOR_DATAVERSE_API_TOKEN"
+    header_name: "X-Dataverse-key"
+  data.worldagroforestry.org:
+    type: "api_key"
+    env:
+      api_key: "AGROFORESTRY_DATAVERSE_API_TOKEN"
+    header_name: "X-Dataverse-key"
+  data.cipotato.org:
+    type: "api_key"
+    env:
+      api_key: "CIP_DATAVERSE_API_TOKEN"
+    header_name: "X-Dataverse-key"
+  dataverse.no:
+    type: "api_key"
+    env:
+      api_key: "NORWAY_DATAVERSE_API_TOKEN"
+    header_name: "X-Dataverse-key"
+  dataverse.unc.edu:
+    type: "api_key"
+    env:
+      api_key: "UNC_DATAVERSE_API_TOKEN"
+    header_name: "X-Dataverse-key"
+  dataverse.tdl.org:
+    type: "api_key"
+    env:
+      api_key: "TEXAS_DATAVERSE_API_TOKEN"
+    header_name: "X-Dataverse-key"
   www.openicpsr.org:
     type: "browser_session"
     browser: "chromium"
