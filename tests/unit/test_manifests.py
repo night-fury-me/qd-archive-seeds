@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from qdarchive_seeding.app.manifests import RunManifestWriter
-from qdarchive_seeding.core.entities import RunInfo
+from qdarchive_seeding.core.entities import FailureRecord, RunInfo
 
 
 def _make_run_info(run_id: str = "test-run-1") -> RunInfo:
@@ -15,7 +15,7 @@ def _make_run_info(run_id: str = "test-run-1") -> RunInfo:
         ended_at=datetime(2024, 1, 1, 12, 5, 0, tzinfo=UTC),
         config_hash="abc123",
         counts={"extracted": 10, "downloaded": 8, "failed": 2},
-        failures=[{"asset_url": "https://example.com/bad.pdf", "error": "timeout"}],
+        failures=[FailureRecord(asset_url="https://example.com/bad.pdf", error="timeout")],
     )
 
 

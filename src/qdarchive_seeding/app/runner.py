@@ -31,7 +31,7 @@ from qdarchive_seeding.core.constants import (
     DOWNLOAD_STATUS_SKIPPED,
     DOWNLOAD_STATUS_SUCCESS,
 )
-from qdarchive_seeding.core.entities import DatasetRecord, RunInfo
+from qdarchive_seeding.core.entities import DatasetRecord, FailureRecord, RunInfo
 from qdarchive_seeding.core.interfaces import ResumableSink
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ class DownloadCounters:
     skipped: int = 0
     access_denied: int = 0
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    failures: list[dict[str, Any]] = field(default_factory=list)
+    failures: list[FailureRecord] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -784,10 +784,10 @@ class ETLRunner:
                         else:
                             ct.failed += 1
                             ct.failures.append(
-                                {
-                                    "asset_url": asset_ref.asset_url,
-                                    "error": "non-success status",
-                                }
+                                FailureRecord(
+                                    asset_url=asset_ref.asset_url,
+                                    error="non-success status",
+                                )
                             )
                             bus.publish(
                                 AssetDownloadUpdate(
@@ -833,7 +833,7 @@ class ETLRunner:
             )
             async with ct.lock:
                 ct.failed += 1
-                ct.failures.append({"asset_url": asset_ref.asset_url, "error": err_str})
+                ct.failures.append(FailureRecord(asset_url=asset_ref.asset_url, error=err_str))
                 if is_suppressed:
                     ct.access_denied += 1
                 else:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +45,6 @@ def _run_info_to_dict(run_info: RunInfo) -> dict[str, Any]:
         "ended_at": run_info.ended_at.isoformat() if run_info.ended_at else None,
         "config_hash": run_info.config_hash,
         "counts": run_info.counts,
-        "failures": run_info.failures,
+        "failures": [asdict(f) for f in run_info.failures],
         "environment": run_info.environment,
     }

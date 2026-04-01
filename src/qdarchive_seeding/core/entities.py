@@ -63,6 +63,14 @@ class AssetRecord:
 
 
 @dataclass(slots=True)
+class FailureRecord:
+    """A single download failure."""
+
+    asset_url: str
+    error: str
+
+
+@dataclass(slots=True)
 class RunInfo:
     run_id: str = field(default_factory=lambda: str(uuid4()))
     pipeline_id: str | None = None
@@ -70,5 +78,5 @@ class RunInfo:
     ended_at: datetime | None = None
     config_hash: str | None = None
     counts: dict[str, int] = field(default_factory=dict)
-    failures: list[dict[str, Any]] = field(default_factory=list)
+    failures: list[FailureRecord] = field(default_factory=list)
     environment: dict[str, Any] = field(default_factory=dict)
