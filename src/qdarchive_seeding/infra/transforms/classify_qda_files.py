@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import PurePosixPath
 
-from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
-from qdarchive_seeding.infra.transforms.base import BaseTransform
+from qdarchive_seeding.core.entities import DatasetRecord
+from qdarchive_seeding.infra.transforms.base import BaseTransform, asset_suffix
 
 ANALYSIS_DATA_EXTENSIONS: frozenset[str] = frozenset(
     {
@@ -95,16 +94,9 @@ PRIMARY_DATA_EXTENSIONS: frozenset[str] = frozenset(
 
 @dataclass(slots=True)
 class ClassifyQdaFiles(BaseTransform):
-    @staticmethod
-    def _asset_suffix(asset: AssetRecord) -> str:
-        """Get the file extension from local_filename if available, else from the URL."""
-        if asset.local_filename:
-            return PurePosixPath(asset.local_filename).suffix.lower()
-        return PurePosixPath(asset.asset_url).suffix.lower()
-
     def apply(self, record: DatasetRecord) -> DatasetRecord | None:
         for asset in record.assets:
-            suffix = self._asset_suffix(asset)
+            suffix = asset_suffix(asset)
             if suffix in ANALYSIS_DATA_EXTENSIONS:
                 asset.asset_type = "analysis_data"
             elif suffix in PRIMARY_DATA_EXTENSIONS:

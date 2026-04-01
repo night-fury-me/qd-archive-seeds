@@ -40,9 +40,9 @@ class DatasetRecord:
     keywords: list[str] = field(default_factory=list)
     persons: list[PersonRole] = field(default_factory=list)
     # --- Deprecated fields (kept for backward compatibility) ---
-    year: int | None = None
-    owner_name: str | None = None
-    owner_email: str | None = None
+    year: int | None = None  # deprecated
+    owner_name: str | None = None  # deprecated
+    owner_email: str | None = None  # deprecated
     assets: list[AssetRecord] = field(default_factory=list)
     raw: dict[str, Any] | None = None
 

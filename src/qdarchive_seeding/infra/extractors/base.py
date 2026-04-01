@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from qdarchive_seeding.core.entities import DatasetRecord
-from qdarchive_seeding.core.interfaces import Extractor, RunContext
+from qdarchive_seeding.core.interfaces import RunContext
 
 
 @dataclass(slots=True)
@@ -15,7 +15,7 @@ class ExtractorResult:
 
 
 @dataclass(slots=True)
-class BaseExtractor(Extractor):
+class BaseExtractor:
     name: str
 
     async def extract(self, ctx: RunContext) -> AsyncIterator[DatasetRecord]:

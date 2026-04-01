@@ -3,11 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
-from qdarchive_seeding.core.interfaces import Sink
+
+FLUSH_INTERVAL = 100
 
 
 @dataclass(slots=True)
-class BaseSink(Sink):
+class BaseSink:
     name: str
 
     def upsert_dataset(self, record: DatasetRecord) -> str:

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import PurePosixPath
 
-from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
-from qdarchive_seeding.infra.transforms.base import BaseTransform
+from qdarchive_seeding.core.entities import DatasetRecord
+from qdarchive_seeding.infra.transforms.base import BaseTransform, asset_suffix
 from qdarchive_seeding.infra.transforms.classify_qda_files import (
     ANALYSIS_DATA_EXTENSIONS,
     PRIMARY_DATA_EXTENSIONS,
@@ -42,13 +41,6 @@ class FilterByExtensions(BaseTransform):
         exts.update(self.extra_extensions)
         return frozenset(exts)
 
-    @staticmethod
-    def _asset_suffix(a: AssetRecord) -> str:
-        """Get the file extension from local_filename if available, else from the URL."""
-        if a.local_filename:
-            return PurePosixPath(a.local_filename).suffix.lower()
-        return PurePosixPath(a.asset_url).suffix.lower()
-
     def apply(self, record: DatasetRecord) -> DatasetRecord | None:
         """Keep the dataset if it contains at least one asset with a matching extension.
 
@@ -56,7 +48,7 @@ class FilterByExtensions(BaseTransform):
         dataset is relevant, it does not strip individual files.
         """
         allowed = self._allowed_extensions()
-        has_match = any(self._asset_suffix(a) in allowed for a in record.assets)
+        has_match = any(asset_suffix(a) in allowed for a in record.assets)
         if not has_match:
             return None
         return record

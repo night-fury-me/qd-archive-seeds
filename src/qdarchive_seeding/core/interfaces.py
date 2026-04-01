@@ -162,6 +162,7 @@ class Policy(Protocol):
 # Registry
 # ---------------------------------------------------------------------------
 
+
 class Registry(Protocol):
     def register(self, name: str, component: Any, spec: ComponentSpec | None = None) -> None: ...
 

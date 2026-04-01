@@ -7,9 +7,7 @@ import pandas as pd  # type: ignore[import-untyped]
 from openpyxl import load_workbook  # type: ignore[import-untyped]
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
-from qdarchive_seeding.infra.sinks.base import BaseSink
-
-_FLUSH_INTERVAL = 100
+from qdarchive_seeding.infra.sinks.base import FLUSH_INTERVAL, BaseSink
 
 
 @dataclass(slots=True)
@@ -47,7 +45,7 @@ class ExcelSink(BaseSink):
             "owner_email": record.owner_email,
         }
         self._dataset_ops += 1
-        if self._dataset_ops >= _FLUSH_INTERVAL:
+        if self._dataset_ops >= FLUSH_INTERVAL:
             self._flush_datasets()
         return dataset_id
 
@@ -66,7 +64,7 @@ class ExcelSink(BaseSink):
             "error_message": asset.error_message,
         }
         self._asset_ops += 1
-        if self._asset_ops >= _FLUSH_INTERVAL:
+        if self._asset_ops >= FLUSH_INTERVAL:
             self._flush_assets()
 
     def _flush_datasets(self) -> None:

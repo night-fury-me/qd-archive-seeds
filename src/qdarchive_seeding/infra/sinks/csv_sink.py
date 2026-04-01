@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
-from qdarchive_seeding.infra.sinks.base import BaseSink
+from qdarchive_seeding.infra.sinks.base import FLUSH_INTERVAL, BaseSink
 
 DATASET_HEADERS = [
     "id",
@@ -34,8 +34,6 @@ ASSET_HEADERS = [
     "download_status",
     "error_message",
 ]
-
-_FLUSH_INTERVAL = 100
 
 
 def _read_csv(path: Path, key_column: str) -> tuple[list[str], dict[str, list[str]]]:
@@ -98,7 +96,7 @@ class CSVSink(BaseSink):
             record.owner_email or "",
         ]
         self._dataset_ops += 1
-        if self._dataset_ops >= _FLUSH_INTERVAL:
+        if self._dataset_ops >= FLUSH_INTERVAL:
             self._flush_datasets()
         return dataset_id
 
@@ -117,7 +115,7 @@ class CSVSink(BaseSink):
             asset.error_message or "",
         ]
         self._asset_ops += 1
-        if self._asset_ops >= _FLUSH_INTERVAL:
+        if self._asset_ops >= FLUSH_INTERVAL:
             self._flush_assets()
 
     def _flush_datasets(self) -> None:

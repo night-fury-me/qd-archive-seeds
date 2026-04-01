@@ -26,10 +26,10 @@ from qdarchive_seeding.app.progress import (
     StageChanged,
 )
 from qdarchive_seeding.core.constants import (
-    DOWNLOAD_RESULT_UNKNOWN,
     DOWNLOAD_STATUS_FAILED,
     DOWNLOAD_STATUS_SKIPPED,
     DOWNLOAD_STATUS_SUCCESS,
+    DOWNLOAD_STATUS_UNKNOWN,
 )
 from qdarchive_seeding.core.entities import DatasetRecord, FailureRecord, RunInfo
 from qdarchive_seeding.core.interfaces import Checkpoint, ResumableSink
@@ -383,7 +383,7 @@ class ETLRunner:
 
                     # --- Store metadata (no download yet) ---
                     for asset in record.assets:
-                        asset.download_status = DOWNLOAD_RESULT_UNKNOWN
+                        asset.download_status = DOWNLOAD_STATUS_UNKNOWN
 
                     try:
                         dataset_id = c.sink.upsert_dataset(record)

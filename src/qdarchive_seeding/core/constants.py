@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-# --- Download status (legacy aliases kept for backward compatibility) ---
+# --- Download status ---
 DOWNLOAD_STATUS_SUCCESS = "SUCCESS"
 DOWNLOAD_STATUS_FAILED = "FAILED"
 DOWNLOAD_STATUS_SKIPPED = "SKIPPED"
 DOWNLOAD_STATUS_RESUMABLE = "RESUMABLE"
-
-# --- Download result (new schema) ---
-DOWNLOAD_RESULT_SUCCESS = "SUCCESS"
-DOWNLOAD_RESULT_FAILED = "FAILED"
-DOWNLOAD_RESULT_SKIPPED = "SKIPPED"
-DOWNLOAD_RESULT_UNKNOWN = "UNKNOWN"
+DOWNLOAD_STATUS_UNKNOWN = "UNKNOWN"
 
 # --- Person roles ---
 PERSON_ROLE_CREATOR = "CREATOR"

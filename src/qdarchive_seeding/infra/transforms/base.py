@@ -3,11 +3,19 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 
-from qdarchive_seeding.core.entities import DatasetRecord
+from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
 from qdarchive_seeding.core.interfaces import Transform
 
 logger = logging.getLogger(__name__)
+
+
+def asset_suffix(asset: AssetRecord) -> str:
+    """Get the file extension from local_filename if available, else from the URL."""
+    if asset.local_filename:
+        return PurePosixPath(asset.local_filename).suffix.lower()
+    return PurePosixPath(asset.asset_url).suffix.lower()
 
 
 @dataclass(slots=True)
