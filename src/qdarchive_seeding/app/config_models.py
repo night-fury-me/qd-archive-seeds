@@ -144,7 +144,15 @@ class PipelineConfig(BaseConfig):
     @model_validator(mode="before")
     @classmethod
     def _migrate_transforms(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """Auto-migrate old ``transforms:`` key to ``pre_transforms:``."""
+        """Auto-migrate old ``transforms:`` key to ``pre_transforms:``.
+
+        .. deprecated::
+            The top-level ``transforms:`` key is deprecated in favor of
+            ``pre_transforms:``.  Existing configs using ``transforms:`` will
+            continue to work (the key is silently moved to ``pre_transforms:``),
+            but new configs should use ``pre_transforms:`` (and optionally
+            ``post_transforms:``) directly.
+        """
         if isinstance(data, dict) and "transforms" in data:
             if "pre_transforms" not in data:
                 data["pre_transforms"] = data.pop("transforms")

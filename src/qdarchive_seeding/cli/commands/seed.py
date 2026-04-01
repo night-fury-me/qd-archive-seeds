@@ -77,6 +77,9 @@ def run_pipeline(
     def _icpsr_terms_cb(url: str) -> None:
         prompt_icpsr_terms_url(console, url)
 
+    # asyncio.run() creates a new event loop; it will raise RuntimeError if
+    # called from within an already-running loop (e.g. Jupyter).  In that
+    # scenario the caller is responsible for awaiting runner.run() directly.
     asyncio.run(
         runner.run(
             dry_run=dry_run,

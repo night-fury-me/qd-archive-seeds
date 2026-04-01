@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,8 @@ logger = logging.getLogger(__name__)
 _STUDY_RE = re.compile(r"[?&]study=(\d+)")
 _PATH_RE = re.compile(r"[?&]path=([^&]+)")
 
+# NOTE: User-agent spoofing may violate ICPSR terms of service.
+# Used to bypass download restrictions that block non-browser clients.
 _BROWSER_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -61,6 +64,10 @@ def download_classic_icpsr(
         if "text/html" not in r1.headers.get("content-type", ""):
             return _save_zip(r1.content, target_dir, study_id, asset)
 
+        # WARNING: ICPSR form fields are hardcoded. If ICPSR adds CSRF tokens
+        # or changes form structure, this will silently fail. Consider parsing
+        # the terms page HTML to extract actual form fields.
+
         # Step 2: Accept terms
         form_data: dict[str, Any] = {
             "agree": "yes",
@@ -76,19 +83,19 @@ def download_classic_icpsr(
             logger.error("ICPSR terms POST returned %d for study %s", r2.status_code, study_id)
             return None
 
-        # Step 3: Re-request the download URL
-        r3 = client.get(url)
-        content_type = r3.headers.get("content-type", "")
-        if "text/html" in content_type:
-            logger.error(
-                "ICPSR still returned HTML after terms acceptance for study %s "
-                "(may require additional agreements): %s",
-                study_id,
-                url,
-            )
-            return None
+        # Step 3: Re-request the download URL (streaming)
+        with client.stream("GET", url) as r3:
+            content_type = r3.headers.get("content-type", "")
+            if "text/html" in content_type:
+                logger.error(
+                    "ICPSR still returned HTML after terms acceptance for study %s "
+                    "(may require additional agreements): %s",
+                    study_id,
+                    url,
+                )
+                return None
 
-        return _save_zip(r3.content, target_dir, study_id, asset)
+            return _stream_zip(r3, target_dir, study_id, asset)
 
 
 def download_open_icpsr(
@@ -115,13 +122,15 @@ def download_open_icpsr(
     merged_cookies = {**(extra_cookies or {}), **cookies}
     referer = f"https://www.openicpsr.org/openicpsr/project/{project_id}"
 
-    with httpx.Client(
-        cookies=merged_cookies,
-        headers={"User-Agent": _BROWSER_UA, "Referer": referer},
-        follow_redirects=True,
-        timeout=120.0,
-    ) as client:
-        r = client.get(url)
+    with (
+        httpx.Client(
+            cookies=merged_cookies,
+            headers={"User-Agent": _BROWSER_UA, "Referer": referer},
+            follow_redirects=True,
+            timeout=120.0,
+        ) as client,
+        client.stream("GET", url) as r,
+    ):
         if r.status_code != 200:
             logger.error(
                 "Open ICPSR returned %d for project %s: %s", r.status_code, project_id, url
@@ -140,11 +149,17 @@ def download_open_icpsr(
 
         filename = f"openicpsr_{project_id}.zip"
         filepath = target_dir / filename
-        filepath.write_bytes(r.content)
+        part_path = filepath.with_suffix(".part")
+        total_bytes = 0
+        with part_path.open("wb") as f:
+            for chunk in r.iter_bytes(chunk_size=8192):
+                f.write(chunk)
+                total_bytes += len(chunk)
+        os.replace(part_path, filepath)
         asset.local_dir = str(target_dir)
         asset.local_filename = filename
-        asset.size_bytes = len(r.content)
-        logger.info("Downloaded Open ICPSR project %s (%d bytes)", project_id, len(r.content))
+        asset.size_bytes = total_bytes
+        logger.info("Downloaded Open ICPSR project %s (%d bytes)", project_id, total_bytes)
         return filepath
 
 
@@ -154,12 +169,37 @@ def _save_zip(
     study_id: str,
     asset: AssetRecord,
 ) -> Path:
-    """Save ZIP content to disk and update the asset record."""
+    """Save ZIP content to disk atomically and update the asset record."""
     filename = f"ICPSR_{study_id.zfill(5)}.zip"
     filepath = target_dir / filename
-    filepath.write_bytes(content)
+    part_path = filepath.with_suffix(".part")
+    part_path.write_bytes(content)
+    os.replace(part_path, filepath)
     asset.local_dir = str(target_dir)
     asset.local_filename = filename
     asset.size_bytes = len(content)
     logger.info("Downloaded Classic ICPSR study %s (%d bytes)", study_id, len(content))
+    return filepath
+
+
+def _stream_zip(
+    response: httpx.Response,
+    target_dir: Path,
+    study_id: str,
+    asset: AssetRecord,
+) -> Path:
+    """Stream ZIP content to disk atomically and update the asset record."""
+    filename = f"ICPSR_{study_id.zfill(5)}.zip"
+    filepath = target_dir / filename
+    part_path = filepath.with_suffix(".part")
+    total_bytes = 0
+    with part_path.open("wb") as f:
+        for chunk in response.iter_bytes(chunk_size=8192):
+            f.write(chunk)
+            total_bytes += len(chunk)
+    os.replace(part_path, filepath)
+    asset.local_dir = str(target_dir)
+    asset.local_filename = filename
+    asset.size_bytes = total_bytes
+    logger.info("Downloaded Classic ICPSR study %s (%d bytes)", study_id, total_bytes)
     return filepath

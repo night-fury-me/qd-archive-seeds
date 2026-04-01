@@ -14,6 +14,7 @@ from qdarchive_seeding.app.config_loader import config_hash
 from qdarchive_seeding.app.config_models import PipelineConfig, TransformSettings
 from qdarchive_seeding.app.registry import ComponentRegistries, create_default_registries
 from qdarchive_seeding.core.constants import DEFAULT_CHUNK_SIZE_BYTES
+from qdarchive_seeding.core.exceptions import ConfigError
 from qdarchive_seeding.core.interfaces import AuthProvider, Extractor, Policy, Sink, Transform
 from qdarchive_seeding.infra.http.client import HttpClientSettings, HttpxClient
 from qdarchive_seeding.infra.http.rate_limit import RateLimiter
@@ -105,6 +106,17 @@ def build_container(
 
     if registries is None:
         registries = create_default_registries()
+
+    # ------------------------------------------------------------------
+    # Validate that all config-referenced components exist in registries
+    # ------------------------------------------------------------------
+    _validate_component(config.extractor.name, registries.extractors.list(), "extractor")
+    _validate_component(config.sink.type, registries.sinks.list(), "sink")
+    _validate_component(config.auth.type, registries.auth.list(), "auth")
+    for t in config.pre_transforms:
+        _validate_component(t.name, registries.transforms.list(), "pre_transform")
+    for t in config.post_transforms:
+        _validate_component(t.name, registries.transforms.list(), "post_transform")
 
     logger_bundle = configure_logger(
         "qdarchive_seeding",
@@ -217,6 +229,12 @@ def build_container(
         config_hash=config_hash(config),
         checkpoint=checkpoint,
     )
+
+
+def _validate_component(name: str, available: list[str], label: str) -> None:
+    """Raise ``ConfigError`` if *name* is not among *available* registry entries."""
+    if name not in available:
+        raise ConfigError(f"Unknown {label} '{name}'. Available: {', '.join(available)}")
 
 
 def _build_auth(config: PipelineConfig, registries: ComponentRegistries) -> AuthProvider:

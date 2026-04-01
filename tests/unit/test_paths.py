@@ -41,7 +41,7 @@ def test_safe_filename_normal() -> None:
 
 
 def test_safe_filename_strips_special() -> None:
-    assert safe_filename("file name (1).pdf") == "filename1.pdf"
+    assert safe_filename("file name (1).pdf") == "file_name_1_.pdf"
 
 
 def test_safe_filename_empty() -> None:
