@@ -4,7 +4,7 @@ import logging
 import queue
 from dataclasses import dataclass
 
-from qdarchive_seeding.app.config_models import LoggingSettings
+from qdarchive_seeding.core.interfaces import LoggingConfig
 from qdarchive_seeding.infra.logging.filters import ContextFilter
 from qdarchive_seeding.infra.logging.formatters import ContextFormatter
 from qdarchive_seeding.infra.logging.handlers import (
@@ -22,7 +22,7 @@ class LoggerBundle:
 
 def configure_logger(
     name: str,
-    settings: LoggingSettings,
+    settings: LoggingConfig,
     *,
     run_id: str | None = None,
     pipeline_id: str | None = None,

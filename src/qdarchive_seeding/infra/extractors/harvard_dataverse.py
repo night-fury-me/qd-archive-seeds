@@ -9,13 +9,13 @@ from urllib.parse import urlparse
 
 import httpx
 
-from qdarchive_seeding.app.progress import PageProgress, QueryProgress
 from qdarchive_seeding.core.constants import (
     DOWNLOAD_METHOD_API,
     PERSON_ROLE_CREATOR,
 )
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord, PersonRole
 from qdarchive_seeding.core.interfaces import AuthProvider, HttpClient, RunContext
+from qdarchive_seeding.core.progress import PageProgress, QueryProgress
 from qdarchive_seeding.infra.http.auth import apply_auth_async
 from qdarchive_seeding.infra.storage.paths import safe_filename
 

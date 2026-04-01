@@ -85,6 +85,25 @@ class ProgressBus(Protocol):
 
 
 # ---------------------------------------------------------------------------
+# Logging configuration
+# ---------------------------------------------------------------------------
+
+
+class LoggingConfig(Protocol):
+    """Structural protocol for logging settings.
+
+    ``console`` must expose ``.enabled: bool`` (and optionally ``.rich: bool``).
+    ``file`` must expose ``.enabled: bool`` and ``.path: str | None``.
+    We type them as ``Any`` because mypy cannot structurally match Pydantic
+    models against nested Protocol attributes.
+    """
+
+    level: str
+    console: Any  # expects .enabled, .rich
+    file: Any  # expects .enabled, .path
+
+
+# ---------------------------------------------------------------------------
 # Pipeline components
 # ---------------------------------------------------------------------------
 
