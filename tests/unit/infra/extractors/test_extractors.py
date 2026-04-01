@@ -37,7 +37,7 @@ from qdarchive_seeding.infra.extractors.zenodo import (
 )
 from qdarchive_seeding.infra.http.auth import NoAuth
 
-FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
+FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent.parent / "fixtures"
 
 
 # ---------------------------------------------------------------------------
