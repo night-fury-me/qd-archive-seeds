@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
@@ -35,6 +35,8 @@ ASSET_HEADERS = [
     "error_message",
 ]
 
+_FLUSH_INTERVAL = 100
+
 
 def _read_csv(path: Path, key_column: str) -> tuple[list[str], dict[str, list[str]]]:
     """Read a CSV file and return (headers, rows_dict keyed by key_column)."""
@@ -67,6 +69,10 @@ def _write_csv(path: Path, headers: list[str], rows_dict: dict[str, list[str]]) 
 class CSVSink(BaseSink):
     dataset_path: Path
     asset_path: Path
+    _dataset_buffer: dict[str, list[str]] = field(default_factory=dict, repr=False)
+    _asset_buffer: dict[str, list[str]] = field(default_factory=dict, repr=False)
+    _dataset_ops: int = field(default=0, repr=False)
+    _asset_ops: int = field(default=0, repr=False)
 
     def __post_init__(self) -> None:
         self.dataset_path.parent.mkdir(parents=True, exist_ok=True)
@@ -78,8 +84,7 @@ class CSVSink(BaseSink):
 
     def upsert_dataset(self, record: DatasetRecord) -> str:
         dataset_id = record.source_dataset_id or record.source_url
-        _, rows = _read_csv(self.dataset_path, "id")
-        rows[dataset_id] = [
+        self._dataset_buffer[dataset_id] = [
             dataset_id,
             record.source_name,
             record.source_dataset_id or "",
@@ -92,12 +97,13 @@ class CSVSink(BaseSink):
             record.owner_name or "",
             record.owner_email or "",
         ]
-        _write_csv(self.dataset_path, DATASET_HEADERS, rows)
+        self._dataset_ops += 1
+        if self._dataset_ops >= _FLUSH_INTERVAL:
+            self._flush_datasets()
         return dataset_id
 
     def upsert_asset(self, dataset_id: str, asset: AssetRecord) -> None:
-        _, rows = _read_csv(self.asset_path, "asset_url")
-        rows[asset.asset_url] = [
+        self._asset_buffer[asset.asset_url] = [
             asset.asset_url,
             dataset_id,
             asset.asset_url,
@@ -110,4 +116,28 @@ class CSVSink(BaseSink):
             asset.download_status or "",
             asset.error_message or "",
         ]
-        _write_csv(self.asset_path, ASSET_HEADERS, rows)
+        self._asset_ops += 1
+        if self._asset_ops >= _FLUSH_INTERVAL:
+            self._flush_assets()
+
+    def _flush_datasets(self) -> None:
+        if not self._dataset_buffer:
+            return
+        _, existing = _read_csv(self.dataset_path, "id")
+        existing.update(self._dataset_buffer)
+        _write_csv(self.dataset_path, DATASET_HEADERS, existing)
+        self._dataset_buffer.clear()
+        self._dataset_ops = 0
+
+    def _flush_assets(self) -> None:
+        if not self._asset_buffer:
+            return
+        _, existing = _read_csv(self.asset_path, "asset_url")
+        existing.update(self._asset_buffer)
+        _write_csv(self.asset_path, ASSET_HEADERS, existing)
+        self._asset_buffer.clear()
+        self._asset_ops = 0
+
+    def close(self) -> None:
+        self._flush_datasets()
+        self._flush_assets()

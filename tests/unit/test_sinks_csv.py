@@ -34,6 +34,7 @@ def test_csv_sink_upsert_deduplicates(tmp_path: Path) -> None:
     )
     sink.upsert_dataset(record)
     sink.upsert_dataset(record)
+    sink.close()
     with (tmp_path / "ds.csv").open() as f:
         lines = list(csv.reader(f))
     assert len(lines) == 2  # header + 1 row (upsert replaces existing)
@@ -59,6 +60,7 @@ def test_csv_sink_upsert_updates_fields(tmp_path: Path) -> None:
     )
     sink.upsert_dataset(record1)
     sink.upsert_dataset(record2)
+    sink.close()
     with (tmp_path / "ds.csv").open() as f:
         lines = list(csv.reader(f))
     assert len(lines) == 2  # header + 1 row
@@ -73,6 +75,7 @@ def test_csv_sink_upsert_asset_writes_row(tmp_path: Path) -> None:
     )
     asset = AssetRecord(asset_url="https://example.com/file.pdf", asset_type="document")
     sink.upsert_asset("ds-1", asset)
+    sink.close()
 
     with (tmp_path / "as.csv").open() as f:
         lines = list(csv.reader(f))

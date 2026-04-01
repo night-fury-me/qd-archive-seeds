@@ -22,6 +22,7 @@ def test_excel_sink_upsert_dataset_and_asset(tmp_path: Path) -> None:
     asset = AssetRecord(asset_url="https://example.com/file.pdf", asset_type="document")
     sink.upsert_asset(dataset_id, asset)
     sink.upsert_asset(dataset_id, asset)
+    sink.close()
 
     assert path.exists()
     datasets = pd.read_excel(path, sheet_name="datasets")
@@ -51,6 +52,7 @@ def test_excel_sink_updates_existing_rows(tmp_path: Path) -> None:
 
     sink.upsert_dataset(record1)
     sink.upsert_dataset(record2)
+    sink.close()
 
     datasets = pd.read_excel(path, sheet_name="datasets")
     assert len(datasets) == 1

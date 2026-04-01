@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd  # type: ignore[import-untyped]
@@ -9,10 +9,16 @@ from openpyxl import load_workbook  # type: ignore[import-untyped]
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
 from qdarchive_seeding.infra.sinks.base import BaseSink
 
+_FLUSH_INTERVAL = 100
+
 
 @dataclass(slots=True)
 class ExcelSink(BaseSink):
     path: Path
+    _dataset_buffer: dict[str, dict[str, object]] = field(default_factory=dict, repr=False)
+    _asset_buffer: dict[str, dict[str, object]] = field(default_factory=dict, repr=False)
+    _dataset_ops: int = field(default=0, repr=False)
+    _asset_ops: int = field(default=0, repr=False)
 
     def __post_init__(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -27,7 +33,7 @@ class ExcelSink(BaseSink):
 
     def upsert_dataset(self, record: DatasetRecord) -> str:
         dataset_id = record.source_dataset_id or record.source_url
-        new_row = {
+        self._dataset_buffer[dataset_id] = {
             "id": dataset_id,
             "source_name": record.source_name,
             "source_dataset_id": record.source_dataset_id,
@@ -40,21 +46,13 @@ class ExcelSink(BaseSink):
             "owner_name": record.owner_name,
             "owner_email": record.owner_email,
         }
-        new_df = pd.DataFrame([new_row])
-
-        if self._sheet_exists("datasets"):
-            existing = pd.read_excel(self.path, sheet_name="datasets")
-            # Drop existing row with same id, then append new one
-            existing = existing[existing["id"] != dataset_id]
-            combined = pd.concat([existing, new_df], ignore_index=True)
-        else:
-            combined = new_df
-
-        self._write_sheet("datasets", combined)
+        self._dataset_ops += 1
+        if self._dataset_ops >= _FLUSH_INTERVAL:
+            self._flush_datasets()
         return dataset_id
 
     def upsert_asset(self, dataset_id: str, asset: AssetRecord) -> None:
-        new_row = {
+        self._asset_buffer[asset.asset_url] = {
             "id": asset.asset_url,
             "dataset_id": dataset_id,
             "asset_url": asset.asset_url,
@@ -67,16 +65,38 @@ class ExcelSink(BaseSink):
             "download_status": asset.download_status,
             "error_message": asset.error_message,
         }
-        new_df = pd.DataFrame([new_row])
+        self._asset_ops += 1
+        if self._asset_ops >= _FLUSH_INTERVAL:
+            self._flush_assets()
 
-        if self._sheet_exists("assets"):
-            existing = pd.read_excel(self.path, sheet_name="assets")
-            existing = existing[existing["asset_url"] != asset.asset_url]
+    def _flush_datasets(self) -> None:
+        if not self._dataset_buffer:
+            return
+        new_df = pd.DataFrame(list(self._dataset_buffer.values()))
+        if self._sheet_exists("datasets"):
+            existing = pd.read_excel(self.path, sheet_name="datasets")
+            # Drop rows that will be replaced by buffer entries
+            existing = existing[~existing["id"].isin(self._dataset_buffer)]
             combined = pd.concat([existing, new_df], ignore_index=True)
         else:
             combined = new_df
+        self._write_sheet("datasets", combined)
+        self._dataset_buffer.clear()
+        self._dataset_ops = 0
 
+    def _flush_assets(self) -> None:
+        if not self._asset_buffer:
+            return
+        new_df = pd.DataFrame(list(self._asset_buffer.values()))
+        if self._sheet_exists("assets"):
+            existing = pd.read_excel(self.path, sheet_name="assets")
+            existing = existing[~existing["asset_url"].isin(self._asset_buffer)]
+            combined = pd.concat([existing, new_df], ignore_index=True)
+        else:
+            combined = new_df
         self._write_sheet("assets", combined)
+        self._asset_buffer.clear()
+        self._asset_ops = 0
 
     def _write_sheet(self, sheet_name: str, df: pd.DataFrame) -> None:
         """Write a DataFrame to a specific sheet, preserving other sheets."""
@@ -90,3 +110,7 @@ class ExcelSink(BaseSink):
         with pd.ExcelWriter(self.path) as writer:
             for name, sheet_df in all_sheets.items():
                 sheet_df.to_excel(writer, sheet_name=name, index=False)
+
+    def close(self) -> None:
+        self._flush_datasets()
+        self._flush_assets()
