@@ -104,6 +104,7 @@ class StorageSettings(BaseConfig):
     layout: str
     checksum: Literal["sha256", "none"] = "sha256"
     chunk_size_bytes: int | None = None
+    max_dataset_size_gb: float | None = None
 
 
 class SinkSettings(BaseConfig):
