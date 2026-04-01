@@ -3,14 +3,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import os
 import platform
 import sys
-import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
 from qdarchive_seeding.app.config_models import PipelineConfig
@@ -34,6 +32,7 @@ from qdarchive_seeding.core.constants import (
 from qdarchive_seeding.core.entities import DatasetRecord, FailureRecord, RunInfo
 from qdarchive_seeding.core.interfaces import Checkpoint, ResumableSink
 from qdarchive_seeding.core.interfaces import ProgressBus as ProgressBusProto
+from qdarchive_seeding.infra.storage.zip_extractor import extract_zip_bundle
 
 logger = logging.getLogger(__name__)
 
@@ -70,12 +69,11 @@ class DownloadCounters:
     failures: list[FailureRecord] = field(default_factory=list)
 
 
-@dataclass(slots=True)
-class _DownloadCtx:
-    """Bundle of state shared by download methods during a pipeline run."""
+@dataclass(frozen=True, slots=True)
+class _DownloadConfig:
+    """Immutable configuration for the download phase."""
 
     ctx: ConcreteRunContext
-    counters: DownloadCounters
     container: Container
     bus: Any  # ProgressBus
     log: logging.Logger
@@ -84,11 +82,26 @@ class _DownloadCtx:
     icpsr_prompt_lock: asyncio.Lock
     download_sem: asyncio.Semaphore
     downloads_root: Path
-    # Values for progress publishing (extracted/transformed are read-only here)
+    # Values for progress publishing (read-only)
     extracted: int
     transformed: int
-    download_asset_count: int  # mutated by _process_dataset
     pre_excluded: int
+
+
+@dataclass(slots=True)
+class _DownloadState:
+    """Mutable state for the download phase."""
+
+    counters: DownloadCounters
+    download_asset_count: int
+
+
+@dataclass(slots=True)
+class _DownloadCtx:
+    """Bundle of config and state shared by download methods during a pipeline run."""
+
+    cfg: _DownloadConfig
+    state: _DownloadState
 
 
 def _get_icpsr_browser_cookies(
@@ -121,101 +134,6 @@ def _get_icpsr_browser_cookies(
         logger.warning("Failed to extract browser cookies for %s", domain)
 
     return cache[domain]
-
-
-def _validate_zip_members(zf: zipfile.ZipFile, target_dir: Path) -> None:
-    """Reject ZIPs containing path-traversal entries or oversized files."""
-    resolved_target = target_dir.resolve()
-    for member in zf.infolist():
-        member_path = (target_dir / member.filename).resolve()
-        if (
-            not str(member_path).startswith(str(resolved_target) + os.sep)
-            and member_path != resolved_target
-        ):
-            raise ValueError(f"Path traversal detected: {member.filename}")
-        if member.file_size > 500 * 1024 * 1024:  # 500 MB per file
-            raise ValueError(f"File too large: {member.filename} ({member.file_size} bytes)")
-
-
-def _extract_zip_bundle(
-    zip_path: Path,
-    target_dir: Path,
-    log: logging.Logger,
-) -> list[Any]:
-    """Extract a ZIP bundle and return AssetRecords for individual files."""
-    from qdarchive_seeding.core.entities import AssetRecord
-
-    if not zip_path.exists() or not zipfile.is_zipfile(zip_path):
-        log.warning("Not a valid ZIP file: %s", zip_path)
-        return []
-
-    extracted: list[AssetRecord] = []
-    try:
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            _validate_zip_members(zf, target_dir)
-            zf.extractall(target_dir)
-
-            # Detect single top-level directory and flatten it
-            top_level_dirs = {
-                PurePosixPath(info.filename).parts[0]
-                for info in zf.infolist()
-                if len(PurePosixPath(info.filename).parts) > 1
-            }
-            single_subdir = (
-                (target_dir / next(iter(top_level_dirs))) if len(top_level_dirs) == 1 else None
-            )
-            if single_subdir and single_subdir.is_dir():
-                import shutil
-
-                for child in list(single_subdir.iterdir()):
-                    dest = target_dir / child.name
-                    if dest.exists():
-                        # Merge: if both are dirs, move contents; otherwise skip
-                        if child.is_dir() and dest.is_dir():
-                            for sub in child.rglob("*"):
-                                if sub.is_file():
-                                    rel = sub.relative_to(child)
-                                    sub_dest = dest / rel
-                                    sub_dest.parent.mkdir(parents=True, exist_ok=True)
-                                    if not sub_dest.exists():
-                                        shutil.move(str(sub), str(sub_dest))
-                            shutil.rmtree(child)
-                        # else: destination file already exists, skip
-                    else:
-                        shutil.move(str(child), str(dest))
-                # Remove subdir if now empty
-                with contextlib.suppress(OSError):
-                    single_subdir.rmdir()
-                log.debug("Flattened single top-level directory: %s", single_subdir.name)
-
-            for info in zf.infolist():
-                if info.is_dir():
-                    continue
-                # Strip the top-level directory prefix if we flattened
-                filename = info.filename
-                if single_subdir is not None:
-                    parts = PurePosixPath(filename).parts
-                    filename = str(PurePosixPath(*parts[1:])) if len(parts) > 1 else filename
-                file_path = target_dir / filename
-                file_type = PurePosixPath(filename).suffix.lstrip(".") or None
-                extracted.append(
-                    AssetRecord(
-                        asset_url=zip_path.name,
-                        local_dir=str(file_path.parent),
-                        local_filename=file_path.name,
-                        file_type=file_type,
-                        size_bytes=info.file_size,
-                        download_status=DOWNLOAD_STATUS_SUCCESS,
-                        downloaded_at=datetime.now(UTC),
-                    )
-                )
-        # Remove the ZIP after successful extraction
-        zip_path.unlink()
-        log.info("Extracted %d files from %s", len(extracted), zip_path.name)
-    except Exception as exc:
-        log.error("Failed to extract ZIP %s: %s", zip_path, exc)
-        return []
-    return extracted
 
 
 class ETLRunner:
@@ -541,20 +459,24 @@ class ETLRunner:
                 download_sem = asyncio.Semaphore(5)
 
                 dctx = _DownloadCtx(
-                    ctx=ctx,
-                    counters=counters,
-                    container=c,
-                    bus=bus,
-                    log=log,
-                    skip_icpsr=skip_icpsr,
-                    icpsr_terms_url_callback=icpsr_terms_url_callback,
-                    icpsr_prompt_lock=asyncio.Lock(),
-                    download_sem=download_sem,
-                    downloads_root=downloads_root,
-                    extracted=extracted,
-                    transformed=transformed,
-                    download_asset_count=download_asset_count,
-                    pre_excluded=pre_excluded,
+                    cfg=_DownloadConfig(
+                        ctx=ctx,
+                        container=c,
+                        bus=bus,
+                        log=log,
+                        skip_icpsr=skip_icpsr,
+                        icpsr_terms_url_callback=icpsr_terms_url_callback,
+                        icpsr_prompt_lock=asyncio.Lock(),
+                        download_sem=download_sem,
+                        downloads_root=downloads_root,
+                        extracted=extracted,
+                        transformed=transformed,
+                        pre_excluded=pre_excluded,
+                    ),
+                    state=_DownloadState(
+                        counters=counters,
+                        download_asset_count=download_asset_count,
+                    ),
                 )
 
                 # Process datasets with limited concurrency
@@ -627,16 +549,16 @@ class ETLRunner:
 
     async def _publish_download_progress(self, dctx: _DownloadCtx) -> None:
         """Publish current counter state to the progress bus."""
-        ct = dctx.counters
-        dctx.bus.publish(
+        ct = dctx.state.counters
+        dctx.cfg.bus.publish(
             CountersUpdated(
-                extracted=dctx.extracted,
-                transformed=dctx.transformed,
+                extracted=dctx.cfg.extracted,
+                transformed=dctx.cfg.transformed,
                 downloaded=ct.downloaded,
                 failed=ct.failed,
-                skipped=ct.skipped - dctx.pre_excluded,
+                skipped=ct.skipped - dctx.cfg.pre_excluded,
                 access_denied=ct.access_denied,
-                total_assets=dctx.download_asset_count,
+                total_assets=dctx.state.download_asset_count,
             )
         )
 
@@ -646,14 +568,13 @@ class ETLRunner:
         asset_ref: Any,
         target: Path,
     ) -> tuple[Any, Any | None, Exception | None]:
-        """Download a single asset, updating counters in *dctx*."""
-        ct = dctx.counters
-        c = dctx.container
-        bus = dctx.bus
-        log = dctx.log
+        """Download a single asset, dispatching to ICPSR or generic handler."""
+        ct = dctx.state.counters
+        c = dctx.cfg.container
+        bus = dctx.cfg.bus
 
-        async with dctx.download_sem:
-            if dctx.ctx.cancelled:
+        async with dctx.cfg.download_sem:
+            if dctx.cfg.ctx.cancelled:
                 return asset_ref, None, None
             if c.policy.should_skip_asset(asset_ref):
                 if asset_ref.download_status != DOWNLOAD_STATUS_SUCCESS:
@@ -663,7 +584,7 @@ class ETLRunner:
                     await self._publish_download_progress(dctx)
                 return asset_ref, None, None
             # Skip ICPSR assets if user declined
-            if dctx.skip_icpsr and (
+            if dctx.cfg.skip_icpsr and (
                 "openicpsr.org" in asset_ref.asset_url or "icpsr.umich.edu" in asset_ref.asset_url
             ):
                 asset_ref.download_status = DOWNLOAD_STATUS_SKIPPED
@@ -687,184 +608,223 @@ class ETLRunner:
                 )
             )
 
-            # ICPSR downloads (Classic zipcart2 or Open ICPSR)
+            # Dispatch to ICPSR or generic handler
             _is_icpsr = "zipcart2" in asset_ref.asset_url or "openicpsr.org" in asset_ref.asset_url
             if _is_icpsr:
-                try:
-                    if "zipcart2" in asset_ref.asset_url:
-                        zip_path = await self._download_classic_icpsr(
-                            asset_ref,
-                            target,
-                            c.config,
-                            dctx.icpsr_terms_url_callback,
-                            dctx.icpsr_prompt_lock,
-                        )
-                        fail_msg = "ICPSR form flow failed"
-                    else:
-                        zip_path = await self._download_open_icpsr(
-                            asset_ref,
-                            target,
-                            c.config,
-                            dctx.icpsr_terms_url_callback,
-                            dctx.icpsr_prompt_lock,
-                        )
-                        fail_msg = "Open ICPSR download failed"
-                    if zip_path is not None:
-                        asset_ref.download_status = DOWNLOAD_STATUS_SUCCESS
-                        asset_ref.asset_type = "zip_bundle"
-                        asset_ref.downloaded_at = datetime.now(UTC)
-                        async with ct.lock:
-                            ct.downloaded += 1
-                            await self._publish_download_progress(dctx)
-                        bus.publish(
-                            AssetDownloadUpdate(
-                                asset_url=asset_ref.asset_url,
-                                status=DOWNLOAD_STATUS_SUCCESS,
-                                bytes_downloaded=asset_ref.size_bytes or 0,
-                            )
-                        )
-                    else:
-                        asset_ref.download_status = DOWNLOAD_STATUS_FAILED
-                        asset_ref.error_message = fail_msg
-                        async with ct.lock:
-                            ct.failed += 1
-                            await self._publish_download_progress(dctx)
-                        bus.publish(
-                            AssetDownloadUpdate(
-                                asset_url=asset_ref.asset_url,
-                                status=DOWNLOAD_STATUS_FAILED,
-                                error_message=fail_msg,
-                            )
-                        )
-                except Exception as icpsr_exc:
-                    asset_ref.download_status = DOWNLOAD_STATUS_FAILED
-                    asset_ref.error_message = str(icpsr_exc)
-                    async with ct.lock:
-                        ct.failed += 1
-                        await self._publish_download_progress(dctx)
-                    bus.publish(
-                        AssetDownloadUpdate(
-                            asset_url=asset_ref.asset_url,
-                            status=DOWNLOAD_STATUS_FAILED,
-                            error_message=str(icpsr_exc),
-                        )
-                    )
-                return asset_ref, None, None
+                return await self._download_icpsr_asset(dctx, asset_ref, target)
+            return await self._download_generic_asset(dctx, asset_ref, target)
 
-            # Per-asset progress callback
-            _asset_filename = (
-                asset_ref.local_filename
-                or asset_ref.asset_url.rsplit("/", 1)[-1].split("?")[0]
-                or "file"
-            )
+    async def _download_icpsr_asset(
+        self,
+        dctx: _DownloadCtx,
+        asset_ref: Any,
+        target: Path,
+    ) -> tuple[Any, Any | None, Exception | None]:
+        """Handle ICPSR-specific download (Classic zipcart2 or Open ICPSR)."""
+        ct = dctx.state.counters
+        c = dctx.cfg.container
+        bus = dctx.cfg.bus
 
-            def _on_progress(bytes_so_far: int, total_bytes: int | None) -> None:
-                bus.publish(
-                    AssetDownloadProgress(
-                        asset_url=asset_ref.asset_url,
-                        bytes_downloaded=bytes_so_far,
-                        total_bytes=total_bytes,
-                        filename=_asset_filename,
-                    )
+        try:
+            if "zipcart2" in asset_ref.asset_url:
+                zip_path = await self._download_classic_icpsr(
+                    asset_ref,
+                    target,
+                    c.config,
+                    dctx.cfg.icpsr_terms_url_callback,
+                    dctx.cfg.icpsr_prompt_lock,
                 )
-
-            # Retry loop for transient errors (DNS, timeout, connection)
-            max_retries = 3
-            last_exc: Exception | None = None
-            for attempt in range(max_retries + 1):
-                try:
-                    dl_result = await c.downloader.download(
-                        asset_ref, target, progress_callback=_on_progress
-                    )
-                    # Success — update counters
-                    async with ct.lock:
-                        if dl_result and dl_result.asset.download_status == DOWNLOAD_STATUS_SUCCESS:
-                            ct.downloaded += 1
-                            bus.publish(
-                                AssetDownloadUpdate(
-                                    asset_url=asset_ref.asset_url,
-                                    status=DOWNLOAD_STATUS_SUCCESS,
-                                    bytes_downloaded=dl_result.bytes_downloaded,
-                                )
-                            )
-                        else:
-                            ct.failed += 1
-                            ct.failures.append(
-                                FailureRecord(
-                                    asset_url=asset_ref.asset_url,
-                                    error="non-success status",
-                                )
-                            )
-                            bus.publish(
-                                AssetDownloadUpdate(
-                                    asset_url=asset_ref.asset_url,
-                                    status=DOWNLOAD_STATUS_FAILED,
-                                    error_message="non-success status",
-                                )
-                            )
-                        await self._publish_download_progress(dctx)
-                    return asset_ref, dl_result, None
-                except Exception as dl_exc:
-                    last_exc = dl_exc
-                    err_str = str(dl_exc)
-                    is_transient = any(code in err_str for code in self._TRANSIENT_CODES)
-                    if is_transient and attempt < max_retries:
-                        backoff = 2 ** (attempt + 1)
-                        log.debug(
-                            "Transient error for %s (attempt %d/%d), retrying in %ds: %s",
-                            asset_ref.asset_url,
-                            attempt + 1,
-                            max_retries + 1,
-                            backoff,
-                            err_str,
-                        )
-                        await asyncio.sleep(backoff)
-                        continue
-                    # Permanent error or retries exhausted
-                    break
-
-            # All retries failed
-            assert last_exc is not None  # noqa: S101
-            err_str = str(last_exc)
-            is_permanent = any(code in err_str for code in self._ACCESS_CODES)
-            # Permanent access errors (403, 401, etc.) → SKIPPED so
-            # they are never retried; transient/unknown → FAILED.
-            final_status = DOWNLOAD_STATUS_SKIPPED if is_permanent else DOWNLOAD_STATUS_FAILED
-            asset_ref.download_status = final_status
-            asset_ref.error_message = err_str
-            is_suppressed = (
-                not err_str.strip()
-                or is_permanent
-                or any(code in err_str for code in self._TRANSIENT_CODES)
-            )
-            async with ct.lock:
-                ct.failed += 1
-                ct.failures.append(FailureRecord(asset_url=asset_ref.asset_url, error=err_str))
-                if is_suppressed:
-                    ct.access_denied += 1
-                else:
-                    bus.publish(
-                        ErrorEvent(
-                            component="downloader",
-                            error_type=type(last_exc).__name__,
-                            message=err_str,
-                            asset_url=asset_ref.asset_url,
-                        )
-                    )
-                    log.error(
-                        "Download failed for %s: %s",
-                        asset_ref.asset_url,
-                        last_exc,
-                    )
+                fail_msg = "ICPSR form flow failed"
+            else:
+                zip_path = await self._download_open_icpsr(
+                    asset_ref,
+                    target,
+                    c.config,
+                    dctx.cfg.icpsr_terms_url_callback,
+                    dctx.cfg.icpsr_prompt_lock,
+                )
+                fail_msg = "Open ICPSR download failed"
+            if zip_path is not None:
+                asset_ref.download_status = DOWNLOAD_STATUS_SUCCESS
+                asset_ref.asset_type = "zip_bundle"
+                asset_ref.downloaded_at = datetime.now(UTC)
+                async with ct.lock:
+                    ct.downloaded += 1
                     await self._publish_download_progress(dctx)
                 bus.publish(
                     AssetDownloadUpdate(
                         asset_url=asset_ref.asset_url,
-                        status=final_status,
-                        error_message=err_str,
+                        status=DOWNLOAD_STATUS_SUCCESS,
+                        bytes_downloaded=asset_ref.size_bytes or 0,
                     )
                 )
-                return asset_ref, None, last_exc
+            else:
+                asset_ref.download_status = DOWNLOAD_STATUS_FAILED
+                asset_ref.error_message = fail_msg
+                async with ct.lock:
+                    ct.failed += 1
+                    await self._publish_download_progress(dctx)
+                bus.publish(
+                    AssetDownloadUpdate(
+                        asset_url=asset_ref.asset_url,
+                        status=DOWNLOAD_STATUS_FAILED,
+                        error_message=fail_msg,
+                    )
+                )
+        except Exception as icpsr_exc:
+            asset_ref.download_status = DOWNLOAD_STATUS_FAILED
+            asset_ref.error_message = str(icpsr_exc)
+            async with ct.lock:
+                ct.failed += 1
+                await self._publish_download_progress(dctx)
+            bus.publish(
+                AssetDownloadUpdate(
+                    asset_url=asset_ref.asset_url,
+                    status=DOWNLOAD_STATUS_FAILED,
+                    error_message=str(icpsr_exc),
+                )
+            )
+        return asset_ref, None, None
+
+    async def _download_generic_asset(
+        self,
+        dctx: _DownloadCtx,
+        asset_ref: Any,
+        target: Path,
+    ) -> tuple[Any, Any | None, Exception | None]:
+        """Download a standard (non-ICPSR) asset with retry logic."""
+        ct = dctx.state.counters
+        c = dctx.cfg.container
+        bus = dctx.cfg.bus
+        log = dctx.cfg.log
+
+        # Per-asset progress callback
+        _asset_filename = (
+            asset_ref.local_filename
+            or asset_ref.asset_url.rsplit("/", 1)[-1].split("?")[0]
+            or "file"
+        )
+
+        def _on_progress(bytes_so_far: int, total_bytes: int | None) -> None:
+            bus.publish(
+                AssetDownloadProgress(
+                    asset_url=asset_ref.asset_url,
+                    bytes_downloaded=bytes_so_far,
+                    total_bytes=total_bytes,
+                    filename=_asset_filename,
+                )
+            )
+
+        # Retry loop for transient errors (DNS, timeout, connection)
+        max_retries = 3
+        last_exc: Exception | None = None
+        for attempt in range(max_retries + 1):
+            try:
+                dl_result = await c.downloader.download(
+                    asset_ref, target, progress_callback=_on_progress
+                )
+                # Success — update counters
+                async with ct.lock:
+                    if dl_result and dl_result.asset.download_status == DOWNLOAD_STATUS_SUCCESS:
+                        ct.downloaded += 1
+                        bus.publish(
+                            AssetDownloadUpdate(
+                                asset_url=asset_ref.asset_url,
+                                status=DOWNLOAD_STATUS_SUCCESS,
+                                bytes_downloaded=dl_result.bytes_downloaded,
+                            )
+                        )
+                    else:
+                        ct.failed += 1
+                        ct.failures.append(
+                            FailureRecord(
+                                asset_url=asset_ref.asset_url,
+                                error="non-success status",
+                            )
+                        )
+                        bus.publish(
+                            AssetDownloadUpdate(
+                                asset_url=asset_ref.asset_url,
+                                status=DOWNLOAD_STATUS_FAILED,
+                                error_message="non-success status",
+                            )
+                        )
+                    await self._publish_download_progress(dctx)
+                return asset_ref, dl_result, None
+            except Exception as dl_exc:
+                last_exc = dl_exc
+                err_str = str(dl_exc)
+                is_transient = any(code in err_str for code in self._TRANSIENT_CODES)
+                if is_transient and attempt < max_retries:
+                    backoff = 2 ** (attempt + 1)
+                    log.debug(
+                        "Transient error for %s (attempt %d/%d), retrying in %ds: %s",
+                        asset_ref.asset_url,
+                        attempt + 1,
+                        max_retries + 1,
+                        backoff,
+                        err_str,
+                    )
+                    await asyncio.sleep(backoff)
+                    continue
+                # Permanent error or retries exhausted
+                break
+
+        # All retries failed — classify and record the error
+        return await self._classify_download_error(dctx, asset_ref, last_exc)
+
+    async def _classify_download_error(
+        self,
+        dctx: _DownloadCtx,
+        asset_ref: Any,
+        last_exc: Exception | None,
+    ) -> tuple[Any, None, Exception | None]:
+        """Classify a download error as permanent or transient and update counters."""
+        ct = dctx.state.counters
+        bus = dctx.cfg.bus
+        log = dctx.cfg.log
+
+        assert last_exc is not None  # noqa: S101
+        err_str = str(last_exc)
+        is_permanent = any(code in err_str for code in self._ACCESS_CODES)
+        # Permanent access errors (403, 401, etc.) -> SKIPPED so
+        # they are never retried; transient/unknown -> FAILED.
+        final_status = DOWNLOAD_STATUS_SKIPPED if is_permanent else DOWNLOAD_STATUS_FAILED
+        asset_ref.download_status = final_status
+        asset_ref.error_message = err_str
+        is_suppressed = (
+            not err_str.strip()
+            or is_permanent
+            or any(code in err_str for code in self._TRANSIENT_CODES)
+        )
+        async with ct.lock:
+            ct.failed += 1
+            ct.failures.append(FailureRecord(asset_url=asset_ref.asset_url, error=err_str))
+            if is_suppressed:
+                ct.access_denied += 1
+            else:
+                bus.publish(
+                    ErrorEvent(
+                        component="downloader",
+                        error_type=type(last_exc).__name__,
+                        message=err_str,
+                        asset_url=asset_ref.asset_url,
+                    )
+                )
+                log.error(
+                    "Download failed for %s: %s",
+                    asset_ref.asset_url,
+                    last_exc,
+                )
+                await self._publish_download_progress(dctx)
+            bus.publish(
+                AssetDownloadUpdate(
+                    asset_url=asset_ref.asset_url,
+                    status=final_status,
+                    error_message=err_str,
+                )
+            )
+            return asset_ref, None, last_exc
 
     async def _process_dataset(
         self,
@@ -873,11 +833,11 @@ class ETLRunner:
         dataset_id: str,
     ) -> None:
         """Process a single dataset: download its assets, extract ZIPs, update sink."""
-        ct = dctx.counters
-        c = dctx.container
-        log = dctx.log
+        ct = dctx.state.counters
+        c = dctx.cfg.container
+        log = dctx.cfg.log
 
-        if dctx.ctx.cancelled:
+        if dctx.cfg.ctx.cancelled:
             return
 
         # Skip datasets rejected by the policy (e.g. size threshold).
@@ -907,7 +867,7 @@ class ETLRunner:
             or "dataset"
         )
         target_dir = c.path_strategy.dataset_dir(
-            dctx.downloads_root,
+            dctx.cfg.downloads_root,
             source_name=record.source_name,
             dataset_slug=dataset_slug,
         )
@@ -928,7 +888,7 @@ class ETLRunner:
                 and asset.local_dir
                 and asset.local_filename
             ):
-                zip_files = _extract_zip_bundle(
+                zip_files = extract_zip_bundle(
                     Path(asset.local_dir) / asset.local_filename,
                     Path(asset.local_dir),
                     log,
@@ -942,7 +902,7 @@ class ETLRunner:
                     async with ct.lock:
                         extra = len(zip_files) - 1
                         ct.downloaded += extra
-                        dctx.download_asset_count += extra
+                        dctx.state.download_asset_count += extra
                         await self._publish_download_progress(dctx)
 
         # Update sink with download results (skip policy-skipped assets

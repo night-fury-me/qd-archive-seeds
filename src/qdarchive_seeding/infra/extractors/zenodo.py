@@ -227,7 +227,13 @@ class ZenodoExtractor:
         query_string: str = "",
         extra_params: dict[str, str] | None = None,
     ) -> AsyncIterator[DatasetRecord]:
-        """Run a single paginated query against the Zenodo API."""
+        """Run a single paginated query against the Zenodo API.
+
+        # TODO(H5): extract shared pagination/checkpoint logic into
+        # infra/extractors/_pagination.py — the checkpoint resume, failed-page
+        # retry, and completion-marking patterns are duplicated across Zenodo,
+        # Harvard Dataverse, and Syracuse QDR extractors.
+        """
         endpoint = ctx.config.source.endpoints.get("search", "/records")
         base_url = ctx.config.source.base_url.rstrip("/")
         url = f"{base_url}{endpoint}"

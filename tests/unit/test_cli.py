@@ -19,6 +19,7 @@ from qdarchive_seeding.app.progress import (
     StageChanged,
 )
 from qdarchive_seeding.cli.commands import seed as seed_module
+from qdarchive_seeding.cli.display import CliProgressDisplay
 from qdarchive_seeding.cli.main import app
 from qdarchive_seeding.core.entities import RunInfo
 from qdarchive_seeding.core.exceptions import ConfigError
@@ -120,8 +121,7 @@ async def test_run_pipeline_config_error(monkeypatch: object) -> None:
 @pytest.mark.asyncio
 async def test_cli_progress_display_events() -> None:
     console = Console(record=True)
-    seed_module.console = console
-    display = seed_module.CliProgressDisplay()
+    display = CliProgressDisplay(console)
 
     display(AssetDownloadProgress(asset_url="a", bytes_downloaded=1, total_bytes=None))
     display(StageChanged(stage="extract"))

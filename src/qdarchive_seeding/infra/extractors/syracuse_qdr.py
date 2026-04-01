@@ -92,7 +92,13 @@ class SyracuseQdrExtractor:
         seen_ids: set[str] | None = None,
         query_string: str = "",
     ) -> AsyncIterator[DatasetRecord]:
-        """Run a single paginated query against the Syracuse QDR search API."""
+        """Run a single paginated query against the Syracuse QDR search API.
+
+        # TODO(H5): extract shared pagination/checkpoint logic into
+        # infra/extractors/_pagination.py — the checkpoint resume, failed-page
+        # retry, and completion-marking patterns are duplicated across Zenodo,
+        # Harvard Dataverse, and Syracuse QDR extractors.
+        """
         base_url = ctx.config.source.base_url.rstrip("/")
         search_endpoint = ctx.config.source.endpoints.get("search", "/search")
         dataset_endpoint = ctx.config.source.endpoints.get("dataset", "/datasets/:persistentId/")
