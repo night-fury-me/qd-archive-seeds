@@ -16,6 +16,11 @@ from qdarchive_seeding.core.constants import (
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord, PersonRole
 from qdarchive_seeding.core.interfaces import AuthProvider, HttpClient, RunContext
 from qdarchive_seeding.core.progress import PageProgress, QueryProgress
+from qdarchive_seeding.infra.extractors._checkpoint import (
+    get_resume_page,
+    is_query_done,
+    mark_query_done,
+)
 from qdarchive_seeding.infra.http.auth import apply_auth_async
 from qdarchive_seeding.infra.storage.paths import safe_filename
 
@@ -103,13 +108,7 @@ class HarvardDataverseExtractor:
         seen_ids: set[str] | None = None,
         query_string: str = "",
     ) -> AsyncIterator[DatasetRecord]:
-        """Run a single paginated query against the Dataverse Search API.
-
-        # TODO(H5): extract shared pagination/checkpoint logic into
-        # infra/extractors/_pagination.py — the checkpoint resume, failed-page
-        # retry, and completion-marking patterns are duplicated across Zenodo,
-        # Harvard Dataverse, and Syracuse QDR extractors.
-        """
+        """Run a single paginated query against the Dataverse Search API."""
         base_url = ctx.config.source.base_url.rstrip("/")
         search_endpoint = ctx.config.source.endpoints.get("search", "/search")
         url = f"{base_url}{search_endpoint}"
@@ -124,9 +123,7 @@ class HarvardDataverseExtractor:
         bus = ctx.progress_bus
         checkpoint = ctx.checkpoint
 
-        # Resume support: skip if this query was already completed
-        if checkpoint is not None and checkpoint.is_query_complete(query_string):
-            logger.info("Skipping completed query '%s' (checkpoint)", query_string)
+        if is_query_done(checkpoint, query_string):
             return
 
         # --- Retry previously failed pages before continuing ---
@@ -172,8 +169,7 @@ class HarvardDataverseExtractor:
                         if record is not None:
                             yield record
 
-        # Resume support: skip already-fetched pages
-        resume_from = checkpoint.get_start_page(query_string) if checkpoint else 0
+        resume_from = get_resume_page(checkpoint, query_string)
         start = resume_from * per_page
 
         for page_count in range(resume_from, effective_max_pages):
@@ -229,16 +225,7 @@ class HarvardDataverseExtractor:
             if start >= total_count:
                 break
 
-        # Only mark complete if no failed pages remain
-        if checkpoint is not None:
-            if not checkpoint.get_failed_pages(query_string):
-                checkpoint.mark_query_complete(query_string)
-            else:
-                logger.warning(
-                    "Query '%s' has %d failed pages, not marking complete",
-                    query_string,
-                    len(checkpoint.get_failed_pages(query_string)),
-                )
+        mark_query_done(checkpoint, query_string)
 
     async def _build_record(
         self,

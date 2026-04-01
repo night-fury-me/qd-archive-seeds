@@ -12,6 +12,11 @@ from qdarchive_seeding.core.constants import (
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord, PersonRole
 from qdarchive_seeding.core.interfaces import AuthProvider, HttpClient, RunContext
 from qdarchive_seeding.core.progress import PageProgress, QueryProgress
+from qdarchive_seeding.infra.extractors._checkpoint import (
+    get_resume_page,
+    is_query_done,
+    mark_query_done,
+)
 from qdarchive_seeding.infra.extractors._utils import extract_year as _extract_year
 from qdarchive_seeding.infra.http.auth import apply_auth_async
 from qdarchive_seeding.infra.http.pagination import OffsetPagination
@@ -92,13 +97,7 @@ class SyracuseQdrExtractor:
         seen_ids: set[str] | None = None,
         query_string: str = "",
     ) -> AsyncIterator[DatasetRecord]:
-        """Run a single paginated query against the Syracuse QDR search API.
-
-        # TODO(H5): extract shared pagination/checkpoint logic into
-        # infra/extractors/_pagination.py — the checkpoint resume, failed-page
-        # retry, and completion-marking patterns are duplicated across Zenodo,
-        # Harvard Dataverse, and Syracuse QDR extractors.
-        """
+        """Run a single paginated query against the Syracuse QDR search API."""
         base_url = ctx.config.source.base_url.rstrip("/")
         search_endpoint = ctx.config.source.endpoints.get("search", "/search")
         dataset_endpoint = ctx.config.source.endpoints.get("dataset", "/datasets/:persistentId/")
@@ -126,13 +125,10 @@ class SyracuseQdrExtractor:
         checkpoint = ctx.checkpoint
         source_cfg = ctx.config.source
 
-        # Resume support: skip if this query was already completed
-        if checkpoint is not None and checkpoint.is_query_complete(query_string):
-            logger.info("Skipping completed query '%s' (checkpoint)", query_string)
+        if is_query_done(checkpoint, query_string):
             return
 
-        # Resume support: skip already-fetched pages
-        resume_from = checkpoint.get_start_page(query_string) if checkpoint else 0
+        resume_from = get_resume_page(checkpoint, query_string)
 
         for page_count, page_params in enumerate(paginator.iter_params(params)):
             if datasets_yielded >= effective_max:
@@ -218,16 +214,7 @@ class SyracuseQdrExtractor:
                 logger.info("All %d datasets fetched for query '%s'", total_count, query_string)
                 break
 
-        # Mark query complete if no failures
-        if checkpoint is not None:
-            if not checkpoint.get_failed_pages(query_string):
-                checkpoint.mark_query_complete(query_string)
-            else:
-                logger.warning(
-                    "Query '%s' has %d failed pages, not marking complete",
-                    query_string,
-                    len(checkpoint.get_failed_pages(query_string)),
-                )
+        mark_query_done(checkpoint, query_string)
 
     async def _build_record(
         self,

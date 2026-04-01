@@ -16,6 +16,11 @@ from qdarchive_seeding.core.constants import (
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord, PersonRole
 from qdarchive_seeding.core.interfaces import AuthProvider, HttpClient, RunContext
 from qdarchive_seeding.core.progress import DateSliceProgress, PageProgress, QueryProgress
+from qdarchive_seeding.infra.extractors._checkpoint import (
+    get_resume_page,
+    is_query_done,
+    mark_query_done,
+)
 from qdarchive_seeding.infra.extractors._utils import extract_year as _extract_year
 from qdarchive_seeding.infra.http.auth import apply_auth_async
 from qdarchive_seeding.infra.http.pagination import PagePagination
@@ -227,13 +232,7 @@ class ZenodoExtractor:
         query_string: str = "",
         extra_params: dict[str, str] | None = None,
     ) -> AsyncIterator[DatasetRecord]:
-        """Run a single paginated query against the Zenodo API.
-
-        # TODO(H5): extract shared pagination/checkpoint logic into
-        # infra/extractors/_pagination.py — the checkpoint resume, failed-page
-        # retry, and completion-marking patterns are duplicated across Zenodo,
-        # Harvard Dataverse, and Syracuse QDR extractors.
-        """
+        """Run a single paginated query against the Zenodo API."""
         endpoint = ctx.config.source.endpoints.get("search", "/records")
         base_url = ctx.config.source.base_url.rstrip("/")
         url = f"{base_url}{endpoint}"
@@ -257,9 +256,7 @@ class ZenodoExtractor:
         bus = ctx.progress_bus
         checkpoint = ctx.checkpoint
 
-        # Resume support: skip if this query was already completed
-        if checkpoint is not None and checkpoint.is_query_complete(query_string):
-            logger.info("Skipping completed query '%s' (checkpoint)", query_string)
+        if is_query_done(checkpoint, query_string):
             return
 
         # --- Retry previously failed pages before continuing ---
@@ -314,8 +311,7 @@ class ZenodoExtractor:
                         if record is not None:
                             yield record
 
-        # Resume support: skip already-fetched pages
-        resume_from = checkpoint.get_start_page(query_string) if checkpoint else 0
+        resume_from = get_resume_page(checkpoint, query_string)
 
         for page_count, page_params in enumerate(paginator.iter_params(params)):
             if page_count >= effective_max_pages:
@@ -374,16 +370,7 @@ class ZenodoExtractor:
                 if record is not None:
                     yield record
 
-        # Only mark complete if no failed pages remain
-        if checkpoint is not None:
-            if not checkpoint.get_failed_pages(query_string):
-                checkpoint.mark_query_complete(query_string)
-            else:
-                logger.warning(
-                    "Query '%s' has %d failed pages, not marking complete",
-                    query_string,
-                    len(checkpoint.get_failed_pages(query_string)),
-                )
+        mark_query_done(checkpoint, query_string)
 
     def _build_record(
         self,
