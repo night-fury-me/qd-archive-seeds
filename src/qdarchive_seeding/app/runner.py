@@ -762,23 +762,17 @@ class ETLRunner:
                     if ctx.cancelled:
                         return
 
-                    # Skip datasets rejected by the policy (e.g. size threshold)
+                    # Skip datasets rejected by the policy (e.g. size threshold).
+                    # Keep status as UNKNOWN so assets remain eligible for download
+                    # if the threshold is raised in a future run.
                     if c.policy.should_skip_dataset(record):
                         log.info(
                             "Skipping dataset %s: rejected by policy",
                             record.source_dataset_id,
                         )
-                        for asset in record.assets:
-                            asset.download_status = DOWNLOAD_STATUS_SKIPPED
-                            asset.error_message = "dataset skipped by policy"
                         async with _counter_lock:
                             skipped += len(record.assets)
                             await _publish_progress()
-                        try:
-                            for asset in record.assets:
-                                c.sink.upsert_asset(dataset_id, asset)
-                        except Exception as exc:
-                            log.error("Sink update error for %s: %s", dataset_id, exc)
                         return
 
                     # Restore prior download statuses from DB so the policy

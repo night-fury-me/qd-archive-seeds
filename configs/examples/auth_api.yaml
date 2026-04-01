@@ -38,6 +38,7 @@ storage:
   downloads_root: "./downloads"
   layout: "{source_name}/{dataset_slug}/"
   checksum: "sha256"
+  max_dataset_size_gb: 1.0
 
 sink:
   type: "sqlite"
