@@ -32,6 +32,10 @@ class ExcelSink(BaseSink):
 
     def upsert_dataset(self, record: DatasetRecord) -> str:
         dataset_id = record.source_dataset_id or record.source_url
+        keywords_str = ",".join(record.keywords) if record.keywords else ""
+        persons_str = (
+            ",".join(f"{p.name}:{p.role}" for p in record.persons) if record.persons else ""
+        )
         self._dataset_buffer[dataset_id] = {
             "id": dataset_id,
             "source_name": record.source_name,
@@ -44,6 +48,21 @@ class ExcelSink(BaseSink):
             "year": record.year,
             "owner_name": record.owner_name,
             "owner_email": record.owner_email,
+            "query_string": record.query_string,
+            "repository_id": record.repository_id,
+            "repository_url": record.repository_url,
+            "version": record.version,
+            "language": record.language,
+            "upload_date": record.upload_date,
+            "download_date": record.download_date,
+            "download_repository_folder": record.download_repository_folder,
+            "download_project_folder": record.download_project_folder,
+            "download_version_folder": record.download_version_folder,
+            "download_method": record.download_method,
+            "is_harvested": record.is_harvested,
+            "harvested_from": record.harvested_from,
+            "keywords": keywords_str,
+            "persons": persons_str,
         }
         self._dataset_ops += 1
         if self._dataset_ops >= FLUSH_INTERVAL:

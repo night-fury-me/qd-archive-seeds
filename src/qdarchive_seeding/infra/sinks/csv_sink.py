@@ -20,6 +20,21 @@ DATASET_HEADERS = [
     "year",
     "owner_name",
     "owner_email",
+    "query_string",
+    "repository_id",
+    "repository_url",
+    "version",
+    "language",
+    "upload_date",
+    "download_date",
+    "download_repository_folder",
+    "download_project_folder",
+    "download_version_folder",
+    "download_method",
+    "is_harvested",
+    "harvested_from",
+    "keywords",
+    "persons",
 ]
 
 ASSET_HEADERS = [
@@ -85,6 +100,10 @@ class CSVSink(BaseSink):
 
     def upsert_dataset(self, record: DatasetRecord) -> str:
         dataset_id = record.source_dataset_id or record.source_url
+        keywords_str = ",".join(record.keywords) if record.keywords else ""
+        persons_str = (
+            ",".join(f"{p.name}:{p.role}" for p in record.persons) if record.persons else ""
+        )
         self._dataset_buffer[dataset_id] = [
             dataset_id,
             record.source_name,
@@ -97,6 +116,21 @@ class CSVSink(BaseSink):
             str(record.year) if record.year is not None else "",
             record.owner_name or "",
             record.owner_email or "",
+            record.query_string or "",
+            str(record.repository_id) if record.repository_id is not None else "",
+            record.repository_url or "",
+            record.version or "",
+            record.language or "",
+            record.upload_date or "",
+            record.download_date or "",
+            record.download_repository_folder or "",
+            record.download_project_folder or "",
+            record.download_version_folder or "",
+            record.download_method or "",
+            str(record.is_harvested),
+            record.harvested_from or "",
+            keywords_str,
+            persons_str,
         ]
         self._dataset_ops += 1
         if self._dataset_ops >= FLUSH_INTERVAL:

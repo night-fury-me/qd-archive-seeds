@@ -32,6 +32,7 @@ class MongoDBSink(BaseSink):
     def upsert_dataset(self, record: DatasetRecord) -> str:
         dataset_id = record.source_dataset_id or record.source_url
         db = self._ensure_connected()
+        persons_list = [{"name": p.name, "role": p.role} for p in record.persons]
         db["datasets"].update_one(
             {"source_name": record.source_name, "source_dataset_id": record.source_dataset_id},
             {
@@ -47,6 +48,21 @@ class MongoDBSink(BaseSink):
                     "year": record.year,
                     "owner_name": record.owner_name,
                     "owner_email": record.owner_email,
+                    "query_string": record.query_string,
+                    "repository_id": record.repository_id,
+                    "repository_url": record.repository_url,
+                    "version": record.version,
+                    "language": record.language,
+                    "upload_date": record.upload_date,
+                    "download_date": record.download_date,
+                    "download_repository_folder": record.download_repository_folder,
+                    "download_project_folder": record.download_project_folder,
+                    "download_version_folder": record.download_version_folder,
+                    "download_method": record.download_method,
+                    "is_harvested": record.is_harvested,
+                    "harvested_from": record.harvested_from,
+                    "keywords": record.keywords,
+                    "persons": persons_list,
                 }
             },
             upsert=True,

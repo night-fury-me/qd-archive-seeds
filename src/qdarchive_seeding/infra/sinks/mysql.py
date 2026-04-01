@@ -21,6 +21,21 @@ CREATE TABLE IF NOT EXISTS datasets (
   year INT,
   owner_name VARCHAR(255),
   owner_email VARCHAR(255),
+  query_string TEXT,
+  repository_id INT,
+  repository_url TEXT,
+  version VARCHAR(255),
+  language VARCHAR(255),
+  upload_date VARCHAR(255),
+  download_date VARCHAR(255),
+  download_repository_folder VARCHAR(255),
+  download_project_folder VARCHAR(255),
+  download_version_folder VARCHAR(255),
+  download_method VARCHAR(50),
+  is_harvested TINYINT NOT NULL DEFAULT 0,
+  harvested_from TEXT,
+  keywords TEXT,
+  persons TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY idx_dataset_unique (source_name, source_dataset_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -77,14 +92,25 @@ class MySQLSink(BaseSink):
 
     def upsert_dataset(self, record: DatasetRecord) -> str:
         dataset_id = record.source_dataset_id or record.source_url
+        keywords_str = ",".join(record.keywords) if record.keywords else None
+        persons_str = (
+            ",".join(f"{p.name}:{p.role}" for p in record.persons) if record.persons else None
+        )
         conn = self._ensure_connected()
         with conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO datasets (
                   id, source_name, source_dataset_id, source_url, title, description,
-                  doi, license, year, owner_name, owner_email
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                  doi, license, year, owner_name, owner_email,
+                  query_string, repository_id, repository_url, version, language,
+                  upload_date, download_date, download_repository_folder,
+                  download_project_folder, download_version_folder, download_method,
+                  is_harvested, harvested_from, keywords, persons
+                ) VALUES (
+                  %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                  %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
                 ON DUPLICATE KEY UPDATE
                   source_url=VALUES(source_url),
                   title=VALUES(title),
@@ -93,7 +119,22 @@ class MySQLSink(BaseSink):
                   license=VALUES(license),
                   year=VALUES(year),
                   owner_name=VALUES(owner_name),
-                  owner_email=VALUES(owner_email)
+                  owner_email=VALUES(owner_email),
+                  query_string=VALUES(query_string),
+                  repository_id=VALUES(repository_id),
+                  repository_url=VALUES(repository_url),
+                  version=VALUES(version),
+                  language=VALUES(language),
+                  upload_date=VALUES(upload_date),
+                  download_date=VALUES(download_date),
+                  download_repository_folder=VALUES(download_repository_folder),
+                  download_project_folder=VALUES(download_project_folder),
+                  download_version_folder=VALUES(download_version_folder),
+                  download_method=VALUES(download_method),
+                  is_harvested=VALUES(is_harvested),
+                  harvested_from=VALUES(harvested_from),
+                  keywords=VALUES(keywords),
+                  persons=VALUES(persons)
                 """,
                 (
                     dataset_id,
@@ -107,6 +148,21 @@ class MySQLSink(BaseSink):
                     record.year,
                     record.owner_name,
                     record.owner_email,
+                    record.query_string,
+                    record.repository_id,
+                    record.repository_url,
+                    record.version,
+                    record.language,
+                    record.upload_date,
+                    record.download_date,
+                    record.download_repository_folder,
+                    record.download_project_folder,
+                    record.download_version_folder,
+                    record.download_method,
+                    int(record.is_harvested),
+                    record.harvested_from,
+                    keywords_str,
+                    persons_str,
                 ),
             )
         conn.commit()
