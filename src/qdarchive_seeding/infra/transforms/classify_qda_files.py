@@ -88,6 +88,10 @@ PRIMARY_DATA_EXTENSIONS: frozenset[str] = frozenset(
         ".xlsx",
         ".xls",
         ".tsv",
+        ".tab",
+        ".ods",
+        # Archives (may contain qualitative data)
+        ".zip",
     }
 )
 

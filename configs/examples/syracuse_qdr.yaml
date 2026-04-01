@@ -38,6 +38,9 @@ pre_transforms:
     options:
       categories: ["analysis_data"]
   - name: "slugify_dataset"
+  - name: "filter_by_extensions"
+    options:
+      categories: ["all"]
 
 post_transforms:
   - name: "classify_qda_files"

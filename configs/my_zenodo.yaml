@@ -98,6 +98,9 @@ pre_transforms:
   - name: "normalize_fields"
   - name: "deduplicate_assets"
   - name: "slugify_dataset"
+  - name: "filter_by_extensions"
+    options:
+      categories: ["all"]
 
 post_transforms:
   - name: "classify_qda_files"
@@ -116,7 +119,7 @@ sink:
 http:
   timeout_seconds: 15
   max_retries: 5
-  rate_limit_per_second: 0.5  # Conservative rate to avoid 429 during heavy crawling
+  rate_limit_per_second: 5  # Conservative rate to avoid 429 during heavy crawling
 
 logging:
   level: "INFO"

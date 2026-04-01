@@ -27,6 +27,9 @@ pre_transforms:
   - name: "normalize_fields"
   - name: "deduplicate_assets"
   - name: "slugify_dataset"
+  - name: "filter_by_extensions"
+    options:
+      categories: ["all"]
 
 post_transforms:
   - name: "classify_qda_files"

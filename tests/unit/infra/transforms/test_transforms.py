@@ -238,14 +238,24 @@ def test_classify_qda_files_additional_data() -> None:
     t = ClassifyQdaFiles(name="c")
     record = _make_record(
         assets=[
-            AssetRecord(asset_url="https://example.com/archive.zip"),
             AssetRecord(asset_url="https://example.com/notes.md"),
             AssetRecord(asset_url="https://example.com/LICENSE"),
+            AssetRecord(asset_url="https://example.com/codebook.xml"),
         ]
     )
     result = t.apply(record)
     assert result is not None
     assert all(a.asset_type == "additional_data" for a in result.assets)
+
+
+def test_classify_qda_files_zip_is_primary_data() -> None:
+    t = ClassifyQdaFiles(name="c")
+    record = _make_record(
+        assets=[AssetRecord(asset_url="https://example.com/archive.zip")]
+    )
+    result = t.apply(record)
+    assert result is not None
+    assert result.assets[0].asset_type == "primary_data"
 
 
 def test_filter_by_extensions_keeps_matching_assets() -> None:
