@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import csv
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
-from qdarchive_seeding.infra.sinks.base import FLUSH_INTERVAL, BaseSink
+from qdarchive_seeding.infra.sinks._buffered import BufferedSink
 
 DATASET_HEADERS = [
     "id",
@@ -82,13 +82,9 @@ def _write_csv(path: Path, headers: list[str], rows_dict: dict[str, list[str]]) 
 
 
 @dataclass(slots=True)
-class CSVSink(BaseSink):
+class CSVSink(BufferedSink):
     dataset_path: Path
     asset_path: Path
-    _dataset_buffer: dict[str, list[str]] = field(default_factory=dict, repr=False)
-    _asset_buffer: dict[str, list[str]] = field(default_factory=dict, repr=False)
-    _dataset_ops: int = field(default=0, repr=False)
-    _asset_ops: int = field(default=0, repr=False)
 
     def __post_init__(self) -> None:
         self.dataset_path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,7 +100,7 @@ class CSVSink(BaseSink):
         persons_str = (
             ",".join(f"{p.name}:{p.role}" for p in record.persons) if record.persons else ""
         )
-        self._dataset_buffer[dataset_id] = [
+        row = [
             dataset_id,
             record.source_name,
             record.source_dataset_id or "",
@@ -132,13 +128,10 @@ class CSVSink(BaseSink):
             keywords_str,
             persons_str,
         ]
-        self._dataset_ops += 1
-        if self._dataset_ops >= FLUSH_INTERVAL:
-            self._flush_datasets()
-        return dataset_id
+        return self._buffer_dataset(dataset_id, row)
 
     def upsert_asset(self, dataset_id: str, asset: AssetRecord) -> None:
-        self._asset_buffer[asset.asset_url] = [
+        row = [
             asset.asset_url,
             dataset_id,
             asset.asset_url,
@@ -151,9 +144,7 @@ class CSVSink(BaseSink):
             asset.download_status or "",
             asset.error_message or "",
         ]
-        self._asset_ops += 1
-        if self._asset_ops >= FLUSH_INTERVAL:
-            self._flush_assets()
+        self._buffer_asset(asset.asset_url, row)
 
     def _flush_datasets(self) -> None:
         if not self._dataset_buffer:
@@ -184,6 +175,3 @@ class CSVSink(BaseSink):
     def get_file_statuses(self, dataset_id: str) -> dict[str, str]:
         return {}
 
-    def close(self) -> None:
-        self._flush_datasets()
-        self._flush_assets()

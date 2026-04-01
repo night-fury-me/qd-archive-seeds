@@ -1,23 +1,19 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd  # type: ignore[import-untyped]
 from openpyxl import load_workbook  # type: ignore[import-untyped]
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
-from qdarchive_seeding.infra.sinks.base import FLUSH_INTERVAL, BaseSink
+from qdarchive_seeding.infra.sinks._buffered import BufferedSink
 
 
 @dataclass(slots=True)
-class ExcelSink(BaseSink):
+class ExcelSink(BufferedSink):
     path: Path
-    _dataset_buffer: dict[str, dict[str, object]] = field(default_factory=dict, repr=False)
-    _asset_buffer: dict[str, dict[str, object]] = field(default_factory=dict, repr=False)
-    _dataset_ops: int = field(default=0, repr=False)
-    _asset_ops: int = field(default=0, repr=False)
 
     def __post_init__(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -36,7 +32,7 @@ class ExcelSink(BaseSink):
         persons_str = (
             ",".join(f"{p.name}:{p.role}" for p in record.persons) if record.persons else ""
         )
-        self._dataset_buffer[dataset_id] = {
+        row = {
             "id": dataset_id,
             "source_name": record.source_name,
             "source_dataset_id": record.source_dataset_id,
@@ -64,13 +60,10 @@ class ExcelSink(BaseSink):
             "keywords": keywords_str,
             "persons": persons_str,
         }
-        self._dataset_ops += 1
-        if self._dataset_ops >= FLUSH_INTERVAL:
-            self._flush_datasets()
-        return dataset_id
+        return self._buffer_dataset(dataset_id, row)
 
     def upsert_asset(self, dataset_id: str, asset: AssetRecord) -> None:
-        self._asset_buffer[asset.asset_url] = {
+        row = {
             "id": asset.asset_url,
             "dataset_id": dataset_id,
             "asset_url": asset.asset_url,
@@ -83,9 +76,7 @@ class ExcelSink(BaseSink):
             "download_status": asset.download_status,
             "error_message": asset.error_message,
         }
-        self._asset_ops += 1
-        if self._asset_ops >= FLUSH_INTERVAL:
-            self._flush_assets()
+        self._buffer_asset(asset.asset_url, row)
 
     def _flush_datasets(self) -> None:
         if not self._dataset_buffer:
@@ -141,6 +132,3 @@ class ExcelSink(BaseSink):
     def get_file_statuses(self, dataset_id: str) -> dict[str, str]:
         return {}
 
-    def close(self) -> None:
-        self._flush_datasets()
-        self._flush_assets()
