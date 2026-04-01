@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -55,12 +56,14 @@ def _read_csv(path: Path, key_column: str) -> tuple[list[str], dict[str, list[st
 
 
 def _write_csv(path: Path, headers: list[str], rows_dict: dict[str, list[str]]) -> None:
-    """Write headers and rows to a CSV file."""
-    with path.open("w", newline="") as fh:
+    """Write headers and rows to a CSV file atomically via tmp+replace."""
+    tmp = path.with_suffix(".tmp")
+    with tmp.open("w", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(headers)
         for row in rows_dict.values():
             writer.writerow(row)
+    os.replace(tmp, path)
 
 
 @dataclass(slots=True)
@@ -135,6 +138,17 @@ class CSVSink(BaseSink):
         _write_csv(self.asset_path, ASSET_HEADERS, existing)
         self._asset_buffer.clear()
         self._asset_ops = 0
+
+    def get_existing_dataset_ids(self, repository_id: int) -> set[str]:
+        return set()
+
+    def get_pending_download_datasets(
+        self, repository_id: int | None = None
+    ) -> list[tuple[str, DatasetRecord, list[AssetRecord]]]:
+        return []
+
+    def get_file_statuses(self, dataset_id: str) -> dict[str, str]:
+        return {}
 
     def close(self) -> None:
         self._flush_datasets()

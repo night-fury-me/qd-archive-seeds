@@ -148,6 +148,17 @@ class MySQLSink(BaseSink):
             )
         conn.commit()
 
+    def get_existing_dataset_ids(self, repository_id: int) -> set[str]:
+        return set()
+
+    def get_pending_download_datasets(
+        self, repository_id: int | None = None
+    ) -> list[tuple[str, DatasetRecord, list[AssetRecord]]]:
+        return []
+
+    def get_file_statuses(self, dataset_id: str) -> dict[str, str]:
+        return {}
+
     def close(self) -> None:
         if self._conn is not None:
             self._conn.close()

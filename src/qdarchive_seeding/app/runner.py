@@ -332,6 +332,7 @@ class ETLRunner:
         phases = c.config.pipeline.phases
         collected_records: list[DatasetRecord] = []
         collected_dataset_ids: list[str] = []
+        collected_ids_set: set[str] = set()
 
         # ===== Phase 1: Metadata Collection =====
         if "metadata" in phases:
@@ -390,9 +391,10 @@ class ETLRunner:
                         for asset in record.assets:
                             c.sink.upsert_asset(dataset_id, asset)
                         loaded += 1
-                        if dataset_id not in collected_dataset_ids:
+                        if dataset_id not in collected_ids_set:
                             collected_records.append(record)
                             collected_dataset_ids.append(dataset_id)
+                            collected_ids_set.add(dataset_id)
                     except Exception as exc:
                         log.error("Sink error for record %s: %s", record.source_dataset_id, exc)
                         bus.publish(
@@ -449,11 +451,11 @@ class ETLRunner:
                     repository_id=c.config.source.repository_id
                 )
                 # Merge: add DB records not already in collected_records
-                collected_ids_set = set(collected_dataset_ids)
                 for db_id, db_record, _assets in pending:
                     if db_id not in collected_ids_set:
                         collected_records.append(db_record)
                         collected_dataset_ids.append(db_id)
+                        collected_ids_set.add(db_id)
                         total_assets += len(db_record.assets)
                 if pending:
                     # Recompute total size with merged records

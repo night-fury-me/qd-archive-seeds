@@ -92,6 +92,8 @@ class SQLiteSink(BaseSink):
     path: Path
     _conn: sqlite3.Connection = field(init=False, repr=False)
 
+    _pending_ops: int = field(default=0, init=False, repr=False)
+
     def __post_init__(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self.path)
@@ -118,6 +120,8 @@ class SQLiteSink(BaseSink):
         self._conn.commit()
 
     def close(self) -> None:
+        self._conn.commit()
+        self._pending_ops = 0
         self._conn.close()
 
     def _find_project_id(self, record: DatasetRecord) -> int | None:
@@ -129,14 +133,16 @@ class SQLiteSink(BaseSink):
             if record.version is None:
                 row = self._conn.execute(
                     """SELECT id FROM projects
-                       WHERE repository_id IS ? AND download_project_folder = ?
+                       WHERE COALESCE(repository_id, '') = COALESCE(?, '')
+                       AND download_project_folder = ?
                        AND version IS NULL""",
                     (record.repository_id, record.download_project_folder),
                 ).fetchone()
             else:
                 row = self._conn.execute(
                     """SELECT id FROM projects
-                       WHERE repository_id IS ? AND download_project_folder = ?
+                       WHERE COALESCE(repository_id, '') = COALESCE(?, '')
+                       AND download_project_folder = ?
                        AND version = ?""",
                     (record.repository_id, record.download_project_folder, record.version),
                 ).fetchone()
@@ -225,7 +231,10 @@ class SQLiteSink(BaseSink):
                 (project_id, record.license),
             )
 
-        self._conn.commit()
+        self._pending_ops += 1
+        if self._pending_ops >= 100:
+            self._conn.commit()
+            self._pending_ops = 0
         return pid
 
     def upsert_asset(self, dataset_id: str, asset: AssetRecord) -> None:
@@ -263,7 +272,10 @@ class SQLiteSink(BaseSink):
                 error_message,
             ),
         )
-        self._conn.commit()
+        self._pending_ops += 1
+        if self._pending_ops >= 100:
+            self._conn.commit()
+            self._pending_ops = 0
 
     def update_file_status(self, dataset_id: str, file_name: str, status: str) -> None:
         """Update the download status of a specific file."""
@@ -272,7 +284,10 @@ class SQLiteSink(BaseSink):
             "UPDATE files SET status = ? WHERE project_id = ? AND file_name = ?",
             (status, project_id, file_name),
         )
-        self._conn.commit()
+        self._pending_ops += 1
+        if self._pending_ops >= 100:
+            self._conn.commit()
+            self._pending_ops = 0
 
     def get_file_statuses(self, dataset_id: str) -> dict[str, str]:
         """Return a mapping of lookup_key → status for a project.

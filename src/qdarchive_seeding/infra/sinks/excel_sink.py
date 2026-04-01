@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -97,17 +98,29 @@ class ExcelSink(BaseSink):
         self._asset_ops = 0
 
     def _write_sheet(self, sheet_name: str, df: pd.DataFrame) -> None:
-        """Write a DataFrame to a specific sheet, preserving other sheets."""
+        """Write a DataFrame to a specific sheet, preserving other sheets (atomic)."""
         if self.path.exists():
-            # Read all existing sheets
             all_sheets: dict[str, pd.DataFrame] = pd.read_excel(self.path, sheet_name=None)
             all_sheets[sheet_name] = df
         else:
             all_sheets = {sheet_name: df}
 
-        with pd.ExcelWriter(self.path) as writer:
+        tmp = self.path.with_suffix(".tmp")
+        with pd.ExcelWriter(tmp) as writer:
             for name, sheet_df in all_sheets.items():
                 sheet_df.to_excel(writer, sheet_name=name, index=False)
+        os.replace(tmp, self.path)
+
+    def get_existing_dataset_ids(self, repository_id: int) -> set[str]:
+        return set()
+
+    def get_pending_download_datasets(
+        self, repository_id: int | None = None
+    ) -> list[tuple[str, DatasetRecord, list[AssetRecord]]]:
+        return []
+
+    def get_file_statuses(self, dataset_id: str) -> dict[str, str]:
+        return {}
 
     def close(self) -> None:
         self._flush_datasets()
