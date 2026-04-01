@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from qdarchive_seeding.app.runner import DownloadDecision
+from qdarchive_seeding.app.download_strategy import DownloadDecision
 from qdarchive_seeding.cli.display import get_active_live
 
 
