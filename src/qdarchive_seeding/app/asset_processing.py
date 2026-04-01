@@ -260,9 +260,7 @@ async def _download_generic_asset(
 
     # Per-asset progress callback
     _asset_filename = (
-        asset_ref.local_filename
-        or asset_ref.asset_url.rsplit("/", 1)[-1].split("?")[0]
-        or "file"
+        asset_ref.local_filename or asset_ref.asset_url.rsplit("/", 1)[-1].split("?")[0] or "file"
     )
 
     def _on_progress(bytes_so_far: int, total_bytes: int | None) -> None:
@@ -353,9 +351,7 @@ async def _classify_download_error(
     asset_ref.download_status = final_status
     asset_ref.error_message = err_str
     is_suppressed = (
-        not err_str.strip()
-        or is_permanent
-        or any(code in err_str for code in _TRANSIENT_CODES)
+        not err_str.strip() or is_permanent or any(code in err_str for code in _TRANSIENT_CODES)
     )
     async with ct.lock:
         ct.failed += 1
@@ -440,9 +436,9 @@ async def process_dataset(
 
     # Extract ZIP bundles and update asset records
     for asset in list(record.assets):
-        is_zip = asset.asset_type == "zip_bundle" or (
-            asset.local_filename or ""
-        ).lower().endswith(".zip")
+        is_zip = asset.asset_type == "zip_bundle" or (asset.local_filename or "").lower().endswith(
+            ".zip"
+        )
         if (
             asset.download_status == DOWNLOAD_STATUS_SUCCESS
             and is_zip

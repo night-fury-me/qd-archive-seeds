@@ -174,4 +174,3 @@ class CSVSink(BufferedSink):
 
     def get_file_statuses(self, dataset_id: str) -> dict[str, str]:
         return {}
-

@@ -213,9 +213,7 @@ class ETLRunner:
                 result = c.pre_transform_chain.run([raw_record])
                 if not result:
                     if extracted % 50 == 0:
-                        bus.publish(
-                            CountersUpdated(extracted=extracted, transformed=transformed)
-                        )
+                        bus.publish(CountersUpdated(extracted=extracted, transformed=transformed))
                     continue
 
                 record = result[0]
@@ -338,9 +336,7 @@ class ETLRunner:
             if pending:
                 # Recompute total size with merged records
                 total_size_bytes = sum(
-                    asset.size_bytes or 0
-                    for record in collected_records
-                    for asset in record.assets
+                    asset.size_bytes or 0 for record in collected_records for asset in record.assets
                 )
                 log.info(
                     "Loaded %d pending-download datasets from DB "
@@ -457,9 +453,7 @@ class ETLRunner:
 
         dataset_tasks = [
             _throttled_dataset(record, dataset_id)
-            for record, dataset_id in zip(
-                records_to_download, dataset_ids_to_download, strict=True
-            )
+            for record, dataset_id in zip(records_to_download, dataset_ids_to_download, strict=True)
         ]
         await asyncio.gather(*dataset_tasks)
         if counters.access_denied > 0:
