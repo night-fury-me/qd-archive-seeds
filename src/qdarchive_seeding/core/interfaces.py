@@ -124,6 +124,9 @@ class ConfigValidator(Protocol):
 
 class Policy(ABC):
     @abstractmethod
+    def should_skip_dataset(self, record: DatasetRecord) -> bool: ...
+
+    @abstractmethod
     def should_skip_asset(self, asset: AssetRecord) -> bool: ...
 
     @abstractmethod

@@ -154,6 +154,9 @@ class _Policy:
     def __init__(self, *, skip: bool) -> None:
         self._skip = skip
 
+    def should_skip_dataset(self, _record: Any) -> bool:
+        return False
+
     def should_skip_asset(self, _asset: AssetRecord) -> bool:
         return self._skip
 

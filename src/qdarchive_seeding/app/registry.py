@@ -373,16 +373,22 @@ def _build_mongodb_sink(options: dict[str, Any]) -> Sink:
 # ---------------------------------------------------------------------------
 
 
-def _build_incremental_policy(run_mode: str, fresh_download: bool) -> Any:
+def _build_incremental_policy(
+    run_mode: str, fresh_download: bool, max_dataset_size_bytes: int | None = None
+) -> Any:
     from qdarchive_seeding.app.policies import IncrementalPolicy
 
-    return IncrementalPolicy(run_mode=run_mode, fresh_download=fresh_download)
+    return IncrementalPolicy(
+        run_mode=run_mode,
+        fresh_download=fresh_download,
+        max_dataset_size_bytes=max_dataset_size_bytes,
+    )
 
 
-def _build_retry_policy(retry_failed: bool) -> Any:
+def _build_retry_policy(retry_failed: bool, max_dataset_size_bytes: int | None = None) -> Any:
     from qdarchive_seeding.app.policies import RetryPolicy
 
-    return RetryPolicy(retry_failed=retry_failed)
+    return RetryPolicy(retry_failed=retry_failed, max_dataset_size_bytes=max_dataset_size_bytes)
 
 
 # ---------------------------------------------------------------------------

@@ -756,41 +756,30 @@ class ETLRunner:
                             )
                             return asset_ref, None, last_exc
 
-                # Convert config threshold to bytes once (None means no limit)
-                _max_ds_bytes: int | None = None
-                if c.config.storage.max_dataset_size_gb is not None:
-                    _max_ds_bytes = int(c.config.storage.max_dataset_size_gb * 1024**3)
-
                 async def _process_dataset(record: Any, dataset_id: str) -> None:
                     nonlocal downloaded, download_asset_count, skipped
 
                     if ctx.cancelled:
                         return
 
-                    # Skip datasets whose total estimated size exceeds the threshold
-                    if _max_ds_bytes is not None:
-                        dataset_size = sum(a.size_bytes or 0 for a in record.assets)
-                        if dataset_size > _max_ds_bytes:
-                            log.info(
-                                "Skipping dataset %s: estimated size %.1f GB "
-                                "exceeds max_dataset_size_gb=%.1f",
-                                record.source_dataset_id,
-                                dataset_size / 1024**3,
-                                c.config.storage.max_dataset_size_gb,
-                            )
+                    # Skip datasets rejected by the policy (e.g. size threshold)
+                    if c.policy.should_skip_dataset(record):
+                        log.info(
+                            "Skipping dataset %s: rejected by policy",
+                            record.source_dataset_id,
+                        )
+                        for asset in record.assets:
+                            asset.download_status = DOWNLOAD_STATUS_SKIPPED
+                            asset.error_message = "dataset skipped by policy"
+                        async with _counter_lock:
+                            skipped += len(record.assets)
+                            await _publish_progress()
+                        try:
                             for asset in record.assets:
-                                asset.download_status = DOWNLOAD_STATUS_SKIPPED
-                                asset.error_message = "dataset size exceeds max_dataset_size_gb"
-                            async with _counter_lock:
-                                skipped += len(record.assets)
-                                await _publish_progress()
-                            # Persist skip statuses to sink
-                            try:
-                                for asset in record.assets:
-                                    c.sink.upsert_asset(dataset_id, asset)
-                            except Exception as exc:
-                                log.error("Sink update error for %s: %s", dataset_id, exc)
-                            return
+                                c.sink.upsert_asset(dataset_id, asset)
+                        except Exception as exc:
+                            log.error("Sink update error for %s: %s", dataset_id, exc)
+                        return
 
                     # Restore prior download statuses from DB so the policy
                     # can skip already-downloaded files on resume.

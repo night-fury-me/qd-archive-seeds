@@ -9,7 +9,7 @@ from qdarchive_seeding.core.constants import (
     DOWNLOAD_STATUS_SUCCESS,
     RUN_MODE_INCREMENTAL,
 )
-from qdarchive_seeding.core.entities import AssetRecord
+from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
 from qdarchive_seeding.core.interfaces import Policy
 
 
@@ -19,6 +19,13 @@ class IncrementalPolicy(Policy):
 
     run_mode: str = RUN_MODE_INCREMENTAL
     fresh_download: bool = False
+    max_dataset_size_bytes: int | None = None
+
+    def should_skip_dataset(self, record: DatasetRecord) -> bool:
+        if self.max_dataset_size_bytes is None:
+            return False
+        total = sum(a.size_bytes or 0 for a in record.assets)
+        return total > self.max_dataset_size_bytes
 
     def should_skip_asset(self, asset: AssetRecord) -> bool:
         # Always honour SKIPPED (e.g. Classic ICPSR, requires manual download)
@@ -44,6 +51,13 @@ class RetryPolicy(Policy):
 
     max_attempts: int = 3
     retry_failed: bool = False
+    max_dataset_size_bytes: int | None = None
+
+    def should_skip_dataset(self, record: DatasetRecord) -> bool:
+        if self.max_dataset_size_bytes is None:
+            return False
+        total = sum(a.size_bytes or 0 for a in record.assets)
+        return total > self.max_dataset_size_bytes
 
     def should_skip_asset(self, asset: AssetRecord) -> bool:
         if asset.download_status in (DOWNLOAD_STATUS_SUCCESS, DOWNLOAD_STATUS_SKIPPED):

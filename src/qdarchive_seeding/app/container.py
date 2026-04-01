@@ -169,8 +169,15 @@ def build_container(
     downloader.auth_resolver = _resolve_auth
 
     sink = _build_sink(config, registries)
+    max_ds_bytes: int | None = None
+    if config.storage.max_dataset_size_gb is not None:
+        max_ds_bytes = int(config.storage.max_dataset_size_gb * 1024**3)
     policy = _build_policy(
-        config, registries, fresh_download=fresh_download, retry_failed=retry_failed
+        config,
+        registries,
+        fresh_download=fresh_download,
+        retry_failed=retry_failed,
+        max_dataset_size_bytes=max_ds_bytes,
     )
 
     progress_bus_factory = registries.progress_buses.get("default")
@@ -248,9 +255,10 @@ def _build_policy(
     *,
     fresh_download: bool,
     retry_failed: bool,
+    max_dataset_size_bytes: int | None = None,
 ) -> Policy:
     if retry_failed:
         factory = registries.policies.get("retry")
-        return factory(retry_failed)  # type: ignore[no-any-return]
+        return factory(retry_failed, max_dataset_size_bytes)  # type: ignore[no-any-return]
     factory = registries.policies.get("incremental")
-    return factory(config.pipeline.run_mode, fresh_download)  # type: ignore[no-any-return]
+    return factory(config.pipeline.run_mode, fresh_download, max_dataset_size_bytes)  # type: ignore[no-any-return]
