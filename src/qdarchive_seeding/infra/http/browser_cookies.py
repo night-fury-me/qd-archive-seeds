@@ -34,7 +34,11 @@ class BrowserCookieExtractor:
         try:
             import browser_cookie3  # type: ignore[import-untyped]
         except ImportError:
-            logger.warning("browser_cookie3 not installed — cannot extract browser cookies")
+            logger.warning(
+                "browser_cookie3 not installed — cannot extract browser cookies. "
+                "Install browser_cookie3 for ICPSR cookie-based auth: "
+                "pip install browser_cookie3"
+            )
             return ""
 
         loader = {

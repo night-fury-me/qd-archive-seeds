@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from bs4 import BeautifulSoup
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
+from qdarchive_seeding.core.exceptions import ConfigError
 from qdarchive_seeding.core.interfaces import HttpClient, RunContext
 
 
@@ -33,7 +34,12 @@ class HtmlScraperExtractor:
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
 
-        items = soup.select(self.options.list_selector)
+        try:
+            items = soup.select(self.options.list_selector)
+        except Exception as exc:
+            raise ConfigError(
+                f"Invalid CSS selector '{self.options.list_selector}': {exc}"
+            ) from exc
         count = 0
         for item in items:
             title_node = item.select_one(self.options.title_selector)

@@ -17,8 +17,17 @@ logger = logging.getLogger(__name__)
 
 
 def _is_retryable(exc: BaseException) -> bool:
-    """Retry on connection errors, 5xx server errors, and 429 rate limits."""
-    if isinstance(exc, httpx.RequestError):
+    """Retry on transient connection errors, 5xx server errors, and 429 rate limits."""
+    if isinstance(
+        exc,
+        (
+            httpx.ConnectError,
+            httpx.ReadTimeout,
+            httpx.WriteTimeout,
+            httpx.PoolTimeout,
+            httpx.ConnectTimeout,
+        ),
+    ):
         return True
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code >= 500 or exc.response.status_code == 429
@@ -78,18 +87,6 @@ class HttpxClient:
             resp = await self._client.get(
                 url, headers=combined_headers, params=params, timeout=timeout
             )
-            for _attempt in range(8):
-                if resp.status_code != 429:
-                    break
-                retry_after = resp.headers.get("retry-after", "")
-                wait_secs = int(retry_after) if retry_after.isdigit() else 30
-                logger.warning("Rate limited (429), waiting %ds before retry", wait_secs)
-                await asyncio.sleep(wait_secs)
-                if self._rate_limiter is not None:
-                    await self._rate_limiter.async_wait()
-                resp = await self._client.get(
-                    url, headers=combined_headers, params=params, timeout=timeout
-                )
             resp.raise_for_status()
             return resp
 

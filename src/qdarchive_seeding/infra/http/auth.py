@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -63,6 +64,7 @@ class OAuth2ClientCredentials(AuthProvider):
     scope: str = ""
     _token: str | None = field(default=None, repr=False)
     _expires_at: float = field(default=0.0, repr=False)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def apply(
         self, headers: dict[str, str], params: dict[str, Any]
@@ -72,9 +74,10 @@ class OAuth2ClientCredentials(AuthProvider):
         return headers, params
 
     def _get_token(self) -> str:
-        if self._token and time.monotonic() < self._expires_at:
-            return self._token
-        return self._fetch_token()
+        with self._lock:
+            if self._token and time.monotonic() < self._expires_at:
+                return self._token
+            return self._fetch_token()
 
     def _fetch_token(self) -> str:
         data: dict[str, str] = {

@@ -129,6 +129,13 @@ def _get_icpsr_browser_cookies(
         )
         cookie_jar = loader(domain_name=cookie_domain)
         cache[domain] = {c.name: c.value for c in cookie_jar if c.value}
+    except ImportError:
+        cache[domain] = {}
+        logger.warning(
+            "browser_cookie3 not installed — cannot extract browser cookies for %s. "
+            "Install browser_cookie3 for ICPSR cookie-based auth: pip install browser_cookie3",
+            domain,
+        )
     except Exception:
         cache[domain] = {}
         logger.warning("Failed to extract browser cookies for %s", domain)

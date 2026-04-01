@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from qdarchive_seeding.infra.storage.zip_extractor import validate_zip_members as _validate_zip_members
+from qdarchive_seeding.infra.storage.zip_extractor import (
+    validate_zip_members as _validate_zip_members,
+)
 
 
 def _make_zip(members: dict[str, int | None]) -> zipfile.ZipFile:
