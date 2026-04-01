@@ -65,7 +65,9 @@ class FakeRunContext:
     pipeline_id: str = "test_pipeline"
     config: PipelineConfig = field(default=None)  # type: ignore[assignment]
     cancelled: bool = False
-    metadata: dict[str, Any] = field(default_factory=dict)
+    progress_bus: Any = None
+    checkpoint: Any = None
+    existing_dataset_ids: set[str] | None = None
 
 
 def _make_config() -> PipelineConfig:
@@ -126,7 +128,7 @@ class TestFailedPageRecording:
         )
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
         config = _make_config()
-        ctx = FakeRunContext(config=config, metadata={"checkpoint": cp})
+        ctx = FakeRunContext(config=config, checkpoint=cp)
 
         extractor = ZenodoExtractor(
             http_client=http, auth=NoAuth(), options=ZenodoOptions(include_files=False)
@@ -147,7 +149,7 @@ class TestFailedPageRecording:
         )
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
         config = _make_config()
-        ctx = FakeRunContext(config=config, metadata={"checkpoint": cp})
+        ctx = FakeRunContext(config=config, checkpoint=cp)
 
         extractor = ZenodoExtractor(
             http_client=http, auth=NoAuth(), options=ZenodoOptions(include_files=False)
@@ -171,7 +173,7 @@ class TestRetryFailedPages:
         # HTTP responses: retry of page 1 succeeds, then empty page for normal pagination
         http = FakeHttpClient([_page(10, 11, total=6), EMPTY_PAGE])
         config = _make_config()
-        ctx = FakeRunContext(config=config, metadata={"checkpoint": cp})
+        ctx = FakeRunContext(config=config, checkpoint=cp)
 
         extractor = ZenodoExtractor(
             http_client=http, auth=NoAuth(), options=ZenodoOptions(include_files=False)
@@ -196,7 +198,7 @@ class TestRetryFailedPages:
         # Retry also fails (call 0), then empty page for normal pagination
         http = FakeHttpClient([EMPTY_PAGE], fail_on_call={0})
         config = _make_config()
-        ctx = FakeRunContext(config=config, metadata={"checkpoint": cp})
+        ctx = FakeRunContext(config=config, checkpoint=cp)
 
         extractor = ZenodoExtractor(
             http_client=http, auth=NoAuth(), options=ZenodoOptions(include_files=False)
@@ -225,7 +227,7 @@ class TestRetryFailedPages:
             ]
         )
         config = _make_config()
-        ctx = FakeRunContext(config=config, metadata={"checkpoint": cp})
+        ctx = FakeRunContext(config=config, checkpoint=cp)
 
         extractor = ZenodoExtractor(
             http_client=http, auth=NoAuth(), options=ZenodoOptions(include_files=False)

@@ -92,7 +92,9 @@ class FakeRunContext:
     pipeline_id: str = "test_pipeline"
     config: PipelineConfig = field(default=None)  # type: ignore[assignment]
     cancelled: bool = False
-    metadata: dict[str, Any] = field(default_factory=dict)
+    progress_bus: Any = None
+    checkpoint: Any = None
+    existing_dataset_ids: set[str] | None = None
 
 
 # ---------------------------------------------------------------------------

@@ -56,11 +56,11 @@ class ZenodoExtractor:
             return
 
         # Pre-populate seen_ids from existing records for resume support
-        existing_ids = ctx.metadata.get("existing_dataset_ids")
+        existing_ids = ctx.existing_dataset_ids
         seen_ids: set[str] = set(existing_ids) if existing_ids else set()
         prefix = strategy.base_query_prefix
         facets = strategy.facet_filters
-        bus = ctx.metadata.get("progress_bus")
+        bus = ctx.progress_bus
 
         # Batch both extension and NL queries to avoid Zenodo API timeouts
         ext_batches = _batched(strategy.extension_queries, self.options.ext_batch_size)
@@ -158,7 +158,7 @@ class ZenodoExtractor:
             return
 
         # Need date splitting — use cached slices if available
-        checkpoint = ctx.metadata.get("checkpoint")
+        checkpoint = ctx.checkpoint
         cached = checkpoint.get_date_slices(query_string) if checkpoint else None
         if cached is not None:
             slices = [(date.fromisoformat(s), date.fromisoformat(e)) for s, e in cached]
@@ -189,7 +189,7 @@ class ZenodoExtractor:
                     [(s.isoformat(), e.isoformat()) for s, e in slices],
                 )
 
-        bus = ctx.metadata.get("progress_bus")
+        bus = ctx.progress_bus
         for slice_idx, (start, end) in enumerate(slices):
             date_query = f"{query} AND created:[{start} TO {end}]"
             slice_label = f"[{start}→{end}]"
@@ -248,8 +248,8 @@ class ZenodoExtractor:
         source_cfg = ctx.config.source
         effective_max_pages = self.options.max_pages or self.options._safety_max_pages
         total_yielded = 0
-        bus = ctx.metadata.get("progress_bus")
-        checkpoint = ctx.metadata.get("checkpoint")
+        bus = ctx.progress_bus
+        checkpoint = ctx.checkpoint
 
         # Resume support: skip if this query was already completed
         if checkpoint is not None and checkpoint.is_query_complete(query_string):

@@ -52,11 +52,11 @@ class SyracuseQdrExtractor:
                 yield record
             return
 
-        bus = ctx.metadata.get("progress_bus")
+        bus = ctx.progress_bus
         seen_ids: set[str] = set()
 
         # Pre-populate seen_ids from existing records for resume support
-        existing_ids = ctx.metadata.get("existing_dataset_ids")
+        existing_ids = ctx.existing_dataset_ids
         if existing_ids:
             seen_ids.update(existing_ids)
 
@@ -116,8 +116,8 @@ class SyracuseQdrExtractor:
 
         effective_max = self.options.max_datasets or self.options._safety_max_datasets
         datasets_yielded = 0
-        bus = ctx.metadata.get("progress_bus")
-        checkpoint = ctx.metadata.get("checkpoint")
+        bus = ctx.progress_bus
+        checkpoint = ctx.checkpoint
         source_cfg = ctx.config.source
 
         # Resume support: skip if this query was already completed

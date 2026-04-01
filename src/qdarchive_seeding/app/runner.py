@@ -32,7 +32,8 @@ from qdarchive_seeding.core.constants import (
     DOWNLOAD_STATUS_SUCCESS,
 )
 from qdarchive_seeding.core.entities import DatasetRecord, FailureRecord, RunInfo
-from qdarchive_seeding.core.interfaces import ResumableSink
+from qdarchive_seeding.core.interfaces import Checkpoint, ResumableSink
+from qdarchive_seeding.core.interfaces import ProgressBus as ProgressBusProto
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,9 @@ class ConcreteRunContext:
     pipeline_id: str
     config: PipelineConfig
     cancelled: bool = False
-    metadata: dict[str, Any] = field(default_factory=dict)
+    progress_bus: ProgressBusProto | None = None
+    checkpoint: Checkpoint | None = None
+    existing_dataset_ids: set[str] | None = None
 
 
 @dataclass(slots=True)
@@ -315,7 +318,8 @@ class ETLRunner:
             run_id=run_id,
             pipeline_id=c.config.pipeline.id,
             config=c.config,
-            metadata={"progress_bus": bus, "checkpoint": c.checkpoint},
+            progress_bus=bus,
+            checkpoint=c.checkpoint,
         )
 
         started_at = datetime.now(UTC)
@@ -339,7 +343,7 @@ class ETLRunner:
                 existing_ids = c.sink.get_existing_dataset_ids(c.config.source.repository_id)
                 if existing_ids:
                     log.info("Resume: loaded %d existing dataset IDs from sink", len(existing_ids))
-                    ctx.metadata["existing_dataset_ids"] = existing_ids
+                    ctx.existing_dataset_ids = existing_ids
 
             max_items = c.config.pipeline.max_items
 

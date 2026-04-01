@@ -66,7 +66,9 @@ class FakeRunContext:
     pipeline_id: str = "test_pipeline"
     config: PipelineConfig = field(default=None)  # type: ignore[assignment]
     cancelled: bool = False
-    metadata: dict[str, Any] = field(default_factory=dict)
+    progress_bus: Any = None
+    checkpoint: Any = None
+    existing_dataset_ids: set[str] | None = None
 
 
 def _make_config() -> PipelineConfig:
@@ -132,7 +134,7 @@ class TestFailedPageRecording:
         )
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
         config = _make_config()
-        ctx = FakeRunContext(config=config, metadata={"checkpoint": cp})
+        ctx = FakeRunContext(config=config, checkpoint=cp)
 
         extractor = HarvardDataverseExtractor(
             http_client=http,
@@ -153,7 +155,7 @@ class TestFailedPageRecording:
         )
         cp = CheckpointManager(_path=tmp_path, _pipeline_id="test_pipeline")
         config = _make_config()
-        ctx = FakeRunContext(config=config, metadata={"checkpoint": cp})
+        ctx = FakeRunContext(config=config, checkpoint=cp)
 
         extractor = HarvardDataverseExtractor(
             http_client=http,
@@ -175,7 +177,7 @@ class TestRetryFailedPages:
 
         http = FakeHttpClient([_page("doi:10", "doi:11", total_count=6), EMPTY_PAGE])
         config = _make_config()
-        ctx = FakeRunContext(config=config, metadata={"checkpoint": cp})
+        ctx = FakeRunContext(config=config, checkpoint=cp)
 
         extractor = HarvardDataverseExtractor(
             http_client=http, auth=NoAuth(), options=HarvardDataverseOptions(include_files=False)
@@ -194,7 +196,7 @@ class TestRetryFailedPages:
 
         http = FakeHttpClient([EMPTY_PAGE], fail_on_call={0})
         config = _make_config()
-        ctx = FakeRunContext(config=config, metadata={"checkpoint": cp})
+        ctx = FakeRunContext(config=config, checkpoint=cp)
 
         extractor = HarvardDataverseExtractor(
             http_client=http, auth=NoAuth(), options=HarvardDataverseOptions(include_files=False)
@@ -218,7 +220,7 @@ class TestRetryFailedPages:
             ]
         )
         config = _make_config()
-        ctx = FakeRunContext(config=config, metadata={"checkpoint": cp})
+        ctx = FakeRunContext(config=config, checkpoint=cp)
 
         extractor = HarvardDataverseExtractor(
             http_client=http, auth=NoAuth(), options=HarvardDataverseOptions(include_files=False)
@@ -240,7 +242,7 @@ class TestResumeSkipsCompletedQueries:
 
         http = FakeHttpClient([_page("doi:1", total_count=1)])
         config = _make_config()
-        ctx = FakeRunContext(config=config, metadata={"checkpoint": cp})
+        ctx = FakeRunContext(config=config, checkpoint=cp)
 
         extractor = HarvardDataverseExtractor(
             http_client=http, auth=NoAuth(), options=HarvardDataverseOptions(include_files=False)

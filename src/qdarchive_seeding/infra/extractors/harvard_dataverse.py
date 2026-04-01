@@ -54,10 +54,10 @@ class HarvardDataverseExtractor:
                 yield record
             return
 
-        existing_ids = ctx.metadata.get("existing_dataset_ids")
+        existing_ids = ctx.existing_dataset_ids
         seen_ids: set[str] = set(existing_ids) if existing_ids else set()
         prefix = strategy.base_query_prefix
-        bus = ctx.metadata.get("progress_bus")
+        bus = ctx.progress_bus
         total_queries = len(strategy.extension_queries) + len(strategy.natural_language_queries)
         query_idx = 0
 
@@ -115,8 +115,8 @@ class HarvardDataverseExtractor:
         source_cfg = ctx.config.source
         per_page = self.options.per_page
         effective_max_pages = self.options.max_pages or self.options._safety_max_pages
-        bus = ctx.metadata.get("progress_bus")
-        checkpoint = ctx.metadata.get("checkpoint")
+        bus = ctx.progress_bus
+        checkpoint = ctx.checkpoint
 
         # Resume support: skip if this query was already completed
         if checkpoint is not None and checkpoint.is_query_complete(query_string):

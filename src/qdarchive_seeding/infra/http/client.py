@@ -13,8 +13,6 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from qdarchive_seeding.core.interfaces import HttpClient
-
 logger = logging.getLogger(__name__)
 
 
@@ -43,7 +41,7 @@ class _AsyncIPv4Transport(httpx.AsyncHTTPTransport):
         super().__init__(local_address="0.0.0.0", **kwargs)
 
 
-class HttpxClient(HttpClient):
+class HttpxClient:
     def __init__(
         self,
         settings: HttpClientSettings,
