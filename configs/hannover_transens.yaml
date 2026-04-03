@@ -24,15 +24,15 @@ extractor:
           - "https://data.uni-hannover.de/dataset/3f9bdd8f-97d0-4721-8a5b-6f4779ab30ca/resource/48cdf9d0-b5dc-407a-aae1-6fbed9dc82ad/download/transens_livia_14.8.24.mx24"
 
 pre_transforms:
-  - name: "normalize_fields"
-  - name: "deduplicate_assets"
-  - name: "slugify_dataset"
   - name: "filter_by_extensions"
     options:
       categories: ["all"]
-
-post_transforms:
   - name: "classify_qda_files"
+  - name: "normalize_fields"
+  - name: "deduplicate_assets"
+  - name: "slugify_dataset"
+
+post_transforms: []
 
 storage:
   downloads_root: "./downloads"
