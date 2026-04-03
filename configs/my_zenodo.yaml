@@ -1,8 +1,33 @@
+# ═══════════════════════════════════════════════════════════════════════
+# Pipeline Settings
+# ═══════════════════════════════════════════════════════════════════════
+# id:        Unique identifier for this pipeline run
+# run_mode:  "incremental" (resume from last run) | "full" (start fresh)
+# max_items: Max datasets to collect (null = unlimited)
+# phases:    Which phases to run — ["metadata"] | ["download"] | ["metadata", "download"]
 pipeline:
   id: "zenodo_seed_v2"
   run_mode: "incremental"
   phases: ["metadata", "download"]
 
+# ═══════════════════════════════════════════════════════════════════════
+# Source Configuration
+# ═══════════════════════════════════════════════════════════════════════
+# name:           Source identifier used in folder naming and DB records
+# type:           "rest_api" | "html" | "static_list"
+# base_url:       API base URL
+# repository_id:  Numeric ID for this repository (for resume/dedup support)
+# repository_url: Public URL of the repository
+# endpoints:      API endpoint paths (relative to base_url)
+# params:         Default query parameters sent with every request
+# pagination:     Pagination strategy:
+#                   type: "page" | "offset" | "cursor"
+#                   page_param / size_param / cursor_param / offset_param
+# search_strategy:
+#   base_query_prefix:       Prepended to extension queries (e.g. "resource_type.type:dataset AND")
+#   facet_filters:           Extra API params applied to all queries (e.g. type: "dataset")
+#   extension_queries:       File extension search terms (e.g. "qdpx", "nvp")
+#   natural_language_queries: Free-text search terms (e.g. "interview transcript")
 source:
   name: "zenodo"
   type: "rest_api"
@@ -77,11 +102,29 @@ source:
       - "narrative analysis"
       - "phenomenological study"
 
+# ═══════════════════════════════════════════════════════════════════════
+# Authentication
+# ═══════════════════════════════════════════════════════════════════════
+# type: "bearer" | "api_key" | "browser_session"
+# env:  Environment variable names for credentials
 auth:
   type: "bearer"
   env:
     token: "ZENODO_TOKEN"
 
+# ═══════════════════════════════════════════════════════════════════════
+# Extractor
+# ═══════════════════════════════════════════════════════════════════════
+# Available extractors:
+#   zenodo_extractor | harvard_dataverse_extractor | syracuse_qdr_extractor
+#   generic_rest_extractor | html_scraper_extractor | static_list_extractor
+#
+# Options for zenodo_extractor:
+#   include_files:    true | false — fetch per-dataset file listings
+#   max_pages:        Max pages per query (null = use _safety_max_pages=200)
+#   ext_batch_size:   Number of extension queries to combine with OR per batch
+#   nl_batch_size:    Number of NL queries to combine with OR per batch
+#   auto_date_split:  true | false — split large result sets by date range
 extractor:
   name: "zenodo_extractor"
   options:
@@ -91,6 +134,46 @@ extractor:
     nl_batch_size: 2
     auto_date_split: true
 
+# ═══════════════════════════════════════════════════════════════════════
+# Pre-Transforms (applied before storing to sink)
+# ═══════════════════════════════════════════════════════════════════════
+# Transforms run sequentially. If any returns None, the dataset is dropped.
+#
+# Available transforms and their options:
+#
+#   validate_required_fields:
+#     required_fields: list[str]     — field names to check; special values:
+#                                      "has_assets" (dataset must have ≥1 file),
+#                                      "assets.FIELD" (every asset must have FIELD)
+#
+#   blocklist_extensions:
+#     bypass_with_analysis_data: bool (default: true)  — never drop if dataset has QDA files
+#     extra_blocked: list[str]       — additional extensions to block (e.g. [".sav", ".dta"])
+#     exempt: list[str]              — extensions to remove from default blocklist
+#
+#   filter_by_extensions:
+#     categories: list[str]          — "analysis_data" | "primary_data" | "all"
+#     extra_extensions: list[str]    — additional extensions to allow (e.g. [".qdp"])
+#
+#   classify_qda_files:              — (no options) tags assets as analysis_data/primary_data/additional_data
+#
+#   extension_ratio_filter:
+#     min_primary_ratio: float       — minimum ratio of primary+analysis files (default: 0.5)
+#     bypass_with_analysis_data: bool (default: true)
+#
+#   metadata_relevance_filter:
+#     keyword_keep_threshold: float  — score ≥ this → keep without embedding (default: 8.0)
+#     keyword_drop_threshold: float  — score ≤ this → drop without embedding (default: -4.0)
+#     embedding_similarity_threshold: float — cosine similarity threshold (default: 0.35)
+#     reference_embeddings_path: str — path to .npz centroid file (default: metadata/reference_embeddings.npz)
+#     bypass_with_analysis_data: bool (default: true)
+#     extra_positive: dict[str, float] — additional positive keyword signals
+#     extra_negative: dict[str, float] — additional negative keyword signals
+#
+#   normalize_fields:                — (no options) extracts owner_name, cleans title/description
+#   deduplicate_assets:              — (no options) removes duplicate asset URLs
+#   slugify_dataset:                 — (no options) generates dataset_slug for folder naming
+#   infer_filetypes:                 — (no options) assigns asset_type from file extension
 pre_transforms:
   - name: "validate_required_fields"
     options:
@@ -117,24 +200,58 @@ pre_transforms:
   - name: "deduplicate_assets"
   - name: "slugify_dataset"
 
+# ═══════════════════════════════════════════════════════════════════════
+# Post-Transforms (applied after pre-transforms, before sink)
+# ═══════════════════════════════════════════════════════════════════════
+# Same available transforms as pre_transforms above.
+# Typically empty — classify_qda_files was moved to pre_transforms.
 post_transforms: []
 
+# ═══════════════════════════════════════════════════════════════════════
+# Storage (download destination)
+# ═══════════════════════════════════════════════════════════════════════
+# downloads_root:     Base directory for downloaded files
+# layout:             Folder template — available vars: {source_name}, {dataset_slug}, {version}
+# checksum:           "sha256" | "md5" | null
+# max_dataset_size_gb: Skip datasets larger than this (in GB)
 storage:
   downloads_root: "./downloads"
   layout: "{source_name}/{dataset_slug}/{version}/"
   checksum: "sha256"
   max_dataset_size_gb: 1.0
 
+# ═══════════════════════════════════════════════════════════════════════
+# Sink (metadata storage backend)
+# ═══════════════════════════════════════════════════════════════════════
+# Available sinks: "sqlite" | "csv" | "excel" | "mysql" | "mongodb"
+# Options vary by sink type:
+#   sqlite:  path (str)
+#   csv:     path (str), asset_path (str)
+#   excel:   path (str)
+#   mysql:   host, port, user, password, database
+#   mongodb: uri, database, collection
 sink:
   type: "sqlite"
   options:
     path: "./metadata/qdarchive-zenodo.sqlite"
 
+# ═══════════════════════════════════════════════════════════════════════
+# HTTP Client Settings
+# ═══════════════════════════════════════════════════════════════════════
+# timeout_seconds:       Request timeout (default: 30)
+# max_retries:           Retry count on transient/5xx/429 errors (default: 3)
+# rate_limit_per_second: Max requests per second (default: 5)
 http:
   timeout_seconds: 15
   max_retries: 5
-  rate_limit_per_second: 0.4  # Conservative rate to avoid 429 during heavy crawling
+  rate_limit_per_second: 0.4
 
+# ═══════════════════════════════════════════════════════════════════════
+# Logging
+# ═══════════════════════════════════════════════════════════════════════
+# level: "DEBUG" | "INFO" | "WARNING" | "ERROR"
+# console.rich: true for Rich-formatted output
+# file.path: log file location
 logging:
   level: "INFO"
   console:
