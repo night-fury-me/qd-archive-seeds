@@ -43,7 +43,9 @@ def load_reference_descriptions(
         raise ValueError(f"No positive_references found in {path}")
     logger.info(
         "Loaded %d positive, %d negative references from %s",
-        len(positive), len(negative), path,
+        len(positive),
+        len(negative),
+        path,
     )
     return positive, negative
 
@@ -129,9 +131,7 @@ def build_reference_embeddings(
     )
 
     logger.info("Encoding %d negative references", len(neg_refs))
-    negative_embeddings = model.encode(
-        neg_refs, normalize_embeddings=True, show_progress_bar=True
-    )
+    negative_embeddings = model.encode(neg_refs, normalize_embeddings=True, show_progress_bar=True)
 
     # Compute centroid of positive references (L2-normalised)
     centroid = positive_embeddings.mean(axis=0).astype(np.float32)

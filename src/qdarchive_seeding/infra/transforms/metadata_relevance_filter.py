@@ -174,13 +174,17 @@ class MetadataRelevanceFilter(BaseTransform):
         if score >= self.keyword_keep_threshold:
             logger.debug(
                 "[relevance] KEEP (keyword score=%.1f) %s — %s",
-                score, dataset_id, title_short,
+                score,
+                dataset_id,
+                title_short,
             )
             return record
         if score <= self.keyword_drop_threshold:
             logger.debug(
                 "[relevance] DROP (keyword score=%.1f) %s — %s",
-                score, dataset_id, title_short,
+                score,
+                dataset_id,
+                title_short,
             )
             return None
 
@@ -193,13 +197,19 @@ class MetadataRelevanceFilter(BaseTransform):
         if similarity >= self.embedding_similarity_threshold:
             logger.info(
                 "[relevance] KEEP (embedding sim=%.3f, keyword=%.1f) %s — %s",
-                similarity, score, dataset_id, title_short,
+                similarity,
+                score,
+                dataset_id,
+                title_short,
             )
             return record
 
         logger.info(
             "[relevance] DROP (embedding sim=%.3f, keyword=%.1f) %s — %s",
-            similarity, score, dataset_id, title_short,
+            similarity,
+            score,
+            dataset_id,
+            title_short,
         )
         return None
 
