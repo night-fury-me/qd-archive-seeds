@@ -154,21 +154,34 @@ class MetadataRelevanceFilter(BaseTransform):
         )
 
     def apply(self, record: DatasetRecord) -> DatasetRecord | None:  # noqa: D401
+        dataset_id = record.source_dataset_id or record.source_url
+        title_short = (record.title or "")[:80]
+
         # Bypass: always keep datasets with QDA-specific files
         if self.bypass_with_analysis_data and any(
             a.asset_type == "analysis_data" for a in record.assets
         ):
+            logger.debug("[relevance] BYPASS (analysis_data) %s", dataset_id)
             return record
 
         text = normalize_text(_combine_text(record))
         if not text:
+            logger.debug("[relevance] DROP (empty text) %s", dataset_id)
             return None
 
         # Stage A: keyword scoring
         score = self._keyword_score(text)
         if score >= self.keyword_keep_threshold:
+            logger.debug(
+                "[relevance] KEEP (keyword score=%.1f) %s — %s",
+                score, dataset_id, title_short,
+            )
             return record
         if score <= self.keyword_drop_threshold:
+            logger.debug(
+                "[relevance] DROP (keyword score=%.1f) %s — %s",
+                score, dataset_id, title_short,
+            )
             return None
 
         # Stage B: embedding similarity (ambiguous cases only)
@@ -178,7 +191,16 @@ class MetadataRelevanceFilter(BaseTransform):
         similarity = float(np.dot(embedding, self._centroid))
 
         if similarity >= self.embedding_similarity_threshold:
+            logger.info(
+                "[relevance] KEEP (embedding sim=%.3f, keyword=%.1f) %s — %s",
+                similarity, score, dataset_id, title_short,
+            )
             return record
+
+        logger.info(
+            "[relevance] DROP (embedding sim=%.3f, keyword=%.1f) %s — %s",
+            similarity, score, dataset_id, title_short,
+        )
         return None
 
     def _keyword_score(self, text: str) -> float:
