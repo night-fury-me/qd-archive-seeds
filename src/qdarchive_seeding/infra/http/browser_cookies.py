@@ -51,7 +51,7 @@ class BrowserCookieExtractor:
             return ""
 
         try:
-            cookie_jar = loader(domain_name=f".{domain.lstrip('.')}")
+            cookie_jar = loader(domain_name=domain)
             cookies = {
                 c.name: c.value
                 for c in cookie_jar
