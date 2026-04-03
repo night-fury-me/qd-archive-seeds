@@ -15,6 +15,8 @@ source:
     files: "/datasets/:persistentId/versions/:latest/files"
   params: {}
   search_strategy:
+    facet_filters:
+      fq: 'subject_ss:"Social Sciences" OR subject_ss:"Arts and Humanities"'
     extension_queries:
       # REFI-QDA Standard
       - "qdpx"

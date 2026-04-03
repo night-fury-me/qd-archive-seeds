@@ -62,6 +62,7 @@ class HarvardDataverseExtractor:
         existing_ids = ctx.existing_dataset_ids
         seen_ids: set[str] = set(existing_ids) if existing_ids else set()
         prefix = strategy.base_query_prefix
+        facets = strategy.facet_filters
         bus = ctx.progress_bus
         total_queries = len(strategy.extension_queries) + len(strategy.natural_language_queries)
         query_idx = 0
@@ -79,7 +80,7 @@ class HarvardDataverseExtractor:
                     )
                 )
             async for record in self._extract_single_query(
-                ctx, query, seen_ids=seen_ids, query_string=ext
+                ctx, query, seen_ids=seen_ids, query_string=ext, extra_params=facets
             ):
                 yield record
 
@@ -96,7 +97,7 @@ class HarvardDataverseExtractor:
                     )
                 )
             async for record in self._extract_single_query(
-                ctx, query, seen_ids=seen_ids, query_string=nl_query
+                ctx, query, seen_ids=seen_ids, query_string=nl_query, extra_params=facets
             ):
                 yield record
 
@@ -107,6 +108,7 @@ class HarvardDataverseExtractor:
         *,
         seen_ids: set[str] | None = None,
         query_string: str = "",
+        extra_params: dict[str, str] | None = None,
     ) -> AsyncIterator[DatasetRecord]:
         """Run a single paginated query against the Dataverse Search API."""
         base_url = ctx.config.source.base_url.rstrip("/")
@@ -115,6 +117,8 @@ class HarvardDataverseExtractor:
 
         headers: dict[str, str] = {}
         params: dict[str, Any] = {"q": query, "type": "dataset"}
+        if extra_params:
+            params.update(extra_params)
         headers, params = await apply_auth_async(self.auth, headers, params)
 
         source_cfg = ctx.config.source
