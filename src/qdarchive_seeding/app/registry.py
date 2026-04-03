@@ -346,6 +346,36 @@ def _build_extension_ratio_filter(name: str, options: dict[str, object]) -> Tran
     )
 
 
+def _build_metadata_relevance_filter(name: str, options: dict[str, object]) -> Transform:
+    from qdarchive_seeding.infra.transforms.metadata_relevance_filter import (
+        DEFAULT_NEGATIVE_SIGNALS,
+        DEFAULT_POSITIVE_SIGNALS,
+        MetadataRelevanceFilter,
+    )
+
+    positive = dict(DEFAULT_POSITIVE_SIGNALS)
+    negative = dict(DEFAULT_NEGATIVE_SIGNALS)
+    extra_pos = options.get("extra_positive", {})
+    extra_neg = options.get("extra_negative", {})
+    if isinstance(extra_pos, dict):
+        positive.update({str(k): float(v) for k, v in extra_pos.items()})
+    if isinstance(extra_neg, dict):
+        negative.update({str(k): float(v) for k, v in extra_neg.items()})
+
+    return MetadataRelevanceFilter(
+        name=name,
+        positive_signals=positive,
+        negative_signals=negative,
+        keyword_keep_threshold=float(options.get("keyword_keep_threshold", 8.0)),
+        keyword_drop_threshold=float(options.get("keyword_drop_threshold", -4.0)),
+        embedding_similarity_threshold=float(options.get("embedding_similarity_threshold", 0.35)),
+        reference_embeddings_path=str(
+            options.get("reference_embeddings_path", "metadata/reference_embeddings.npz")
+        ),
+        bypass_with_analysis_data=bool(options.get("bypass_with_analysis_data", True)),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Sink factories
 # ---------------------------------------------------------------------------
@@ -527,6 +557,7 @@ def create_default_registries() -> ComponentRegistries:
     registries.transforms.register("filter_by_extensions", _build_filter_by_extensions)
     registries.transforms.register("blocklist_extensions", _build_blocklist_extensions)
     registries.transforms.register("extension_ratio_filter", _build_extension_ratio_filter)
+    registries.transforms.register("metadata_relevance_filter", _build_metadata_relevance_filter)
 
     # Sinks
     registries.sinks.register("sqlite", _build_sqlite_sink)
