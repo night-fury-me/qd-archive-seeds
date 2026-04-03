@@ -44,8 +44,8 @@ source:
     files: "/datasets/:persistentId/versions/:latest/files"
   params: {}
   search_strategy:
-    facet_filters:
-      fq: 'subject_ss:"Social Sciences" OR subject_ss:"Arts and Humanities"'
+    # facet_filters:
+    #   fq: 'subject_ss:"Social Sciences" OR subject_ss:"Arts and Humanities"'
     extension_queries:
       # REFI-QDA Standard
       - "qdpx"
@@ -322,7 +322,7 @@ sink:
 http:
   timeout_seconds: 15
   max_retries: 5
-  rate_limit_per_second: 2
+  rate_limit_per_second: 0.4
 
 # ═══════════════════════════════════════════════════════════════════════
 # Logging
