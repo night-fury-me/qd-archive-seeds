@@ -242,8 +242,7 @@ def build_reference_embeddings(
 
     if neg_similarities.mean() >= pos_similarities.mean():
         logger.warning(
-            "Negative examples are closer to centroid than positive! "
-            "Review the reference corpus."
+            "Negative examples are closer to centroid than positive! Review the reference corpus."
         )
 
     # Save
@@ -265,7 +264,9 @@ def build_reference_embeddings(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build reference embeddings for QDA relevance filter")
+    parser = argparse.ArgumentParser(
+        description="Build reference embeddings for QDA relevance filter"
+    )
     parser.add_argument(
         "--output",
         default="metadata/reference_embeddings.npz",

@@ -155,9 +155,10 @@ class MetadataRelevanceFilter(BaseTransform):
 
     def apply(self, record: DatasetRecord) -> DatasetRecord | None:  # noqa: D401
         # Bypass: always keep datasets with QDA-specific files
-        if self.bypass_with_analysis_data:
-            if any(a.asset_type == "analysis_data" for a in record.assets):
-                return record
+        if self.bypass_with_analysis_data and any(
+            a.asset_type == "analysis_data" for a in record.assets
+        ):
+            return record
 
         text = normalize_text(_combine_text(record))
         if not text:
@@ -172,6 +173,7 @@ class MetadataRelevanceFilter(BaseTransform):
 
         # Stage B: embedding similarity (ambiguous cases only)
         self._ensure_model_loaded()
+        assert self._centroid is not None  # guaranteed by _ensure_model_loaded
         embedding = self._model.encode(text, normalize_embeddings=True)
         similarity = float(np.dot(embedding, self._centroid))
 

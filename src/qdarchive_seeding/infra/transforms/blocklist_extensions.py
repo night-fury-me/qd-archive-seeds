@@ -122,9 +122,10 @@ class BlocklistExtensions(BaseTransform):
     bypass_with_analysis_data: bool = True
 
     def apply(self, record: DatasetRecord) -> DatasetRecord | None:  # noqa: D401
-        if self.bypass_with_analysis_data:
-            if any(asset_suffix(a) in ANALYSIS_DATA_EXTENSIONS for a in record.assets):
-                return record
+        if self.bypass_with_analysis_data and any(
+            asset_suffix(a) in ANALYSIS_DATA_EXTENSIONS for a in record.assets
+        ):
+            return record
 
         if any(asset_suffix(a) in self.blocked_extensions for a in record.assets):
             return None

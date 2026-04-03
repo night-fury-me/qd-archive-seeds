@@ -29,9 +29,10 @@ class ExtensionRatioFilter(BaseTransform):
     bypass_with_analysis_data: bool = True
 
     def apply(self, record: DatasetRecord) -> DatasetRecord | None:  # noqa: D401
-        if self.bypass_with_analysis_data:
-            if any(a.asset_type == "analysis_data" for a in record.assets):
-                return record
+        if self.bypass_with_analysis_data and any(
+            a.asset_type == "analysis_data" for a in record.assets
+        ):
+            return record
 
         if not record.assets:
             return None
