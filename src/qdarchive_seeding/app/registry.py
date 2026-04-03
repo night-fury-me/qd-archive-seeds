@@ -332,6 +332,20 @@ def _build_filter_by_extensions(name: str, options: dict[str, object]) -> Transf
     )
 
 
+def _build_extension_ratio_filter(name: str, options: dict[str, object]) -> Transform:
+    from qdarchive_seeding.infra.transforms.extension_ratio_filter import ExtensionRatioFilter
+
+    ratio = options.get("min_primary_ratio", 0.5)
+    if not isinstance(ratio, (int, float)):
+        ratio = 0.5
+    bypass = options.get("bypass_with_analysis_data", True)
+    return ExtensionRatioFilter(
+        name=name,
+        min_primary_ratio=float(ratio),
+        bypass_with_analysis_data=bool(bypass),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Sink factories
 # ---------------------------------------------------------------------------
@@ -512,6 +526,7 @@ def create_default_registries() -> ComponentRegistries:
     registries.transforms.register("classify_qda_files", _build_classify_qda_files)
     registries.transforms.register("filter_by_extensions", _build_filter_by_extensions)
     registries.transforms.register("blocklist_extensions", _build_blocklist_extensions)
+    registries.transforms.register("extension_ratio_filter", _build_extension_ratio_filter)
 
     # Sinks
     registries.sinks.register("sqlite", _build_sqlite_sink)
