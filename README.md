@@ -18,14 +18,17 @@ Researchers publish these datasets on open repositories like Zenodo, Syracuse QD
 
 ## Supported Data Sources
 
-### Datasets by Source
+### Data Source Repository
 
-| Source | Datasets | Status |
-|---|---|---|
-| Zenodo | Multi-query pipeline (extension + NL queries, auto date-splitting) | Active |
-| Harvard Dataverse | Multi-query pipeline (31 queries: 16 extension + 15 NL, fq subject filter) | Active |
-| Syracuse QDR | Multi-query pipeline (extension + NL queries) | Active |
-| Uni Hannover (CKAN) | Single dataset with MAXQDA `.mx24` file | Static |
+We investigated multiple qualitative data repositories. Here is the status of each:
+
+| Repository | URL | Status | Notes |
+|---|---|---|---|
+| **Zenodo** | https://zenodo.org/ | Working | REST API; multi-query with auto date-splitting for large result sets; extension + NL queries |
+| **Harvard Dataverse** | https://dataverse.harvard.edu/ | Working | Dataverse API; 146 queries (extension + NL); per-dataset file fetching |
+| **Syracuse QDR** | https://qdr.syr.edu/ | Working | Dataverse API; specialized QDA repository; extension + NL queries |
+| **Uni Hannover (CKAN)** | https://data.uni-hannover.de/ | Working | CKAN API; 1 dataset with MAXQDA `.mx24` file found |
+
 
 *Note: Exact counts change as pipelines run incrementally. Use `qdarchive seed status` to see current counts.*
 
@@ -35,12 +38,12 @@ Researchers publish these datasets on open repositories like Zenodo, Syracuse QD
 
 | Status | Datasets | Files | Downloaded | Size (approx.) |
 |---|---|---|---|---|
-| Fully downloaded | 3,950 | 935,898 | 935,898 | 553.0 GB |
-| Downloaded (rest access-denied) | 78 | 1,215 | 1,023 | - |
-| Partially downloaded | 1,271 | 114,093 | 110,705 | - |
-| All access-denied | 5 | 5 | 0 | - |
-| All skipped | 2 | 2 | 0 | - |
-| Download not attempted | 249,546 | 1,972,493 | 0 | - |
+| Fully downloaded | 3,950 | 935,898 | 935,898 | 443.2 GB |
+| Downloaded (rest access-denied) | 78 | 1,215 | 1,023 | 2.4 GB |
+| Partially downloaded | 1,271 | 114,093 | 110,705 | 143.0 GB |
+| All access-denied | 5 | 5 | 0 | 2.1 GB |
+| All skipped | 2 | 2 | 0 | < 0.1 GB |
+| Download not attempted | 249,546 | 1,972,493 | 0 | 513,078.0 GB |
 
 - **Total datasets**: 254,852
 - **Fully downloaded**: 3,950
@@ -52,13 +55,13 @@ Researchers publish these datasets on open repositories like Zenodo, Syracuse QD
 | Status | Datasets | Files | Downloaded | Size (approx.) |
 |---|---|---|---|---|
 | No file records in DB | 1,192 | 0 | 0 | - |
-| Fully downloaded | 3,068 | 119,678 | 119,678 | 417.1 GB |
-| Downloaded (rest access-denied) | 5 | 2,874 | 40 | - |
-| Partially downloaded | 301 | 13,102 | 9,151 | - |
-| All access-denied | 27 | 27 | 0 | - |
-| All skipped | 2,981 | 21,905 | 0 | - |
-| Download not attempted | 6,828 | 129,362 | 0 | - |
-| Other | 251 | 7,280 | 3,911 | - |
+| Fully downloaded | 3,068 | 119,678 | 119,678 | 391.2 GB |
+| Downloaded (rest access-denied) | 5 | 2,874 | 40 | 0.4 GB |
+| Partially downloaded | 301 | 13,102 | 9,151 | 32.1 GB |
+| All access-denied | 27 | 27 | 0 | < 0.1 GB |
+| All skipped | 2,981 | 21,905 | 0 | 283.2 GB |
+| Download not attempted | 6,828 | 129,362 | 0 | 17,177.2 GB |
+| Other | 251 | 7,280 | 3,911 | 28.7 GB |
 
 - **Total datasets**: 14,653
 - **Fully downloaded**: 3,068
@@ -67,25 +70,6 @@ Researchers publish these datasets on open repositories like Zenodo, Syracuse QD
 - **Download not attempted**: 6,828
 
 ---
-
-## Data Source Repository Assessment
-
-We investigated multiple qualitative data repositories. Here is the status of each:
-
-| Repository | URL | Status | Notes |
-|---|---|---|---|
-| **Zenodo** | https://zenodo.org/ | Working | REST API; multi-query with auto date-splitting for large result sets; extension + NL queries |
-| **Harvard Dataverse** | https://dataverse.harvard.edu/ | Working | Dataverse API; 146 queries (extension + NL); per-dataset file fetching |
-| **Syracuse QDR** | https://qdr.syr.edu/ | Working | Dataverse API; specialized QDA repository; extension + NL queries |
-| **Uni Hannover (CKAN)** | https://data.uni-hannover.de/ | Working | CKAN API; 1 dataset with MAXQDA `.mx24` file found |
-| **Dryad** | http://datadryad.org/ | Not Useful | Datasets *mention* QDA software in descriptions but contain only CSV/Excel/images --- no actual QDA files |
-| **DataverseNO** | https://dataverse.no/ | Not Working | API consistently times out (>90 seconds), preventing search completion |
-| **DANS** | https://dans.knaw.nl/en/ | Not Working | OAI-PMH protocol provides metadata only; lacks direct file download capability |
-| **UK Data Service** | https://ukdataservice.ac.uk/ | Not Working | scraping failed; no actual QDA files |
-| **Qualidata Network** | https://www.qualidatanet.com/ | Not Working | no actual QDA files |
-| **Qualiservice** | (part of Qualidata Network) | Not Working | no actual QDA files |
-| **QualiBi** | (part of Qualidata Network) | Not Working | no actual QDA files |
-| Individual uploads | Search engines | Manual | Requires manual Google/Bing searches for QDA files on generic file shares (Drive, Dropbox, etc.) |
 
 ### Dataset Search Methodology
 
