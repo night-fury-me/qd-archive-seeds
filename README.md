@@ -438,6 +438,31 @@ logging:
     path: "./logs/pipeline.log"
 ```
 
+The environment variables (especially for secret keys) should be stored in a `.env` file at the root of this repository as follows:
+
+```bash
+ZENODO_TOKEN=<your-token>
+SYRACUSE_QDR_TOKEN=<your-token>
+HARVARD_DATAVERSE_TOKEN=<your-token>
+SYRACUSE_DATAVERSE_API_TOKEN=<your-token>
+EDATOS_DATAVERSE_API_TOKEN=<your-token>
+CIRAD_DATAVERSE_API_TOKEN=<your-token>
+NL_DATAVERSE_API_TOKEN=<your-token>
+BORIALIS_DATAVERSE_API_TOKEN=<your-token>
+SSH_DATASTATIONS_API_TOKEN=<your-token>
+LIFESCIENCES_DATASTATIONS_API_TOKEN=<your-token>
+PHYSTECHSCIENCES_DATASTATIONS_API_TOKEN=<your-token>
+HEIDELBERG_DATAVERSE_API_TOKEN=<your-token>
+CIFOR_DATAVERSE_API_TOKEN=<your-token>
+AGROFORESTRY_DATAVERSE_API_TOKEN=<your-token>
+CIP_DATAVERSE_API_TOKEN=<your-token>
+NORWAY_DATAVERSE_API_TOKEN=<your-token>
+UNC_DATAVERSE_API_TOKEN=<your-token>
+TEXAS_DATAVERSE_API_TOKEN=<your-token>
+TELEGRAM_BOT_TOKEN=<your-token>
+TELEGRAM_CHAT_ID=<your-token>
+```
+
 ---
 
 ## Running a Pipeline
@@ -542,6 +567,41 @@ qdarchive seed export --format csv --out ./export --db ./metadata/custom.sqlite
 
 ---
 
+## Issues and Challenges
+
+### Download Failures
+
+- **Zenodo rate limiting**: Some Zenodo datasets with many files experienced failures due to rate limiting or intermittent server errors. The pipeline handles this via automatic retries with exponential backoff.
+- **Access-restricted files**: A small number of Zenodo records advertise files in metadata but return 403/404 when downloading. These are classified as `SKIPPED` and not retried.
+- **Syracuse QDR API file URLs**: QDR serves files via `/api/access/datafile/{id}` --- filenames must be extracted from HTTP `Content-Disposition` headers rather than the URL.
+- **ICPSR harvested datasets**: Some Harvard Dataverse datasets are harvested from ICPSR and require browser session cookies for download. The pipeline supports automatic cookie extraction from Chromium/Chrome browsers.
+
+### Noise Reduction Pipeline
+
+The initial pipeline collected 3.3M files (29,755 distinct extensions) across all scientific domains, but only 244 were actual QDA project files --- 99.95% noise. A multi-layer filtering strategy was implemented to address this:
+
+| Filter Layer | Mechanism | Est. Impact |
+|---|---|---|
+| **API-level subject filter** | Harvard Dataverse `fq=subject_ss:"Social Sciences" OR subject_ss:"Arts and Humanities"` | ~70% of API results eliminated at source |
+| **Negative extension blocklist** | Drop datasets containing 72 science-specific extensions (`.fits`, `.hdf5`, `.fasta`, `.shp`, etc.) | ~15% of remaining noise |
+| **Trimmed NL queries** | Reduced from 97 to 15 high-precision queries | ~85% fewer API calls |
+| **Extension ratio filter** | Drop datasets where <50% of files are primary/analysis data | ~5% of remaining noise |
+| **Hybrid relevance filter** | Two-stage: keyword scoring (fast) + sentence embedding cosine similarity (`all-mpnet-base-v2`, 768-dim) for ambiguous cases | ~8% of remaining noise |
+
+All filters have `bypass_with_analysis_data: true` --- datasets containing QDA-specific files (`.qdpx`, `.nvp`, etc.) are **never dropped** regardless of other heuristics.
+
+The embedding stage uses a pre-computed reference centroid built from 688 positive examples (188 curated + 500 from DB) and 63 negative examples, cached at `metadata/reference_embeddings.npz`. Rebuild with:
+
+```bash
+python -m qdarchive_seeding.infra.transforms._build_reference_embeddings
+```
+
+### Search Quality
+
+The biggest challenge is **precision vs. recall**: broad keyword searches return many datasets that merely *mention* qualitative research tools without actually containing QDA project files. The multi-layer noise reduction pipeline (see above) addresses this with API-level subject filtering, extension-based blocklisting, composition ratio checks, and semantic relevance scoring --- catching noise at every stage from API query to metadata analysis.
+
+---
+
 ## Development
 
 ### Commands
@@ -612,78 +672,6 @@ uv run pytest --cov=qdarchive_seeding --cov-report=term-missing
 | `tests/unit/infra/logging/` | `test_logging` | Logger configuration, queue handler, context filter |
 | `tests/unit/cli/` | `test_cli` | CLI commands via Typer CliRunner |
 | `tests/integration/` | `test_pipeline_sqlite`, `test_pipeline_csv` | End-to-end: static list -> transforms -> sink |
-
----
-
-## Known QDA File Extensions
-
-The following file extensions are recognized as QDA analysis data by the `classify_qda_files` transform:
-
-| Tool | Extensions |
-|---|---|
-| **REFI-QDA Standard** | `.qdpx` |
-| **MAXQDA** | `.mx24`, `.mx22`, `.mx20`, `.mx18`, `.mx12`, `.mx11`, `.mx5`, `.mx4`, `.mx3`, `.mx2`, `.m2k`, `.mqbac`, `.mqtc`, `.mqex`, `.mqmtr`, `.mex24`, `.mc24`, `.mex22` |
-| **NVivo** | `.nvp`, `.nvpx` |
-| **ATLAS.ti** | `.atlasproj`, `.atlproj`, `.hpr7` |
-| **QDA Miner / Provalis** | `.qdc`, `.qpd` |
-| **f4analyse** | `.f4p` |
-| **Quirkos** | `.qlt` |
-| **Transana** | `.loa`, `.sea`, `.mtr`, `.mod` |
-| **Dedoose** | `.ppj`, `.pprj` |
-| **MQDA** | `.mqda` |
-
----
-
-## Implementation Status
-
-| Milestone | Status | Description |
-|---|---|---|
-| M0 | Done | Bootstrap: repo skeleton, CI, configs |
-| M1 | Done | Core domain + config models (entities, interfaces, Pydantic) |
-| M2 | Done | Logging module (Rich console, rotating file, UILogQueueHandler) |
-| M3 | Done | HTTP infrastructure (retries, auth, rate limiting, pagination) |
-| M4 | Done | Extractors (Zenodo, Harvard Dataverse, Syracuse QDR, GenericREST, HTML scraper, static list) |
-| M5 | Done | Transform pipeline (chain-of-responsibility, 10 built-in transforms incl. QDA classification, blocklist, ratio, and hybrid relevance filter) |
-| M6 | Done | Storage + async downloader (atomic writes, resume, checksums) |
-| M7 | Done | Sinks (SQLite, CSV, Excel; MySQL/MongoDB stubs) |
-| M8 | Done | App orchestration: async runner, DI container, checkpoint/resume, progress bus, policies, manifests |
-| M9 | Done | CLI (Typer: `seed run`, `validate-config`, `status`, `export` + Rich progress display) |
-| M10 | Pending | Complete stub implementations (MySQL, MongoDB, OAuth2) |
-
----
-
-## Issues and Challenges
-
-### Download Failures
-
-- **Zenodo rate limiting**: Some Zenodo datasets with many files experienced failures due to rate limiting or intermittent server errors. The pipeline handles this via automatic retries with exponential backoff.
-- **Access-restricted files**: A small number of Zenodo records advertise files in metadata but return 403/404 when downloading. These are classified as `SKIPPED` and not retried.
-- **Syracuse QDR API file URLs**: QDR serves files via `/api/access/datafile/{id}` --- filenames must be extracted from HTTP `Content-Disposition` headers rather than the URL.
-- **ICPSR harvested datasets**: Some Harvard Dataverse datasets are harvested from ICPSR and require browser session cookies for download. The pipeline supports automatic cookie extraction from Chromium/Chrome browsers.
-
-### Noise Reduction Pipeline
-
-The initial pipeline collected 3.3M files (29,755 distinct extensions) across all scientific domains, but only 244 were actual QDA project files --- 99.95% noise. A multi-layer filtering strategy was implemented to address this:
-
-| Filter Layer | Mechanism | Est. Impact |
-|---|---|---|
-| **API-level subject filter** | Harvard Dataverse `fq=subject_ss:"Social Sciences" OR subject_ss:"Arts and Humanities"` | ~70% of API results eliminated at source |
-| **Negative extension blocklist** | Drop datasets containing 72 science-specific extensions (`.fits`, `.hdf5`, `.fasta`, `.shp`, etc.) | ~15% of remaining noise |
-| **Trimmed NL queries** | Reduced from 97 to 15 high-precision queries | ~85% fewer API calls |
-| **Extension ratio filter** | Drop datasets where <50% of files are primary/analysis data | ~5% of remaining noise |
-| **Hybrid relevance filter** | Two-stage: keyword scoring (fast) + sentence embedding cosine similarity (`all-mpnet-base-v2`, 768-dim) for ambiguous cases | ~8% of remaining noise |
-
-All filters have `bypass_with_analysis_data: true` --- datasets containing QDA-specific files (`.qdpx`, `.nvp`, etc.) are **never dropped** regardless of other heuristics.
-
-The embedding stage uses a pre-computed reference centroid built from 688 positive examples (188 curated + 500 from DB) and 63 negative examples, cached at `metadata/reference_embeddings.npz`. Rebuild with:
-
-```bash
-python -m qdarchive_seeding.infra.transforms._build_reference_embeddings
-```
-
-### Search Quality
-
-The biggest challenge is **precision vs. recall**: broad keyword searches return many datasets that merely *mention* qualitative research tools without actually containing QDA project files. The multi-layer noise reduction pipeline (see above) addresses this with API-level subject filtering, extension-based blocklisting, composition ratio checks, and semantic relevance scoring --- catching noise at every stage from API query to metadata analysis.
 
 ---
 
