@@ -61,7 +61,7 @@ We investigated multiple qualitative data repositories. Here is the status of ea
 | All access-denied | 27 | 27 | 0 | < 0.1 GB |
 | All skipped | 2,981 | 21,905 | 0 | 283.2 GB |
 | Download not attempted | 6,828 | 129,362 | 0 | 17,177.2 GB |
-| Other | 251 | 7,280 | 3,911 | 28.7 GB |
+| Downloaded (rest skipped) | 251 | 7,280 | 3,911 | 28.7 GB |
 
 - **Total datasets**: 14,653
 - **Fully downloaded**: 3,068
