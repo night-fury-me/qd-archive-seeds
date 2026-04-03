@@ -23,51 +23,48 @@ Researchers publish these datasets on open repositories like Zenodo, Syracuse QD
 | Source | Datasets | Status |
 |---|---|---|
 | Zenodo | Multi-query pipeline (extension + NL queries, auto date-splitting) | Active |
-| Harvard Dataverse | Multi-query pipeline (146 queries: extension + NL) | Active |
+| Harvard Dataverse | Multi-query pipeline (31 queries: 16 extension + 15 NL, fq subject filter) | Active |
 | Syracuse QDR | Multi-query pipeline (extension + NL queries) | Active |
 | Uni Hannover (CKAN) | Single dataset with MAXQDA `.mx24` file | Static |
 
 *Note: Exact counts change as pipelines run incrementally. Use `qdarchive seed status` to see current counts.*
 
-### Asset Classification
+### Per-Repository Download Statistics
 
-| Type | Count | Percentage | Description |
-|---|---|---|---|
-| Primary Data | 608 | 77.2% | Research inputs (PDFs, transcripts, interviews) |
-| Additional Data | 96 | 12.2% | Supporting files (archives, licenses, codebooks) |
-| Analysis Data | 84 | 10.7% | QDA project files (the core data we seek) |
+#### Zenodo (254,852 datasets | 3,023,706 files)
 
-### File Extension Breakdown
+| Status | Datasets | Files | Downloaded | Size (approx.) |
+|---|---|---|---|---|
+| Fully downloaded | 3,950 | 935,898 | 935,898 | 553.0 GB |
+| Downloaded (rest access-denied) | 78 | 1,215 | 1,023 | - |
+| Partially downloaded | 1,271 | 114,093 | 110,705 | - |
+| All access-denied | 5 | 5 | 0 | - |
+| All skipped | 2 | 2 | 0 | - |
+| Download not attempted | 249,546 | 1,972,493 | 0 | - |
 
-#### QDA Analysis Files Found (84 total)
+- **Total datasets**: 254,852
+- **Fully downloaded**: 3,950
+- **Files downloaded**: 1,047,626
+- **Download not attempted**: 249,546
 
-| Extension | Tool | Count | % of All Assets |
-|---|---|---|---|
-| `.nvp` | NVivo (legacy) | 24 | 3.0% |
-| `.qdpx` | REFI-QDA Standard | 19 | 2.4% |
-| `.nvpx` | NVivo | 9 | 1.1% |
-| `.mx24` | MAXQDA 2024 | 6 | 0.8% |
-| `.mx22` | MAXQDA 2022 | 5 | 0.6% |
-| `.hpr7` | ATLAS.ti 7 | 3 | 0.4% |
-| `.qdc` | QDA Miner | 3 | 0.4% |
-| `.atlproj` | ATLAS.ti | 2 | 0.3% |
+#### Harvard Dataverse (14,653 datasets | 294,228 files)
 
-#### Top File Extensions Overall (788 total)
+| Status | Datasets | Files | Downloaded | Size (approx.) |
+|---|---|---|---|---|
+| No file records in DB | 1,192 | 0 | 0 | - |
+| Fully downloaded | 3,068 | 119,678 | 119,678 | 417.1 GB |
+| Downloaded (rest access-denied) | 5 | 2,874 | 40 | - |
+| Partially downloaded | 301 | 13,102 | 9,151 | - |
+| All access-denied | 27 | 27 | 0 | - |
+| All skipped | 2,981 | 21,905 | 0 | - |
+| Download not attempted | 6,828 | 129,362 | 0 | - |
+| Other | 251 | 7,280 | 3,911 | - |
 
-| Extension | Count | Percentage |
-|---|---|---|
-| `.pdf` | 216 | 27.4% |
-| `.docx` | 201 | 25.5% |
-| `.rtf` | 90 | 11.4% |
-| `.txt` | 50 | 6.3% |
-| `.xlsx` | 32 | 4.1% |
-| `.nvp` | 24 | 3.0% |
-| `.qdpx` | 19 | 2.4% |
-| `.tab` | 14 | 1.8% |
-| `.csv` | 12 | 1.5% |
-| `.nvpx` | 9 | 1.1% |
-| `.zip` | 8 | 1.0% |
-| Other | 113 | 14.3% |
+- **Total datasets**: 14,653
+- **Fully downloaded**: 3,068
+- **Files downloaded**: 132,780
+- **No file records**: 1,192 (harvested datasets where origin server returned no file listing)
+- **Download not attempted**: 6,828
 
 ---
 
@@ -127,9 +124,9 @@ flowchart LR
 
   subgraph Infra[Execution Pipeline]
     EXT[Extractors]
-    PRE[Pre-Transforms<br/>validate, normalize, deduplicate, slugify]
+    PRE[Pre-Transforms<br/>validate, blocklist, filter, classify,<br/>ratio, relevance, normalize, dedup, slugify]
     DL[Downloader + PathStrategy<br/>atomic write, resume, checksum]
-    POST[Post-Transforms<br/>classify_qda_files]
+    POST[Post-Transforms]
     SINK[Sinks<br/>SQLite / CSV / Excel / MySQL / MongoDB]
   end
 
@@ -186,7 +183,8 @@ infra/        Concrete implementations
   │   │                  static list + shared _checkpoint.py helpers
   │   └── _checkpoint.py Shared checkpoint lifecycle (is_query_done, get_resume_page, mark_query_done)
   ├── transforms/        validate, normalize, deduplicate, slugify, infer_filetypes,
-  │                      classify_qda_files, filter_by_extensions
+  │                      classify_qda_files, filter_by_extensions, blocklist_extensions,
+  │                      extension_ratio_filter, metadata_relevance_filter, _text_utils
   ├── sinks/             SQLite, CSV, Excel, MySQL, MongoDB
   │   └── _buffered.py   BufferedSink base class (shared by CSV + Excel)
   ├── storage/           Downloader (streaming, atomic, resume, checksum), PathStrategy,
@@ -210,8 +208,8 @@ Components are registered by name in `InMemoryRegistry` and referenced in YAML c
 | Type | Available Names |
 |---|---|
 | **Extractors** | `zenodo_extractor`, `harvard_dataverse_extractor`, `syracuse_qdr_extractor`, `generic_rest_extractor`, `html_scraper_extractor`, `static_list_extractor` |
-| **Pre-Transforms** | `validate_required_fields`, `normalize_fields`, `infer_filetypes`, `deduplicate_assets`, `slugify_dataset`, `filter_by_extensions` |
-| **Post-Transforms** | `classify_qda_files` |
+| **Pre-Transforms** | `validate_required_fields`, `normalize_fields`, `infer_filetypes`, `deduplicate_assets`, `slugify_dataset`, `filter_by_extensions`, `blocklist_extensions`, `classify_qda_files`, `extension_ratio_filter`, `metadata_relevance_filter` |
+| **Post-Transforms** | *(empty — classify_qda_files moved to pre-transforms)* |
 | **Sinks** | `sqlite`, `csv`, `excel`, `mysql`, `mongodb` |
 | **Auth Providers** | `none`, `api_key`, `bearer`, `oauth2` |
 | **Policies** | `incremental`, `retry` |
@@ -296,6 +294,7 @@ qdarchive-seeding/
 │   ├── harvard_dataverse.yaml       Production Harvard Dataverse config
 │   ├── syracuse_qdr.yaml            Production Syracuse QDR config
 │   ├── hannover_transens.yaml       Uni Hannover CKAN config
+│   ├── reference_descriptions.yaml  Curated QDA reference descriptions for embedding centroid
 │   └── logging.yaml                 Logging configuration
 ├── src/qdarchive_seeding/      Source code (see Architecture above)
 ├── tests/
@@ -569,7 +568,7 @@ qdarchive seed export --format csv --out ./export --db ./metadata/custom.sqlite
 # Install dependencies
 uv sync --dev
 
-# Run all tests (245 tests)
+# Run all tests (267 tests)
 uv run pytest
 
 # Run tests for a specific layer
@@ -662,7 +661,7 @@ The following file extensions are recognized as QDA analysis data by the `classi
 | M2 | Done | Logging module (Rich console, rotating file, UILogQueueHandler) |
 | M3 | Done | HTTP infrastructure (retries, auth, rate limiting, pagination) |
 | M4 | Done | Extractors (Zenodo, Harvard Dataverse, Syracuse QDR, GenericREST, HTML scraper, static list) |
-| M5 | Done | Transform pipeline (chain-of-responsibility, 7 built-in transforms incl. QDA classification) |
+| M5 | Done | Transform pipeline (chain-of-responsibility, 10 built-in transforms incl. QDA classification, blocklist, ratio, and hybrid relevance filter) |
 | M6 | Done | Storage + async downloader (atomic writes, resume, checksums) |
 | M7 | Done | Sinks (SQLite, CSV, Excel; MySQL/MongoDB stubs) |
 | M8 | Done | App orchestration: async runner, DI container, checkpoint/resume, progress bus, policies, manifests |
@@ -680,16 +679,36 @@ The following file extensions are recognized as QDA analysis data by the `classi
 - **Syracuse QDR API file URLs**: QDR serves files via `/api/access/datafile/{id}` --- filenames must be extracted from HTTP `Content-Disposition` headers rather than the URL.
 - **ICPSR harvested datasets**: Some Harvard Dataverse datasets are harvested from ICPSR and require browser session cookies for download. The pipeline supports automatic cookie extraction from Chromium/Chrome browsers.
 
+### Noise Reduction Pipeline
+
+The initial pipeline collected 3.3M files (29,755 distinct extensions) across all scientific domains, but only 244 were actual QDA project files --- 99.95% noise. A multi-layer filtering strategy was implemented to address this:
+
+| Filter Layer | Mechanism | Est. Impact |
+|---|---|---|
+| **API-level subject filter** | Harvard Dataverse `fq=subject_ss:"Social Sciences" OR subject_ss:"Arts and Humanities"` | ~70% of API results eliminated at source |
+| **Negative extension blocklist** | Drop datasets containing 72 science-specific extensions (`.fits`, `.hdf5`, `.fasta`, `.shp`, etc.) | ~15% of remaining noise |
+| **Trimmed NL queries** | Reduced from 97 to 15 high-precision queries | ~85% fewer API calls |
+| **Extension ratio filter** | Drop datasets where <50% of files are primary/analysis data | ~5% of remaining noise |
+| **Hybrid relevance filter** | Two-stage: keyword scoring (fast) + sentence embedding cosine similarity (`all-mpnet-base-v2`, 768-dim) for ambiguous cases | ~8% of remaining noise |
+
+All filters have `bypass_with_analysis_data: true` --- datasets containing QDA-specific files (`.qdpx`, `.nvp`, etc.) are **never dropped** regardless of other heuristics.
+
+The embedding stage uses a pre-computed reference centroid built from 688 positive examples (188 curated + 500 from DB) and 63 negative examples, cached at `metadata/reference_embeddings.npz`. Rebuild with:
+
+```bash
+python -m qdarchive_seeding.infra.transforms._build_reference_embeddings
+```
+
 ### Search Quality
 
-The biggest challenge is **precision vs. recall**: broad keyword searches return many datasets that merely *mention* qualitative research tools without actually containing QDA project files. The `classify_qda_files` post-transform helps by categorizing downloaded files, but filtering at the search level remains difficult without repository support for file-type filtering.
+The biggest challenge is **precision vs. recall**: broad keyword searches return many datasets that merely *mention* qualitative research tools without actually containing QDA project files. The multi-layer noise reduction pipeline (see above) addresses this with API-level subject filtering, extension-based blocklisting, composition ratio checks, and semantic relevance scoring --- catching noise at every stage from API query to metadata analysis.
 
 ---
 
 ## Dependencies
 
 ### Runtime
-`pydantic>=2.6` | `pyyaml>=6` | `httpx>=0.27` | `tenacity>=8.2` | `rich>=13.7` | `typer[all]>=0.12` | `anyio>=4.3` | `orjson>=3.9` | `beautifulsoup4>=4.12` | `pandas>=2.2` | `openpyxl>=3.1` | `pymysql>=1.1` | `pymongo>=4.7`
+`pydantic>=2.6` | `pyyaml>=6` | `httpx>=0.27` | `tenacity>=8.2` | `rich>=13.7` | `typer[all]>=0.12` | `anyio>=4.3` | `orjson>=3.9` | `beautifulsoup4>=4.12` | `pandas>=2.2` | `openpyxl>=3.1` | `pymysql>=1.1` | `pymongo>=4.7` | `sentence-transformers>=3.0` | `ftfy>=6.1` | `Unidecode>=1.3`
 
 ### Development
 `pytest>=8.1` | `pytest-cov>=5.0` | `ruff>=0.5` | `mypy>=1.10` | `respx>=0.21` | `pytest-asyncio>=0.23`
