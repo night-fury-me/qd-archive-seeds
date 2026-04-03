@@ -295,6 +295,27 @@ def _build_classify_qda_files(name: str, options: dict[str, object]) -> Transfor
     return ClassifyQdaFiles(name=name)
 
 
+def _build_blocklist_extensions(name: str, options: dict[str, object]) -> Transform:
+    from qdarchive_seeding.infra.transforms.blocklist_extensions import (
+        SCIENCE_BLOCKLIST_EXTENSIONS,
+        BlocklistExtensions,
+    )
+
+    extra = options.get("extra_blocked", [])
+    exempt = options.get("exempt", [])
+    base: set[str] = set(SCIENCE_BLOCKLIST_EXTENSIONS)
+    if isinstance(extra, list):
+        base.update(str(e) for e in extra)
+    if isinstance(exempt, list):
+        base -= {str(e) for e in exempt}
+    bypass = options.get("bypass_with_analysis_data", True)
+    return BlocklistExtensions(
+        name=name,
+        blocked_extensions=frozenset(base),
+        bypass_with_analysis_data=bool(bypass),
+    )
+
+
 def _build_filter_by_extensions(name: str, options: dict[str, object]) -> Transform:
     from qdarchive_seeding.infra.transforms.filter_by_extensions import FilterByExtensions
 
@@ -490,6 +511,7 @@ def create_default_registries() -> ComponentRegistries:
     registries.transforms.register("slugify_dataset", _build_slugify_dataset)
     registries.transforms.register("classify_qda_files", _build_classify_qda_files)
     registries.transforms.register("filter_by_extensions", _build_filter_by_extensions)
+    registries.transforms.register("blocklist_extensions", _build_blocklist_extensions)
 
     # Sinks
     registries.sinks.register("sqlite", _build_sqlite_sink)
