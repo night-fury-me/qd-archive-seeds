@@ -362,13 +362,22 @@ def _build_metadata_relevance_filter(name: str, options: dict[str, object]) -> T
     if isinstance(extra_neg, dict):
         negative.update({str(k): float(v) for k, v in extra_neg.items()})
 
+    keep_thr = options.get("keyword_keep_threshold", 8.0)
+    drop_thr = options.get("keyword_drop_threshold", -4.0)
+    embed_thr = options.get("embedding_similarity_threshold", 0.35)
+    if not isinstance(keep_thr, (int, float)):
+        keep_thr = 8.0
+    if not isinstance(drop_thr, (int, float)):
+        drop_thr = -4.0
+    if not isinstance(embed_thr, (int, float)):
+        embed_thr = 0.35
     return MetadataRelevanceFilter(
         name=name,
         positive_signals=positive,
         negative_signals=negative,
-        keyword_keep_threshold=float(options.get("keyword_keep_threshold", 8.0)),
-        keyword_drop_threshold=float(options.get("keyword_drop_threshold", -4.0)),
-        embedding_similarity_threshold=float(options.get("embedding_similarity_threshold", 0.35)),
+        keyword_keep_threshold=float(keep_thr),
+        keyword_drop_threshold=float(drop_thr),
+        embedding_similarity_threshold=float(embed_thr),
         reference_embeddings_path=str(
             options.get("reference_embeddings_path", "metadata/reference_embeddings.npz")
         ),
