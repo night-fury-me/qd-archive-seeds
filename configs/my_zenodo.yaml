@@ -128,12 +128,12 @@ storage:
 sink:
   type: "sqlite"
   options:
-    path: "./metadata/qdarchive.sqlite"
+    path: "./metadata/qdarchive-zenodo.sqlite"
 
 http:
   timeout_seconds: 15
   max_retries: 5
-  rate_limit_per_second: 5  # Conservative rate to avoid 429 during heavy crawling
+  rate_limit_per_second: 0.4  # Conservative rate to avoid 429 during heavy crawling
 
 logging:
   level: "INFO"
@@ -142,4 +142,4 @@ logging:
     rich: true
   file:
     enabled: true
-    path: "./logs/qdarchive.log"
+    path: "./logs/qdarchive-zenodo.log"
