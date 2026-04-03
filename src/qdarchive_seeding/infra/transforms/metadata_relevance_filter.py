@@ -133,7 +133,7 @@ class MetadataRelevanceFilter(BaseTransform):
     keyword_keep_threshold: float = 8.0
     keyword_drop_threshold: float = -4.0
     embedding_similarity_threshold: float = 0.35
-    reference_embeddings_path: str = "metadata/reference_embeddings.npz"
+    reference_embeddings_path: str = ""  # Must be set via config; validated at load time
     bypass_with_analysis_data: bool = True
     _model: Any = field(default=None, repr=False)
     _centroid: np.ndarray | None = field(default=None, repr=False)
