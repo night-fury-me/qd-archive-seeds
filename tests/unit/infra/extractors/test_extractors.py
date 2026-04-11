@@ -176,10 +176,10 @@ class TestZenodoExtractor:
         assert isinstance(r0, DatasetRecord)
         assert r0.source_name == "zenodo"
         assert r0.source_dataset_id == "12345"
-        assert r0.source_url == "https://zenodo.org/api/records/12345"
+        assert r0.source_url == "https://zenodo.org/records/12345"
         assert r0.title == "Test QDP Dataset"
         assert r0.description == "A qualitative data package for testing"
-        assert r0.doi == "10.5281/zenodo.12345"
+        assert r0.doi == "https://doi.org/10.5281/zenodo.12345"
         assert r0.license == "CC-BY-4.0"
         assert r0.year == 2024
         assert r0.owner_name == "Jane Doe"
@@ -193,7 +193,7 @@ class TestZenodoExtractor:
         r1 = records[1]
         assert r1.source_dataset_id == "67890"
         assert r1.title == "Another QDP Study"
-        assert r1.doi == "10.5281/zenodo.67890"
+        assert r1.doi == "https://doi.org/10.5281/zenodo.67890"
         assert r1.license == "MIT"
         assert r1.year == 2023
         assert r1.owner_name == "John Smith"
@@ -658,11 +658,11 @@ class TestZenodoMultiQuery:
 
         assert len(records) == 3
         assert records[0].source_dataset_id == "1"
-        assert records[0].query_string == "ext batch 1/1 (2 types)"
+        assert records[0].query_string == "resource_type.type:dataset AND (filetype:qdpx OR filetype:mqda)"
         assert records[0].repository_id == 1
         assert records[0].keywords == ["qualitative"]
-        assert records[1].query_string == "ext batch 1/1 (2 types)"
-        assert records[2].query_string == "nl batch 1/1 (1 terms)"
+        assert records[1].query_string == "resource_type.type:dataset AND (filetype:qdpx OR filetype:mqda)"
+        assert records[2].query_string == "((interview study))"
 
     @pytest.mark.asyncio
     async def test_multi_query_deduplicates_across_queries(self) -> None:
@@ -1052,19 +1052,25 @@ class TestHarvardDataverseExtractor:
                 "total_count": 1,
             }
         }
-        files_response: dict[str, Any] = {
-            "data": [
-                {
-                    "dataFile": {
-                        "id": 42,
-                        "filename": "data.qdpx",
-                        "filesize": 1024,
-                    }
+        # Full dataset endpoint response (includes both files and license)
+        dataset_response: dict[str, Any] = {
+            "data": {
+                "latestVersion": {
+                    "license": {"name": "CC0 1.0"},
+                    "files": [
+                        {
+                            "dataFile": {
+                                "id": 42,
+                                "filename": "data.qdpx",
+                                "filesize": 1024,
+                            }
+                        }
+                    ],
                 }
-            ]
+            }
         }
 
-        http_client = FakeHttpClient([search_page, files_response])
+        http_client = FakeHttpClient([search_page, dataset_response])
         config = self._make_dv_config()
         ctx = FakeRunContext(config=config)
         extractor = HarvardDataverseExtractor(
@@ -1079,6 +1085,9 @@ class TestHarvardDataverseExtractor:
         r = records[0]
         assert r.source_dataset_id == "doi:10.7910/DVN/ABC"
         assert r.title == "Qualitative Study"
+        assert r.source_url == "https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/ABC"
+        assert r.doi == "https://doi.org/10.7910/DVN/ABC"
+        assert r.license == "CC0 1.0"
         assert r.repository_id == 10
         assert r.download_method == "API-CALL"
         assert r.keywords == ["interview"]

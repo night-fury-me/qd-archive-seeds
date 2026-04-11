@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import html as html_mod
 import logging
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -89,7 +91,7 @@ class ZenodoExtractor:
                     )
                 )
             async for record in self._extract_with_date_splitting(
-                ctx, query, seen_ids=seen_ids, query_string=label, extra_params=facets
+                ctx, query, seen_ids=seen_ids, query_string=query, extra_params=facets
             ):
                 yield record
 
@@ -109,7 +111,7 @@ class ZenodoExtractor:
                     )
                 )
             async for record in self._extract_with_date_splitting(
-                ctx, query, seen_ids=seen_ids, query_string=label, extra_params=facets
+                ctx, query, seen_ids=seen_ids, query_string=query, extra_params=facets
             ):
                 yield record
 
@@ -415,19 +417,33 @@ class ZenodoExtractor:
             if contributor.get("name"):
                 persons.append(PersonRole(name=contributor["name"], role=PERSON_ROLE_CONTRIBUTOR))
 
+        # Build public project URL (not the API URL)
+        source_url = item.get("links", {}).get("self", fallback_url)
+        project_url = _to_public_url(source_url)
+
+        # Format DOI as full URL
+        raw_doi = metadata.get("doi")
+        doi = _format_doi(raw_doi) if raw_doi else None
+
+        # Clean HTML from description
+        description = _clean_html(metadata.get("description"))
+
+        # Convert language code to BCP 47
+        language = _to_bcp47(metadata.get("language"))
+
         return DatasetRecord(
             source_name=source_cfg.name,
             source_dataset_id=record_id,
-            source_url=item.get("links", {}).get("self", fallback_url),
+            source_url=project_url,
             title=metadata.get("title"),
-            description=metadata.get("description"),
-            doi=metadata.get("doi"),
+            description=description,
+            doi=doi,
             license=_extract_license(metadata.get("license")),
             query_string=query_string,
             repository_id=source_cfg.repository_id,
             repository_url=source_cfg.repository_url,
             version=metadata.get("version"),
-            language=metadata.get("language"),
+            language=language,
             upload_date=metadata.get("publication_date"),
             download_method=DOWNLOAD_METHOD_API,
             download_repository_folder=source_cfg.name,
@@ -531,3 +547,125 @@ def _extract_license(value: object) -> str | None:
     if isinstance(value, dict):
         return str(value.get("id", value.get("title", "")))
     return str(value)
+
+
+def _to_public_url(api_url: str) -> str:
+    """Convert a Zenodo API URL to a public URL.
+
+    ``https://zenodo.org/api/records/123`` → ``https://zenodo.org/records/123``
+    """
+    return api_url.replace("/api/records/", "/records/")
+
+
+def _format_doi(raw_doi: str) -> str:
+    """Ensure DOI is a full URL like ``https://doi.org/10.5281/...``."""
+    if raw_doi.startswith("https://doi.org/"):
+        return raw_doi
+    if raw_doi.startswith("http://doi.org/"):
+        return raw_doi.replace("http://", "https://", 1)
+    return f"https://doi.org/{raw_doi}"
+
+
+def _clean_html(text: str | None) -> str | None:
+    """Strip HTML tags and decode HTML entities."""
+    if text is None:
+        return None
+    clean = html_mod.unescape(text)
+    clean = re.sub(r"<[^>]+>", "", clean)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    return clean or None
+
+
+# ISO 639-3 → BCP 47 mapping for common languages
+_ISO639_TO_BCP47: dict[str, str] = {
+    "eng": "en",
+    "spa": "es",
+    "deu": "de",
+    "por": "pt",
+    "fra": "fr",
+    "ita": "it",
+    "ind": "id",
+    "cat": "ca",
+    "nld": "nl",
+    "ces": "cs",
+    "ukr": "uk",
+    "pol": "pl",
+    "slv": "sl",
+    "rus": "ru",
+    "fin": "fi",
+    "swe": "sv",
+    "dan": "da",
+    "ron": "ro",
+    "ell": "el",
+    "tur": "tr",
+    "jpn": "ja",
+    "ara": "ar",
+    "lav": "lv",
+    "hrv": "hr",
+    "ben": "bn",
+    "glg": "gl",
+    "zho": "zh",
+    "slk": "sk",
+    "bul": "bg",
+    "nor": "no",
+    "nob": "nb",
+    "lit": "lt",
+    "kor": "ko",
+    "tha": "th",
+    "lat": "la",
+    "hun": "hu",
+    "hin": "hi",
+    "fas": "fa",
+    "vie": "vi",
+    "heb": "he",
+    "cmn": "zh",
+    "uzb": "uz",
+    "urd": "ur",
+    "tir": "ti",
+    "oci": "oc",
+    "kan": "kn",
+    "hau": "ha",
+    "fil": "fil",
+    "bre": "br",
+    "bos": "bs",
+    "bod": "bo",
+    "est": "et",
+    "gle": "ga",
+    "zul": "zu",
+    "xho": "xh",
+    "tel": "te",
+    "swa": "sw",
+    "swh": "sw",
+    "srp": "sr",
+    "sot": "st",
+    "snd": "sd",
+    "nya": "ny",
+    "kir": "ky",
+    "kat": "ka",
+    "jav": "jv",
+    "isl": "is",
+    "guj": "gu",
+    "eus": "eu",
+    "epo": "eo",
+    "cym": "cy",
+    "bel": "be",
+    "aze": "az",
+    "asm": "as",
+    "amh": "am",
+    "yor": "yo",
+    "tsn": "tn",
+    "mya": "my",
+    "mal": "ml",
+    "lug": "lg",
+    "ltz": "lb",
+    "kaz": "kk",
+    "arb": "ar",
+    "enc": "en",
+}
+
+
+def _to_bcp47(lang: str | None) -> str | None:
+    """Convert an ISO 639-3 language code to BCP 47, passing through unknown codes."""
+    if lang is None:
+        return None
+    return _ISO639_TO_BCP47.get(lang, lang)

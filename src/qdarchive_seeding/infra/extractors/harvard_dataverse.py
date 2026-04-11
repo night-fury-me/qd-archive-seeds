@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import html as html_mod
 import logging
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
@@ -80,7 +82,7 @@ class HarvardDataverseExtractor:
                     )
                 )
             async for record in self._extract_single_query(
-                ctx, query, seen_ids=seen_ids, query_string=ext, extra_params=facets
+                ctx, query, seen_ids=seen_ids, query_string=query, extra_params=facets
             ):
                 yield record
 
@@ -97,7 +99,7 @@ class HarvardDataverseExtractor:
                     )
                 )
             async for record in self._extract_single_query(
-                ctx, query, seen_ids=seen_ids, query_string=nl_query, extra_params=facets
+                ctx, query, seen_ids=seen_ids, query_string=query, extra_params=facets
             ):
                 yield record
 
@@ -257,6 +259,7 @@ class HarvardDataverseExtractor:
         harvested_from = dataset_host if is_harvested else None
 
         assets: list[AssetRecord] = []
+        license_name: str | None = None
         if self.options.include_files:
             if is_harvested:
                 # Resolve the actual host (DOI URLs redirect to the real server)
@@ -272,7 +275,7 @@ class HarvardDataverseExtractor:
                             global_id,
                             repo_host,
                         )
-                        assets = await self._fetch_files(ctx, global_id)
+                        assets, license_name = await self._fetch_files_and_license(ctx, global_id)
                     else:
                         harvested_from = resolved_host
                         logger.info(
@@ -280,7 +283,7 @@ class HarvardDataverseExtractor:
                             global_id,
                             resolved_host,
                         )
-                        assets = await self._fetch_files(
+                        assets, license_name = await self._fetch_files_and_license(
                             ctx, global_id, base_url_override=original_base
                         )
                         if not assets:
@@ -297,7 +300,7 @@ class HarvardDataverseExtractor:
                         dataset_url_raw,
                     )
             else:
-                assets = await self._fetch_files(ctx, global_id)
+                assets, license_name = await self._fetch_files_and_license(ctx, global_id)
 
         # If no files were found and origin is ICPSR, construct download URLs directly
         if not assets and is_harvested and harvested_from:
@@ -308,17 +311,25 @@ class HarvardDataverseExtractor:
             if isinstance(author, str) and author:
                 persons.append(PersonRole(name=author, role=PERSON_ROLE_CREATOR))
 
+        # Build project_url as repo + dataset path (not DOI URL)
         dataset_url = item.get("url", "")
+        project_url = _build_project_url(source_cfg.repository_url, global_id, dataset_url)
         project_folder = global_id.replace("doi:", "").replace("/", "_")
+
+        # Format DOI as full URL
+        doi = _format_doi(global_id) if global_id.startswith("doi:") else None
+
+        # Clean HTML from description
+        description = _clean_html(item.get("description"))
 
         return DatasetRecord(
             source_name=source_cfg.name,
             source_dataset_id=global_id,
-            source_url=dataset_url,
+            source_url=project_url,
             title=item.get("name"),
-            description=item.get("description"),
-            doi=global_id if global_id.startswith("doi:") else None,
-            license=None,
+            description=description,
+            doi=doi,
+            license=license_name,
             query_string=query_string,
             repository_id=source_cfg.repository_id,
             repository_url=source_cfg.repository_url,
@@ -447,6 +458,106 @@ class HarvardDataverseExtractor:
 
         return None
 
+    async def _fetch_files_and_license(
+        self,
+        ctx: RunContext,
+        persistent_id: str,
+        *,
+        base_url_override: str | None = None,
+    ) -> tuple[list[AssetRecord], str | None]:
+        """Fetch the file listing and license for a dataset via the Dataverse API.
+
+        Uses the full dataset endpoint (/datasets/:persistentId/) to get
+        both the file listing and license information in one call.
+
+        Args:
+            base_url_override: When set, fetch from this API base URL
+                instead of the configured source. Used for harvested datasets
+                so we hit the original Dataverse that actually hosts the files.
+
+        Returns:
+            A tuple of (assets, license_name).
+        """
+        base_url = (base_url_override or ctx.config.source.base_url).rstrip("/")
+
+        headers: dict[str, str] = {}
+        params: dict[str, Any] = {"persistentId": persistent_id}
+        origin_auth_headers: dict[str, str] = {}
+        if base_url_override is None:
+            headers, params = await apply_auth_async(self.auth, headers, params)
+            native_headers, _ = await apply_auth_async(self.auth, {}, {})
+            origin_auth_headers = native_headers
+        else:
+            origin_host = urlparse(base_url_override).netloc.lower()
+            ext_auth = ctx.config.external_auth.get(origin_host)
+            if ext_auth:
+                import os
+
+                token = os.environ.get(ext_auth.env.get("api_key", ""), "")
+                if token:
+                    headers[ext_auth.header_name] = token
+                    origin_auth_headers[ext_auth.header_name] = token
+                    logger.debug("Applied external auth for %s", origin_host)
+
+        # Use the full dataset endpoint to get both files and license
+        dataset_url = f"{base_url}/datasets/:persistentId/"
+        license_name: str | None = None
+        try:
+            response = await self.http_client.get(dataset_url, headers=headers, params=params)
+            payload = response.json()
+            data = payload.get("data", {})
+            latest = data.get("latestVersion", {})
+
+            # Extract license
+            license_info = latest.get("license", {})
+            if isinstance(license_info, dict):
+                license_name = license_info.get("name")
+            elif isinstance(license_info, str):
+                license_name = license_info
+
+            # Extract files from the dataset response
+            raw_files = latest.get("files", [])
+        except Exception as exc:
+            logger.debug(
+                "Failed to fetch dataset %s from %s: %s — falling back to files endpoint",
+                persistent_id,
+                base_url,
+                exc,
+            )
+            # Fallback to the files-only endpoint
+            fallback = await self._fetch_files(
+                ctx, persistent_id, base_url_override=base_url_override
+            )
+            return fallback, None
+
+        assets: list[AssetRecord] = []
+        for file_entry in raw_files:
+            data_file = file_entry.get("dataFile", {})
+            raw_filename = data_file.get("filename", "")
+            file_id = data_file.get("id")
+            if not raw_filename or not file_id:
+                continue
+
+            filename = safe_filename(raw_filename)
+            download_url = f"{base_url}/access/datafile/{file_id}"
+            file_type = PurePosixPath(filename).suffix.lstrip(".") if filename else None
+
+            metadata: dict[str, Any] = {}
+            if origin_auth_headers:
+                metadata["auth_headers"] = origin_auth_headers
+
+            assets.append(
+                AssetRecord(
+                    asset_url=download_url,
+                    local_filename=filename,
+                    file_type=file_type,
+                    size_bytes=data_file.get("filesize"),
+                    metadata=metadata or None,
+                )
+            )
+
+        return assets, license_name
+
     async def _fetch_files(
         self,
         ctx: RunContext,
@@ -465,18 +576,13 @@ class HarvardDataverseExtractor:
         files_endpoint = ctx.config.source.endpoints.get(
             "files", "/datasets/:persistentId/versions/:latest/files"
         )
-        # The Dataverse Files API uses :persistentId as a literal path token;
-        # the actual DOI is passed as the ?persistentId= query parameter.
         url = f"{base_url}{files_endpoint}"
 
         headers: dict[str, str] = {}
         params: dict[str, Any] = {"persistentId": persistent_id}
-        # Apply auth: our own token for our Dataverse, external auth for others
-        # Also capture auth headers to store in each asset for the downloader
         origin_auth_headers: dict[str, str] = {}
         if base_url_override is None:
             headers, params = await apply_auth_async(self.auth, headers, params)
-            # Capture our auth headers so the downloader can apply them per-request
             native_headers, _ = await apply_auth_async(self.auth, {}, {})
             origin_auth_headers = native_headers
         else:
@@ -529,3 +635,30 @@ class HarvardDataverseExtractor:
             )
 
         return assets
+
+
+def _format_doi(global_id: str) -> str:
+    """Convert a Dataverse global_id like ``doi:10.7910/DVN/XXX`` to a full DOI URL."""
+    bare = global_id.removeprefix("doi:")
+    return f"https://doi.org/{bare}"
+
+
+def _build_project_url(repository_url: str | None, global_id: str, raw_url: str) -> str:
+    """Build a project URL using the repository domain instead of a DOI redirect.
+
+    Produces URLs like ``https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/...``
+    """
+    if repository_url and global_id.startswith("doi:"):
+        repo = repository_url.rstrip("/")
+        return f"{repo}/dataset.xhtml?persistentId={global_id}"
+    return raw_url
+
+
+def _clean_html(text: str | None) -> str | None:
+    """Strip HTML tags and decode HTML entities."""
+    if text is None:
+        return None
+    clean = html_mod.unescape(text)
+    clean = re.sub(r"<[^>]+>", "", clean)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    return clean or None

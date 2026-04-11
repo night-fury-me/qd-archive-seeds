@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
@@ -158,6 +159,11 @@ class SQLiteSink(BaseSink):
     def upsert_dataset(self, record: DatasetRecord) -> str:
         existing_id = self._find_project_id(record)
 
+        # Set download_date to current timestamp if not explicitly provided
+        download_date = record.download_date
+        if download_date is None:
+            download_date = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+
         values = (
             record.query_string,
             record.repository_id,
@@ -169,7 +175,7 @@ class SQLiteSink(BaseSink):
             record.language,
             record.doi,
             record.upload_date,
-            record.download_date,
+            download_date,
             record.download_repository_folder,
             record.download_project_folder,
             record.download_version_folder,
