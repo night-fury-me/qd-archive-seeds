@@ -658,10 +658,11 @@ class TestZenodoMultiQuery:
 
         assert len(records) == 3
         assert records[0].source_dataset_id == "1"
-        assert records[0].query_string == "resource_type.type:dataset AND (filetype:qdpx OR filetype:mqda)"
+        expected_ext_qs = "resource_type.type:dataset AND (filetype:qdpx OR filetype:mqda)"
+        assert records[0].query_string == expected_ext_qs
         assert records[0].repository_id == 1
         assert records[0].keywords == ["qualitative"]
-        assert records[1].query_string == "resource_type.type:dataset AND (filetype:qdpx OR filetype:mqda)"
+        assert records[1].query_string == expected_ext_qs
         assert records[2].query_string == "((interview study))"
 
     @pytest.mark.asyncio
@@ -1085,7 +1086,10 @@ class TestHarvardDataverseExtractor:
         r = records[0]
         assert r.source_dataset_id == "doi:10.7910/DVN/ABC"
         assert r.title == "Qualitative Study"
-        assert r.source_url == "https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/ABC"
+        assert (
+            r.source_url
+            == "https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/ABC"
+        )
         assert r.doi == "https://doi.org/10.7910/DVN/ABC"
         assert r.license == "CC0 1.0"
         assert r.repository_id == 10
