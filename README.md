@@ -229,7 +229,7 @@ Unique key: `(repository_id, download_project_folder, version)` (idempotent upse
 | `is_harvested` | INTEGER | Whether dataset was harvested from another repository |
 | `harvested_from` | TEXT | Original repository host if harvested |
 
-Related tables: `keywords` (project_id, keyword), `person_role` (project_id, name, role), `licenses` (project_id, license)
+Related tables: `keywords` (project_id, keyword), `person_role` (project_id, name, role — one of `UPLOADER`, `AUTHOR`, `OWNER`, `OTHER`, `UNKNOWN`), `licenses` (project_id, license)
 
 #### 2) File metadata (`files` table in SQLite)
 
@@ -243,8 +243,8 @@ Unique key: `(project_id, file_name)` (idempotent upsert)
 | `file_type` | TEXT | File extension |
 | `asset_url` | TEXT | Source download URL |
 | `size_bytes` | INTEGER | File size in bytes |
-| `status` | TEXT | `UNKNOWN`, `SUCCESS`, `FAILED`, `SKIPPED`, `RESUMABLE` |
-| `error_message` | TEXT | Error details if status is `FAILED` |
+| `status` | TEXT | `SUCCEEDED`, `FAILED_SERVER_UNRESPONSIVE`, `FAILED_LOGIN_REQUIRED`, `FAILED_TOO_LARGE` (default for new rows: `FAILED_SERVER_UNRESPONSIVE`; transient runtime states are mapped at the sink boundary) |
+| `error_message` | TEXT | Error details when status is any `FAILED_*` value |
 
 #### 3) Run manifest metadata (`runs/*.json`)
 
@@ -498,7 +498,7 @@ qdarchive seed run --config configs/my_zenodo.yaml
 # Re-extract everything from scratch (clears checkpoint state)
 qdarchive seed run --config configs/my_zenodo.yaml --fresh-extract
 
-# Re-download all files (ignores prior SUCCESS status in DB)
+# Re-download all files (ignores prior SUCCEEDED status in DB)
 qdarchive seed run --config configs/my_zenodo.yaml --fresh-download
 
 # Retry only previously failed downloads
@@ -540,7 +540,7 @@ qdarchive seed export --format csv --out ./export --db ./metadata/custom.sqlite
 | `--dry-run` | flag | `false` | Extract and transform only, no downloads |
 | `--metadata-only` | flag | `false` | Collect metadata only, skip download phase |
 | `--fresh-extract` | flag | `false` | Clear checkpoint, re-extract all queries from scratch |
-| `--fresh-download` | flag | `false` | Re-download all files, ignoring prior SUCCESS status |
+| `--fresh-download` | flag | `false` | Re-download all files, ignoring prior SUCCEEDED status |
 | `--retry-failed` | flag | `false` | Retry only previously failed downloads |
 | `--max-items` | INT | `null` | Override max items from config |
 | `--no-confirm` | flag | `false` | Skip the interactive download confirmation prompt |
@@ -572,7 +572,8 @@ qdarchive seed export --format csv --out ./export --db ./metadata/custom.sqlite
 ### Download Failures
 
 - **Zenodo rate limiting**: Some Zenodo datasets with many files experienced failures due to rate limiting or intermittent server errors. The pipeline handles this via automatic retries with exponential backoff.
-- **Access-restricted files**: A small number of Zenodo records advertise files in metadata but return 403/404 when downloading. These are classified as `SKIPPED` and not retried.
+- **Access-restricted files**: A small number of records advertise files in metadata but return 401/403/404 when downloading (or serve an HTML login page). These are classified as `FAILED_LOGIN_REQUIRED` and not retried.
+- **Size-skipped datasets**: Datasets whose total file size exceeds `max_dataset_size_gb` (default 1.0 GB) are not downloaded; their files are recorded as `FAILED_TOO_LARGE`.
 - **Syracuse QDR API file URLs**: QDR serves files via `/api/access/datafile/{id}` --- filenames must be extracted from HTTP `Content-Disposition` headers rather than the URL.
 - **ICPSR harvested datasets**: Some Harvard Dataverse datasets are harvested from ICPSR and require browser session cookies for download. The pipeline supports automatic cookie extraction from Chromium/Chrome browsers.
 
