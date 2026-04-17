@@ -129,7 +129,7 @@ class _Downloader:
             cb(1, 1)
         if self.should_fail:
             raise RuntimeError("download failed")
-        asset.download_status = "SUCCESS"
+        asset.download_status = "SUCCEEDED"
         return type("Result", (), {"asset": asset, "bytes_downloaded": 1, "checksum": ""})
 
 
@@ -536,7 +536,7 @@ async def test_runner_non_success_download_status(
             *,
             progress_callback: object = None,
         ):
-            asset.download_status = "FAILED"
+            asset.download_status = "FAILED_SERVER_UNRESPONSIVE"
             return type(
                 "Result",
                 (),

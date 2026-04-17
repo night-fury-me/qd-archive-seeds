@@ -69,8 +69,8 @@ def test_upsert_dataset_stores_persons(tmp_path: Path) -> None:
     sink = SQLiteSink(name="test", path=tmp_path / "test.sqlite")
     record = _make_record(
         persons=[
-            PersonRole(name="Alice", role="CREATOR"),
-            PersonRole(name="Bob", role="CONTRIBUTOR"),
+            PersonRole(name="Alice", role="AUTHOR"),
+            PersonRole(name="Bob", role="OTHER"),
         ]
     )
     pid = sink.upsert_dataset(record)
@@ -82,7 +82,7 @@ def test_upsert_dataset_stores_persons(tmp_path: Path) -> None:
         (int(pid),),
     ).fetchall()
     conn.close()
-    assert rows == [("Alice", "CREATOR"), ("Bob", "CONTRIBUTOR")]
+    assert rows == [("Alice", "AUTHOR"), ("Bob", "OTHER")]
 
 
 def test_upsert_dataset_stores_license(tmp_path: Path) -> None:
@@ -115,7 +115,7 @@ def test_upsert_asset_creates_file(tmp_path: Path) -> None:
         (int(pid),),
     ).fetchone()
     conn.close()
-    assert row == ("data.qdpx", "qdpx", "UNKNOWN")
+    assert row == ("data.qdpx", "qdpx", "FAILED_SERVER_UNRESPONSIVE")
 
 
 def test_upsert_asset_updates_status(tmp_path: Path) -> None:
@@ -128,7 +128,7 @@ def test_upsert_asset_updates_status(tmp_path: Path) -> None:
         download_status="UNKNOWN",
     )
     sink.upsert_asset(pid, asset)
-    asset.download_status = "SUCCESS"
+    asset.download_status = "SUCCEEDED"
     sink.upsert_asset(pid, asset)
     sink.close()
 
@@ -138,7 +138,7 @@ def test_upsert_asset_updates_status(tmp_path: Path) -> None:
         (int(pid), "data.qdpx"),
     ).fetchone()
     conn.close()
-    assert row[0] == "SUCCESS"
+    assert row[0] == "SUCCEEDED"
 
 
 def test_update_file_status(tmp_path: Path) -> None:
@@ -150,7 +150,7 @@ def test_update_file_status(tmp_path: Path) -> None:
         local_filename="data.qdpx",
     )
     sink.upsert_asset(pid, asset)
-    sink.update_file_status(pid, "data.qdpx", "SUCCESS")
+    sink.update_file_status(pid, "data.qdpx", "SUCCEEDED")
     sink.close()
 
     conn = sqlite3.connect(tmp_path / "test.sqlite")
@@ -159,7 +159,7 @@ def test_update_file_status(tmp_path: Path) -> None:
         (int(pid), "data.qdpx"),
     ).fetchone()
     conn.close()
-    assert row[0] == "SUCCESS"
+    assert row[0] == "SUCCEEDED"
 
 
 def test_get_file_statuses(tmp_path: Path) -> None:
@@ -167,11 +167,15 @@ def test_get_file_statuses(tmp_path: Path) -> None:
     record = _make_record()
     pid = sink.upsert_dataset(record)
     sink.upsert_asset(
-        pid, AssetRecord(asset_url="u1", local_filename="a.qdpx", download_status="SUCCESS")
+        pid, AssetRecord(asset_url="u1", local_filename="a.qdpx", download_status="SUCCEEDED")
     )
     sink.upsert_asset(
-        pid, AssetRecord(asset_url="u2", local_filename="b.pdf", download_status="FAILED")
+        pid,
+        AssetRecord(
+            asset_url="u2", local_filename="b.pdf", download_status="FAILED_SERVER_UNRESPONSIVE"
+        ),
     )
+    # Transient (RESUMABLE) is mapped to the failure default on insert.
     sink.upsert_asset(
         pid, AssetRecord(asset_url="u3", local_filename="c.csv", download_status="RESUMABLE")
     )
@@ -181,12 +185,12 @@ def test_get_file_statuses(tmp_path: Path) -> None:
 
     # Keys include both file_name and asset_url for flexible lookup
     assert statuses == {
-        "a.qdpx": "SUCCESS",
-        "u1": "SUCCESS",
-        "b.pdf": "FAILED",
-        "u2": "FAILED",
-        "c.csv": "RESUMABLE",
-        "u3": "RESUMABLE",
+        "a.qdpx": "SUCCEEDED",
+        "u1": "SUCCEEDED",
+        "b.pdf": "FAILED_SERVER_UNRESPONSIVE",
+        "u2": "FAILED_SERVER_UNRESPONSIVE",
+        "c.csv": "FAILED_SERVER_UNRESPONSIVE",
+        "u3": "FAILED_SERVER_UNRESPONSIVE",
     }
 
 

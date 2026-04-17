@@ -13,6 +13,8 @@ from typing import Any
 from qdarchive_seeding.app.download_strategy import DownloadCtx, get_icpsr_browser_cookies
 from qdarchive_seeding.core.constants import (
     DOWNLOAD_STATUS_FAILED,
+    DOWNLOAD_STATUS_FAILED_LOGIN_REQUIRED,
+    DOWNLOAD_STATUS_FAILED_TOO_LARGE,
     DOWNLOAD_STATUS_SKIPPED,
     DOWNLOAD_STATUS_SUCCESS,
 )
@@ -219,7 +221,9 @@ async def _download_icpsr_asset(
                 )
             )
         else:
-            asset_ref.download_status = DOWNLOAD_STATUS_FAILED
+            # ICPSR download failures are almost always auth/cookie issues;
+            # classify as login-required so the per-row reason is correct.
+            asset_ref.download_status = DOWNLOAD_STATUS_FAILED_LOGIN_REQUIRED
             asset_ref.error_message = fail_msg
             async with ct.lock:
                 ct.failed += 1
@@ -227,12 +231,12 @@ async def _download_icpsr_asset(
             bus.publish(
                 AssetDownloadUpdate(
                     asset_url=asset_ref.asset_url,
-                    status=DOWNLOAD_STATUS_FAILED,
+                    status=DOWNLOAD_STATUS_FAILED_LOGIN_REQUIRED,
                     error_message=fail_msg,
                 )
             )
     except Exception as icpsr_exc:
-        asset_ref.download_status = DOWNLOAD_STATUS_FAILED
+        asset_ref.download_status = DOWNLOAD_STATUS_FAILED_LOGIN_REQUIRED
         asset_ref.error_message = str(icpsr_exc)
         async with ct.lock:
             ct.failed += 1
@@ -240,7 +244,7 @@ async def _download_icpsr_asset(
         bus.publish(
             AssetDownloadUpdate(
                 asset_url=asset_ref.asset_url,
-                status=DOWNLOAD_STATUS_FAILED,
+                status=DOWNLOAD_STATUS_FAILED_LOGIN_REQUIRED,
                 error_message=str(icpsr_exc),
             )
         )
@@ -345,9 +349,7 @@ async def _classify_download_error(
     assert last_exc is not None  # noqa: S101
     err_str = str(last_exc)
     is_permanent = any(code in err_str for code in _ACCESS_CODES)
-    # Permanent access errors (403, 401, etc.) -> SKIPPED so
-    # they are never retried; transient/unknown -> FAILED.
-    final_status = DOWNLOAD_STATUS_SKIPPED if is_permanent else DOWNLOAD_STATUS_FAILED
+    final_status = DOWNLOAD_STATUS_FAILED_LOGIN_REQUIRED if is_permanent else DOWNLOAD_STATUS_FAILED
     asset_ref.download_status = final_status
     asset_ref.error_message = err_str
     is_suppressed = (
@@ -403,6 +405,11 @@ async def process_dataset(
             "Skipping dataset %s: rejected by policy",
             record.source_dataset_id,
         )
+        for asset in record.assets:
+            asset.download_status = DOWNLOAD_STATUS_FAILED_TOO_LARGE
+            asset.error_message = "Skipped: dataset exceeds size threshold"
+            with contextlib.suppress(Exception):
+                c.sink.upsert_asset(dataset_id, asset)
         async with ct.lock:
             ct.skipped += len(record.assets)
             await publish_download_progress(dctx)

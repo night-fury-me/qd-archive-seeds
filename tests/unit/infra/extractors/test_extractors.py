@@ -755,9 +755,9 @@ class TestZenodoMultiQuery:
         assert r.keywords == ["qualitative", "interview"]
         assert len(r.persons) == 2
         assert r.persons[0].name == "Alice"
-        assert r.persons[0].role == "CREATOR"
+        assert r.persons[0].role == "AUTHOR"
         assert r.persons[1].name == "Bob"
-        assert r.persons[1].role == "CONTRIBUTOR"
+        assert r.persons[1].role == "OTHER"
         assert r.assets[0].file_type == "qdpx"
 
 

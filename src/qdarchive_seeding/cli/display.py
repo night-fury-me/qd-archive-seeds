@@ -25,6 +25,7 @@ from qdarchive_seeding.app.progress import (
     QueryProgress,
     StageChanged,
 )
+from qdarchive_seeding.core.constants import DOWNLOAD_STATUS_SUCCESS
 
 _STAGE_LABELS: dict[str, str] = {
     "metadata_collection": "Collecting metadata",
@@ -341,7 +342,7 @@ class CliProgressDisplay:
             )
         if filename:
             size = format_size(event.bytes_downloaded) if event.bytes_downloaded else ""
-            if event.status != "SUCCESS":
+            if event.status != DOWNLOAD_STATUS_SUCCESS:
                 reason = event.error_message or "unknown error"
                 if len(reason) > 80:
                     reason = reason[:77] + "..."

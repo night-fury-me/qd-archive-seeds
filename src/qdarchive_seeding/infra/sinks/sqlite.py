@@ -5,6 +5,11 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from qdarchive_seeding.core.constants import (
+    DOWNLOAD_STATUS_FAILED,
+    DOWNLOAD_STATUS_SUCCESS,
+    DOWNLOAD_STATUS_TRANSIENT,
+)
 from qdarchive_seeding.core.entities import AssetRecord, DatasetRecord
 from qdarchive_seeding.infra.sinks.base import BaseSink
 
@@ -37,8 +42,13 @@ CREATE TABLE IF NOT EXISTS files (
   file_type TEXT,
   asset_url TEXT,
   size_bytes INTEGER,
-  status TEXT NOT NULL DEFAULT 'UNKNOWN'
-    CHECK(status IN ('UNKNOWN', 'SUCCESS', 'FAILED', 'SKIPPED', 'RESUMABLE')),
+  status TEXT NOT NULL DEFAULT 'FAILED_SERVER_UNRESPONSIVE'
+    CHECK(status IN (
+      'SUCCEEDED',
+      'FAILED_SERVER_UNRESPONSIVE',
+      'FAILED_LOGIN_REQUIRED',
+      'FAILED_TOO_LARGE'
+    )),
   error_message TEXT,
   FOREIGN KEY (project_id) REFERENCES projects(id)
 );
@@ -55,7 +65,7 @@ CREATE TABLE IF NOT EXISTS person_role (
   project_id INTEGER NOT NULL,
   name TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'UNKNOWN'
-    CHECK(role IN ('CREATOR', 'CONTRIBUTOR', 'UNKNOWN')),
+    CHECK(role IN ('UPLOADER', 'AUTHOR', 'OWNER', 'OTHER', 'UNKNOWN')),
   FOREIGN KEY (project_id) REFERENCES projects(id)
 );
 
@@ -103,6 +113,7 @@ class SQLiteSink(BaseSink):
         self._conn.executescript(_MIGRATION)
         self._conn.executescript(SCHEMA)
         self._run_column_migrations()
+        self._migrate_enum_values()
 
     def _run_column_migrations(self) -> None:
         """Add columns to existing tables if they don't exist yet."""
@@ -119,6 +130,87 @@ class SQLiteSink(BaseSink):
             if col_name not in existing_projects:
                 self._conn.execute(ddl)
         self._conn.commit()
+
+    def _migrate_enum_values(self) -> None:
+        """Rebuild files/person_role with new CHECK constraints if old schema present.
+
+        Old schema used SUCCESS/FAILED/UNKNOWN/SKIPPED/RESUMABLE for files.status
+        and CREATOR/CONTRIBUTOR/UNKNOWN for person_role.role. This migration
+        rebuilds the tables with the spec-compliant enum and remaps existing
+        values: SUCCESS→SUCCEEDED; FAILED/UNKNOWN/SKIPPED/RESUMABLE→
+        FAILED_SERVER_UNRESPONSIVE; CREATOR→AUTHOR; CONTRIBUTOR→OTHER.
+        """
+        files_ddl = self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='files'"
+        ).fetchone()
+        if files_ddl and "'SUCCESS'" in (files_ddl[0] or ""):
+            self._conn.executescript(
+                """
+                BEGIN;
+                CREATE TABLE files_new (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  project_id INTEGER NOT NULL,
+                  file_name TEXT,
+                  file_type TEXT,
+                  asset_url TEXT,
+                  size_bytes INTEGER,
+                  status TEXT NOT NULL DEFAULT 'FAILED_SERVER_UNRESPONSIVE'
+                    CHECK(status IN (
+                      'SUCCEEDED',
+                      'FAILED_SERVER_UNRESPONSIVE',
+                      'FAILED_LOGIN_REQUIRED',
+                      'FAILED_TOO_LARGE'
+                    )),
+                  error_message TEXT,
+                  FOREIGN KEY (project_id) REFERENCES projects(id)
+                );
+                INSERT INTO files_new
+                  (id, project_id, file_name, file_type, asset_url,
+                   size_bytes, status, error_message)
+                SELECT id, project_id, file_name, file_type, asset_url, size_bytes,
+                  CASE status
+                    WHEN 'SUCCESS' THEN 'SUCCEEDED'
+                    ELSE 'FAILED_SERVER_UNRESPONSIVE'
+                  END,
+                  error_message
+                FROM files;
+                DROP TABLE files;
+                ALTER TABLE files_new RENAME TO files;
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_file_unique
+                  ON files(project_id, file_name);
+                COMMIT;
+                """
+            )
+
+        role_ddl = self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='person_role'"
+        ).fetchone()
+        if role_ddl and "'CREATOR'" in (role_ddl[0] or ""):
+            self._conn.executescript(
+                """
+                BEGIN;
+                CREATE TABLE person_role_new (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  project_id INTEGER NOT NULL,
+                  name TEXT NOT NULL,
+                  role TEXT NOT NULL DEFAULT 'UNKNOWN'
+                    CHECK(role IN ('UPLOADER', 'AUTHOR', 'OWNER', 'OTHER', 'UNKNOWN')),
+                  FOREIGN KEY (project_id) REFERENCES projects(id)
+                );
+                INSERT INTO person_role_new (id, project_id, name, role)
+                SELECT id, project_id, name,
+                  CASE role
+                    WHEN 'CREATOR' THEN 'AUTHOR'
+                    WHEN 'CONTRIBUTOR' THEN 'OTHER'
+                    WHEN 'UNKNOWN' THEN 'UNKNOWN'
+                    ELSE 'UNKNOWN'
+                  END
+                FROM person_role;
+                DROP TABLE person_role;
+                ALTER TABLE person_role_new RENAME TO person_role;
+                COMMIT;
+                """
+            )
 
     def close(self) -> None:
         self._conn.commit()
@@ -247,8 +339,16 @@ class SQLiteSink(BaseSink):
         project_id = int(dataset_id)
         file_name = asset.local_filename or asset.asset_url.rsplit("/", 1)[-1]
         file_type = asset.file_type or (file_name.rsplit(".", 1)[-1] if "." in file_name else None)
-        status = asset.download_status or "UNKNOWN"
-        error_message = asset.error_message if status == "FAILED" else None
+        raw_status = asset.download_status
+        # Transient/unknown statuses map to the failure default for new rows
+        # but must NOT overwrite a meaningful status on an existing row.
+        is_transient = raw_status is None or raw_status in DOWNLOAD_STATUS_TRANSIENT
+        persisted_status = DOWNLOAD_STATUS_FAILED if is_transient else raw_status
+        error_message = (
+            asset.error_message
+            if (not is_transient and persisted_status != DOWNLOAD_STATUS_SUCCESS)
+            else None
+        )
         self._conn.execute(
             """
             INSERT INTO files
@@ -260,11 +360,11 @@ class SQLiteSink(BaseSink):
               asset_url=COALESCE(excluded.asset_url, asset_url),
               size_bytes=COALESCE(excluded.size_bytes, size_bytes),
               status=CASE
-                WHEN excluded.status = 'UNKNOWN' THEN files.status
+                WHEN ? = 1 THEN files.status
                 ELSE excluded.status
               END,
               error_message=CASE
-                WHEN excluded.status = 'UNKNOWN' THEN files.error_message
+                WHEN ? = 1 THEN files.error_message
                 ELSE excluded.error_message
               END
             """,
@@ -274,8 +374,10 @@ class SQLiteSink(BaseSink):
                 file_type,
                 asset.asset_url,
                 asset.size_bytes,
-                status,
+                persisted_status,
                 error_message,
+                int(is_transient),
+                int(is_transient),
             ),
         )
         self._pending_ops += 1
@@ -310,9 +412,8 @@ class SQLiteSink(BaseSink):
         result: dict[str, str] = {}
         for row in rows:
             fname, url, status = row[0], row[1], row[2]
-            # Prefer non-UNKNOWN statuses: don't overwrite a meaningful status
             for key in (fname, url):
-                if key and (key not in result or result[key] == "UNKNOWN"):
+                if key and key not in result:
                     result[key] = status
         return result
 
@@ -334,10 +435,10 @@ class SQLiteSink(BaseSink):
         """Load datasets that have files not yet successfully downloaded.
 
         Returns a list of (dataset_id, DatasetRecord, [AssetRecord, ...]) tuples
-        for projects that have at least one file with status != 'SUCCESS'.
+        for projects that have at least one file with a non-success status.
         Only includes files that have asset_url stored (needed for download).
         """
-        query = """
+        query = f"""
             SELECT DISTINCT p.id, p.query_string, p.repository_id, p.repository_url,
                    p.project_url, p.version, p.title, p.description, p.language,
                    p.doi, p.upload_date, p.download_date,
@@ -346,7 +447,7 @@ class SQLiteSink(BaseSink):
                    p.is_harvested, p.harvested_from
             FROM projects p
             JOIN files f ON f.project_id = p.id
-            WHERE f.status != 'SUCCESS' AND f.asset_url IS NOT NULL
+            WHERE f.status != '{DOWNLOAD_STATUS_SUCCESS}' AND f.asset_url IS NOT NULL
         """
         params: list[int] = []
         if repository_id is not None:

@@ -11,7 +11,7 @@ class PersonRole:
     """A person associated with a dataset and their role."""
 
     name: str
-    role: str = "UNKNOWN"  # CREATOR | CONTRIBUTOR | SUPERVISOR | OTHER | UNKNOWN
+    role: str = "UNKNOWN"  # UPLOADER | AUTHOR | OWNER | OTHER | UNKNOWN
 
 
 @dataclass(slots=True)

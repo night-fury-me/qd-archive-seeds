@@ -12,12 +12,15 @@ import httpx
 from qdarchive_seeding.core.constants import (
     DEFAULT_CHUNK_SIZE_BYTES,
     DOWNLOAD_STATUS_FAILED,
+    DOWNLOAD_STATUS_FAILED_LOGIN_REQUIRED,
     DOWNLOAD_STATUS_RESUMABLE,
     DOWNLOAD_STATUS_SUCCESS,
 )
 from qdarchive_seeding.core.entities import AssetRecord
 from qdarchive_seeding.infra.storage.checksums import ChecksumComputer
 from qdarchive_seeding.infra.storage.paths import safe_filename
+
+_LOGIN_HTTP_CODES = {401, 403}
 
 ProgressCallback = Callable[[int, int | None], None]
 """Called with (bytes_downloaded_so_far, total_bytes_or_none)."""
@@ -83,9 +86,21 @@ class Downloader:
                 return await self._do_stream(
                     asset, {}, "w+b", temp_path, final_path, target_dir, cb
                 )
-            asset.download_status = (
-                DOWNLOAD_STATUS_RESUMABLE if temp_path.exists() else DOWNLOAD_STATUS_FAILED
-            )
+            if exc.response.status_code in _LOGIN_HTTP_CODES:
+                asset.download_status = DOWNLOAD_STATUS_FAILED_LOGIN_REQUIRED
+            else:
+                asset.download_status = (
+                    DOWNLOAD_STATUS_RESUMABLE if temp_path.exists() else DOWNLOAD_STATUS_FAILED
+                )
+            raise
+        except ValueError as exc:
+            # HTML response = login page intercepted (see _do_stream).
+            if "login page" in str(exc).lower():
+                asset.download_status = DOWNLOAD_STATUS_FAILED_LOGIN_REQUIRED
+            else:
+                asset.download_status = (
+                    DOWNLOAD_STATUS_RESUMABLE if temp_path.exists() else DOWNLOAD_STATUS_FAILED
+                )
             raise
         except Exception:
             asset.download_status = (

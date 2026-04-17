@@ -129,7 +129,7 @@ async def test_cli_progress_display_events() -> None:
     display(CountersUpdated(extracted=1, transformed=1, total_assets=2))
     display(AssetDownloadProgress(asset_url="a", bytes_downloaded=10, total_bytes=None))
     display(AssetDownloadProgress(asset_url="a", bytes_downloaded=10, total_bytes=100))
-    display(AssetDownloadUpdate(asset_url="a", status="SUCCESS", bytes_downloaded=10))
+    display(AssetDownloadUpdate(asset_url="a", status="SUCCEEDED", bytes_downloaded=10))
     display(ErrorEvent(component="downloader", error_type="RuntimeError", message="boom"))
 
     run_info = RunInfo(
@@ -163,9 +163,9 @@ async def test_status_command_with_db(tmp_path: Path) -> None:
             INSERT INTO projects (id, project_url)
                 VALUES (1, 'u1'), (2, 'u2');
             INSERT INTO files (id, project_id, file_name, status) VALUES
-              (1, 1, 'a.qdpx', 'SUCCESS'),
-              (2, 1, 'b.pdf', 'FAILED'),
-              (3, 2, 'c.csv', 'SKIPPED');
+              (1, 1, 'a.qdpx', 'SUCCEEDED'),
+              (2, 1, 'b.pdf', 'FAILED_SERVER_UNRESPONSIVE'),
+              (3, 2, 'c.csv', 'FAILED_TOO_LARGE');
             """
         )
         conn.commit()
@@ -192,7 +192,7 @@ async def test_export_csv_and_excel(tmp_path: Path) -> None:
                 file_name TEXT, status TEXT);
             INSERT INTO projects (id, project_url) VALUES (1, 'u1');
             INSERT INTO files (id, project_id, file_name, status)
-                VALUES (1, 1, 'a.qdpx', 'SUCCESS');
+                VALUES (1, 1, 'a.qdpx', 'SUCCEEDED');
             """
         )
         conn.commit()
